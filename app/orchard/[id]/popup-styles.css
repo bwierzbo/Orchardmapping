@@ -1,0 +1,89 @@
+/* Custom styles for MapLibre popups in the orchard map */
+
+/* Ensure Tailwind styles apply to popup content */
+.maplibregl-popup-content {
+  padding: 0 !important;
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+.maplibregl-popup-close-button {
+  font-size: 20px;
+  padding: 4px 8px;
+  color: #6b7280;
+  border-radius: 0 0.5rem 0 0;
+}
+
+.maplibregl-popup-close-button:hover {
+  background-color: #f3f4f6;
+  color: #111827;
+}
+
+.maplibregl-popup-tip {
+  border-top-color: white;
+}
+
+/* Custom class for orchard popups */
+.orchard-popup .maplibregl-popup-content {
+  font-family: inherit;
+  max-width: 320px;
+}
+
+/* Ensure buttons in popup have proper hover states */
+.orchard-popup button {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+/* Animation for popup appearance */
+.maplibregl-popup:not(.no-animation) {
+  animation: fadeIn 0.2s ease;
+}
+
+/* Disable animation when no-animation class is present */
+.maplibregl-popup.no-animation {
+  animation: none !important;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Animation for selected tree indicator */
+.animate-fade-in {
+  animation: fadeIn 0.3s ease;
+}
+
+/* Loading spinner animation */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Focus styles for popup buttons */
+.orchard-popup button:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* Enhanced hover effect for close button */
+.maplibregl-popup-close-button {
+  transition: all 0.2s ease;
+}
+
+/* Smooth transitions for tree hover effects */
+.maplibregl-canvas {
+  transition: cursor 0.15s ease;
+}
