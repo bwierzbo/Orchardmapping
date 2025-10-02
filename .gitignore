@@ -37,6 +37,8 @@ next-env.d.ts
 # tile data
 /public/ortho/**/*.png
 /public/tiles/*.pmtiles
+**/orthomap.pmtiles
+**/orthomap-xyz.mbtiles
 
 # large geospatial files
 *.tif
