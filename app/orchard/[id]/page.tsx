@@ -47,15 +47,7 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
   const orchard = orchardId ? getOrchardById(orchardId) : null;
   const allOrchards = getAllOrchards();
 
-  // Handle invalid orchard ID or loading state
-  if (!orchardId) {
-    return <div className="h-screen w-screen flex items-center justify-center">Loading...</div>;
-  }
-
-  if (!orchard) {
-    notFound();
-  }
-
+  // Initialize hooks first (before any early returns)
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const popupRef = useRef<maplibregl.Popup | null>(null);
@@ -64,6 +56,15 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
   const [selectedTreeFeature, setSelectedTreeFeature] = useState<any>(null);
   const [showOrchardSelector, setShowOrchardSelector] = useState(false);
   const [pmtilesEnabled, setPmtilesEnabled] = useState(false);
+
+  // Handle invalid orchard ID or loading state
+  if (!orchardId) {
+    return <div className="h-screen w-screen flex items-center justify-center">Loading...</div>;
+  }
+
+  if (!orchard) {
+    notFound();
+  }
 
   // Function to fetch tree details from API (prepared for future implementation)
   const fetchTreeDetails = async (treeId: string): Promise<TreeDetails | null> => {
