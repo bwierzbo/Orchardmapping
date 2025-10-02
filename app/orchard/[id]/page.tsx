@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, use } from 'react';
+import { useEffect, useRef, useState, use, useCallback } from 'react';
 import { notFound, useRouter } from 'next/navigation';
 import maplibregl from 'maplibre-gl';
 import { PMTiles, Protocol } from 'pmtiles';
@@ -57,17 +57,8 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
   const [showOrchardSelector, setShowOrchardSelector] = useState(false);
   const [pmtilesEnabled, setPmtilesEnabled] = useState(false);
 
-  // Handle invalid orchard ID or loading state
-  if (!orchardId) {
-    return <div className="h-screen w-screen flex items-center justify-center">Loading...</div>;
-  }
-
-  if (!orchard) {
-    notFound();
-  }
-
   // Function to fetch tree details from API (prepared for future implementation)
-  const fetchTreeDetails = async (treeId: string): Promise<TreeDetails | null> => {
+  const fetchTreeDetails = useCallback(async (treeId: string): Promise<TreeDetails | null> => {
     // Placeholder for API integration
     try {
       // Uncomment when API endpoint is ready:
@@ -94,10 +85,10 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
       console.error('Error fetching tree details:', error);
       return null;
     }
-  };
+  }, []);
 
   // Function to create popup content with Tailwind styling
-  const createPopupContent = (
+  const createPopupContent = useCallback((
     properties: TreeProperties,
     details?: TreeDetails | null,
     isLoading?: boolean,
@@ -340,7 +331,7 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
     container.appendChild(actions);
 
     return container;
-  };
+  }, [selectedTreeFeature, fetchTreeDetails]);
 
   useEffect(() => {
     // Prevent multiple initializations using ref flag
@@ -453,7 +444,7 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
 
     // Create map with orthomosaic tiles from PMTiles or public directory
     map.current = new maplibregl.Map({
-      container: mapContainer.current,
+      container: mapContainer.current!,
       style: {
         version: 8,
         glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
@@ -670,7 +661,7 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
       // Force selected tree label to show
       if (map.current && feature) {
         // Temporarily allow overlap for selected tree
-        const filter = ['==', ['get', 'tree_id'], properties.tree_id || ''];
+        const filter: any = ['==', ['get', 'tree_id'], properties.tree_id || ''];
         map.current.setFilter('orchard-tree-labels-selected', filter);
       }
 
@@ -684,8 +675,7 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
         className: 'orchard-popup no-animation', // Add no-animation class
         maxWidth: '320px',
         offset: [0, -10], // Offset to position above the circle
-        anchor: 'bottom',
-        trackPointer: false // Don't track pointer, use fixed position
+        anchor: 'bottom'
       })
         .setLngLat(clickCoordinates)
         .setDOMContent(createPopupContent(properties, details))
@@ -781,7 +771,16 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
         // Protocol might not exist, ignore error
       }
     };
-  }, [orchard]); // Re-render if orchard changes
+  }, [orchard, createPopupContent, selectedTreeFeature, fetchTreeDetails]); // Re-render if orchard changes
+
+  // Handle invalid orchard ID or loading state
+  if (!orchardId) {
+    return <div className="h-screen w-screen flex items-center justify-center">Loading...</div>;
+  }
+
+  if (!orchard) {
+    notFound();
+  }
 
   return (
     <div className="h-screen w-screen relative">

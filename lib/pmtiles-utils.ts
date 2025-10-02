@@ -13,7 +13,7 @@ export async function validatePMTiles(url: string): Promise<{
     console.log('PMTiles header:', header);
 
     // Try to get metadata
-    const metadata = await pmtiles.getMetadata();
+    const metadata: any = await pmtiles.getMetadata();
     console.log('PMTiles metadata:', metadata);
 
     // Check if it has vector layers
