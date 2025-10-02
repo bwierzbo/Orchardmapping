@@ -19,8 +19,9 @@ export interface OrchardConfig {
   maxZoom: number;
   tileMinZoom: number;
   tileMaxZoom: number;
-  orthoPath: string; // Path to orthomosaic tiles
-  pmtilesPath: string; // Path to PMTiles file
+  orthoPath: string; // Path to orthomosaic tiles (deprecated, use orthoPmtilesPath)
+  orthoPmtilesPath?: string; // Path to orthomosaic PMTiles file
+  pmtilesPath: string; // Path to PMTiles file for vector data
   previewImage?: string; // Optional preview image for selector
   stats?: {
     trees?: number;
@@ -50,6 +51,7 @@ export const orchards: Record<string, OrchardConfig> = {
     tileMinZoom: 5,
     tileMaxZoom: 23,
     orthoPath: '/orchards/washington/ortho',
+    orthoPmtilesPath: '/orchards/washington/tiles/orthomap.pmtiles', // PMTiles with orthomosaic imagery
     pmtilesPath: '/orchards/washington/tiles/trees.pmtiles', // PMTiles with tree data
     previewImage: '/orchards/washington/preview.jpg',
     stats: {

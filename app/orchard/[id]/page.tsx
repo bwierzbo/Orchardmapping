@@ -267,8 +267,6 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
           editedData[elem.dataset.key] = elem.value;
         });
 
-        console.log('Saving tree data:', editedData);
-
         // TODO: Save to backend API
         // For now, just update the local display
         if (popupRef.current) {
@@ -305,8 +303,6 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
       viewButton.textContent = details ? 'Refresh' : 'Load Details';
       viewButton.setAttribute('aria-label', `View details for tree ${data.tree_id}`);
       viewButton.onclick = async () => {
-        console.log('Loading details for tree:', data.tree_id);
-
         // Show loading state
         if (data.tree_id && popupRef.current) {
           const loadingContent = createPopupContent(properties, null, true, false);
@@ -330,7 +326,6 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
       editButton.textContent = 'Edit';
       editButton.setAttribute('aria-label', `Edit tree ${data.tree_id}`);
       editButton.onclick = () => {
-        console.log('Entering edit mode for tree:', data.tree_id);
         // Enter edit mode
         if (popupRef.current) {
           popupRef.current.setDOMContent(createPopupContent(properties, details, false, true));
@@ -425,11 +420,9 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
       let sourceLayerName = 'default'; // Default layer name
 
       if (orchard.pmtilesPath) {
-        console.log('Checking PMTiles file:', orchard.pmtilesPath);
         const validation = await validatePMTiles(orchard.pmtilesPath);
 
         if (validation.valid) {
-          console.log('PMTiles validation successful');
           pmtilesValid = true;
           setPmtilesEnabled(true);
 
@@ -438,12 +431,7 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
             // Look for a 'trees' layer first, otherwise use the first available
             const treesLayer = validation.metadata.vector_layers.find((l: any) => l.id === 'trees');
             sourceLayerName = treesLayer ? 'trees' : validation.metadata.vector_layers[0].id || 'default';
-            console.log('Available vector layers:',
-              validation.metadata.vector_layers.map((l: any) => l.id));
-            console.log('Using source-layer:', sourceLayerName);
           } else {
-            // No vector_layers metadata, try both 'default' and empty string
-            console.log('No vector_layers metadata, using default layer name');
             sourceLayerName = 'default';
           }
 
@@ -457,29 +445,31 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
           protocol = new Protocol();
           maplibregl.addProtocol('pmtiles', protocol.tile);
         } else {
-          console.error('PMTiles validation failed:', validation.error);
           pmtilesValid = false;
           setPmtilesEnabled(false);
         }
       }
 
-    // Create map with orthomosaic tiles from public directory
+    // Create map with orthomosaic tiles from PMTiles or public directory
     map.current = new maplibregl.Map({
       container: mapContainer.current,
       style: {
         version: 8,
         glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
+        layers: [],
         sources: {
-          'orchard-orthomosaic': {
-            type: 'raster',
-            tiles: [`${orchard.orthoPath}/{z}/{x}/{y}.png`], // Dynamic path based on orchard
-            tileSize: 256,
-            minzoom: orchard.tileMinZoom,
-            maxzoom: orchard.tileMaxZoom,
-            scheme: 'tms', // Use TMS scheme for inverted Y-axis
-            attribution: `${orchard.name} Orthomosaic`,
-            bounds: [orchard.bounds.minLng, orchard.bounds.minLat, orchard.bounds.maxLng, orchard.bounds.maxLat]
-          },
+          // Only add orthomosaic if we have a source
+          ...(orchard.orthoPmtilesPath ? {
+            'orchard-orthomosaic': {
+              // Use PMTiles for orthomosaic if available
+              type: 'raster',
+              url: `pmtiles://${orchard.orthoPmtilesPath}`,
+              attribution: `${orchard.name} Orthomosaic`,
+              tileSize: 256,
+              minzoom: orchard.tileMinZoom,
+              maxzoom: orchard.tileMaxZoom
+            }
+          } : {}),
           // Only add vector source if PMTiles file exists and is valid
           ...(pmtilesValid && orchard.pmtilesPath ? {
             'orchard-vectors': {
@@ -491,32 +481,43 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
               promoteId: 'tree_id' // Use tree_id as feature ID for better performance
             }
           } : {})
-        },
-        layers: [
-          // Bottom layer: Orthomosaic raster
-          {
-            id: 'orchard-orthomosaic-layer',
-            type: 'raster',
-            source: 'orchard-orthomosaic',
-            minzoom: 0,
-            maxzoom: 22,
-            paint: {
-              'raster-opacity': 1,
-              'raster-fade-duration': 100,
-              'raster-resampling': 'linear' // Smooth rendering for orthomosaic
-            }
-          },
-          // Vector layers (only if PMTiles source exists and is valid)
-          ...(pmtilesValid && orchard.pmtilesPath ? [
-          // Try multiple possible layer names for trees
-          // Layer 1: Try with detected source layer name
-          {
-            id: 'orchard-trees',
-            type: 'circle',
-            source: 'orchard-vectors',
-            'source-layer': sourceLayerName,
-            // Remove minzoom to show trees at all zoom levels
-            paint: {
+        }
+      },
+      center: orchard.center, // Dynamic orchard center
+      zoom: orchard.defaultZoom, // Dynamic default zoom
+      maxZoom: orchard.maxZoom, // Dynamic max zoom
+      minZoom: orchard.minZoom, // Dynamic min zoom
+      pitch: 0,
+      bearing: 0
+    });
+
+    // Add layers after map is created
+    map.current.on('load', () => {
+      // Add orthomosaic layer if available
+      if (orchard.orthoPmtilesPath && map.current) {
+        map.current.addLayer({
+          id: 'orchard-orthomosaic-layer',
+          type: 'raster',
+          source: 'orchard-orthomosaic',
+          minzoom: 0,
+          maxzoom: 22,
+          paint: {
+            'raster-opacity': 1,
+            'raster-fade-duration': 100,
+            'raster-resampling': 'linear'
+          }
+        });
+      }
+
+      // Add vector layers if PMTiles source exists and is valid
+      if (pmtilesValid && orchard.pmtilesPath && map.current) {
+        // Trees layer
+        map.current.addLayer({
+          id: 'orchard-trees',
+          type: 'circle',
+          source: 'orchard-vectors',
+          'source-layer': sourceLayerName,
+          paint: {
               'circle-radius': [
                 'interpolate',
                 ['linear'],
@@ -557,17 +558,18 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
                 15, 0.5,
                 20, 1
               ],
-              'circle-opacity': 0.9
-            }
-          },
-          // Tree labels at high zoom with collision avoidance
-          {
-            id: 'orchard-tree-labels',
-            type: 'symbol',
-            source: 'orchard-vectors',
-            'source-layer': sourceLayerName, // Use detected layer name
-            minzoom: 18,
-            layout: {
+            'circle-opacity': 0.9
+          }
+        });
+
+        // Tree labels at high zoom with collision avoidance
+        map.current.addLayer({
+          id: 'orchard-tree-labels',
+          type: 'symbol',
+          source: 'orchard-vectors',
+          'source-layer': sourceLayerName,
+          minzoom: 18,
+          layout: {
               'text-field': ['get', 'name'],
               'text-font': ['Noto Sans Regular', 'Arial Unicode MS Regular'],
               'text-size': 11,
@@ -581,18 +583,19 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
               'text-color': '#ffffff',
               'text-halo-color': '#000000',
               'text-halo-width': 1.5,
-              'text-halo-blur': 0.5
-            }
-          },
-          // Selected tree label (always visible)
-          {
-            id: 'orchard-tree-labels-selected',
-            type: 'symbol',
-            source: 'orchard-vectors',
-            'source-layer': sourceLayerName, // Use detected layer name
-            minzoom: 18,
-            filter: ['==', ['get', 'tree_id'], ''], // Initially empty
-            layout: {
+            'text-halo-blur': 0.5
+          }
+        });
+
+        // Selected tree label (always visible)
+        map.current.addLayer({
+          id: 'orchard-tree-labels-selected',
+          type: 'symbol',
+          source: 'orchard-vectors',
+          'source-layer': sourceLayerName,
+          minzoom: 18,
+          filter: ['==', ['get', 'tree_id'], ''], // Initially empty
+          layout: {
               'text-field': ['get', 'name'],
               'text-font': ['Noto Sans Regular', 'Arial Unicode MS Regular'],
               'text-size': 12,
@@ -605,18 +608,23 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
               'text-color': '#ffff00', // Yellow for selected
               'text-halo-color': '#000000',
               'text-halo-width': 2,
-              'text-halo-blur': 0.5
-            }
+            'text-halo-blur': 0.5
           }
-          ] : []) // Close the conditional vector layers array
-        ]
-      },
-      center: orchard.center, // Dynamic orchard center
-      zoom: orchard.defaultZoom, // Dynamic default zoom
-      maxZoom: orchard.maxZoom, // Dynamic max zoom
-      minZoom: orchard.minZoom, // Dynamic min zoom
-      pitch: 0,
-      bearing: 0
+        });
+      }
+
+      console.log('Map loaded. Orthomosaic layer:', map.current?.getLayer('orchard-orthomosaic-layer') ? 'exists' : 'missing');
+
+      if (pmtilesValid) {
+        // Change cursor on hover
+        map.current?.on('mouseenter', 'orchard-trees', () => {
+          if (map.current) map.current.getCanvas().style.cursor = 'pointer';
+        });
+
+        map.current?.on('mouseleave', 'orchard-trees', () => {
+          if (map.current) map.current.getCanvas().style.cursor = '';
+        });
+      }
     });
 
     // Add navigation controls
@@ -630,87 +638,10 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
 
     // Add error handler for map errors
     map.current.on('error', (e) => {
-      // Log the error but don't break the map
-      console.warn('Map error:', e.error?.message || e);
-
-      // If it's a PMTiles-related error, we can handle it gracefully
-      if (e.error?.message?.includes('Unimplemented type') ||
-          e.error?.message?.includes('parse') ||
-          e.sourceId === 'orchard-vectors') {
-        console.warn('PMTiles parsing issue - vector layers may not display correctly');
-        // The map will continue working with just the orthomosaic
-      }
-    });
-
-    // Log when sources are loaded
-    map.current.on('sourcedata', (e) => {
-      if (e.sourceId === 'orchard-vectors' && e.isSourceLoaded) {
-        console.log('Vector source loaded successfully');
-        // Check what layers are available in the PMTiles
-        const source = map.current?.getSource('orchard-vectors');
-        if (source) {
-          // Don't log the source directly to avoid params enumeration
-          console.log('Vector source type:', (source as any).type);
-        }
-      }
-    });
-
-    // Set up tree interaction when map loads
-    map.current.on('load', () => {
-      if (pmtilesValid) {
-        console.log('Setting up tree interactions for PMTiles layer');
-
-        // Debug: Check how many features are in the source
-        const checkFeatures = () => {
-          // Try different layer names
-          const layerNames = [sourceLayerName, 'default', 'trees', '0', '', undefined];
-
-          layerNames.forEach(layerName => {
-            const options = layerName !== undefined ? { sourceLayer: layerName } : {};
-            const features = map.current?.querySourceFeatures('orchard-vectors', options as any);
-            if (features && features.length > 0) {
-              console.log(`Found ${features.length} features with source-layer: '${layerName}'`);
-
-              // Log sample features
-              console.log(`Sample features for layer '${layerName}':`, features.slice(0, 3).map(f => ({
-                geometry: f.geometry,
-                properties: f.properties,
-                sourceLayer: (f as any).sourceLayer || 'unknown'
-              })));
-            }
-          });
-
-          // Check rendered features too
-          const renderedFeatures = map.current?.queryRenderedFeatures(undefined, {
-            layers: ['orchard-trees']
-          });
-          console.log(`Rendered tree features visible: ${renderedFeatures?.length || 0}`);
-        };
-
-        // Check features after initial load and on data events
-        setTimeout(() => {
-          checkFeatures();
-        }, 1000); // Give time for tiles to load
-
-        // Also check on data events
-        let hasChecked = false;
-        map.current?.on('data', (e) => {
-          if (e.sourceId === 'orchard-vectors' && e.isSourceLoaded && !hasChecked) {
-            hasChecked = true;
-            setTimeout(() => {
-              checkFeatures();
-            }, 500);
-          }
-        });
-
-        // Change cursor on hover
-        map.current?.on('mouseenter', 'orchard-trees', () => {
-          if (map.current) map.current.getCanvas().style.cursor = 'pointer';
-        });
-
-        map.current?.on('mouseleave', 'orchard-trees', () => {
-          if (map.current) map.current.getCanvas().style.cursor = '';
-        });
+      // Silently handle PMTiles-related errors
+      if (!e.error?.message?.includes('Unimplemented type') &&
+          !e.error?.message?.includes('parse')) {
+        console.error('Map error:', e.error?.message || e);
       }
     });
 
@@ -721,9 +652,6 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
 
       const feature = e.features[0];
       const properties = feature.properties as TreeProperties;
-
-      // Log properties to see what data is available
-      console.log('Tree properties from PMTiles:', properties);
 
       // Close existing popup
       if (popupRef.current) {
@@ -783,10 +711,10 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
         map.current.getCanvas().style.cursor = 'pointer';
 
         // Optional: Add hover effect by changing tree stroke
-        if (e.features && e.features[0]) {
+        if (e.features && e.features[0] && e.features[0].properties?.tree_id) {
           map.current.setPaintProperty('orchard-trees', 'circle-stroke-width', [
             'case',
-            ['==', ['get', 'tree_id'], e.features[0].properties?.tree_id],
+            ['==', ['get', 'tree_id'], e.features[0].properties.tree_id],
             2,
             [
               'interpolate',
@@ -816,10 +744,6 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
       }
     });
 
-    // Log when map loads
-    map.current.on('load', () => {
-      console.log('Map loaded with orthomosaic and PMTiles vector layers');
-    });
 
     }; // Close initializeMap function
 
@@ -860,7 +784,7 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
 
   return (
     <div className="h-screen w-screen relative">
-      <div ref={mapContainer} className="h-full w-full" />
+      <div ref={mapContainer} className="h-full w-full bg-gray-200" />
 
       {/* Orchard Info Header with Switcher */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg px-4 py-2 z-10">
