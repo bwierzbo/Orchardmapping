@@ -1,0 +1,10 @@
+tree_id,name,variety,status,planted_date,block_id,row_id,position,age,height,lat,lng,last_pruned,last_harvest,yield_estimate,notes
+WA-R01-P05,Apple Tree #4,Honeycrisp,healthy,2019-04-10,A,1,5,5,4.10,48.11395000,-123.26416000,2024-02-22,2024-09-20,180.00,"Excellent health (was R02-P01, now Row 1 Pos 5)"
+WA-R01-P06,Apple Tree #1,Honeycrisp,healthy,2020-03-15,A,1,6,4,3.50,48.11393500,-123.26415400,2024-02-20,2024-09-15,150.50,"Good producer (was R01-P01, now Row 1 Pos 6)"
+WA-R02-P05,Apple Tree #5,Gala,healthy,2019-04-10,A,2,5,5,4.00,48.11395500,-123.26415500,2024-02-22,2024-09-20,175.00,"(was R02-P02, now Row 2 Pos 5)"
+WA-R02-P06,Apple Tree #2,Gala,stressed,2020-03-15,A,2,6,4,3.20,48.11394000,-123.26415000,2024-02-20,2024-09-15,120.00,"Showing signs of water stress (was R01-P02, now Row 2 Pos 6)"
+WA-R03-P05,Apple Tree #6,Fuji,dead,2019-04-10,A,3,5,5,3.80,48.11396000,-123.26415000,2024-02-22,,0.00,"Died from disease (was R02-P03, now Row 3 Pos 5)"
+WA-R03-P06,Apple Tree #3,Fuji,healthy,2020-03-15,A,3,6,4,3.30,48.11394500,-123.26414500,2024-02-20,2024-09-15,145.00,"(was R01-P03, now Row 3 Pos 6)"
+WA-R04-P05,Apple Tree #7,Honeycrisp,healthy,2019-04-10,A,4,5,5,4.20,48.11396500,-123.26414500,2024-02-22,2024-09-20,190.00,"Top producer (was R02-P04, now Row 4 Pos 5)"
+WA-R05-P05,Apple Tree #8,Gala,stressed,2019-04-10,A,5,5,5,3.90,48.11397000,-123.26414000,2024-02-22,2024-09-20,140.00,"Needs attention (was R02-P05, now Row 5 Pos 5)"
+WA-R06-P05,Apple Tree #9,Fuji,healthy,2019-04-10,A,6,5,5,4.10,48.11397500,-123.26413500,2024-02-22,2024-09-20,185.00,"(was R02-P06, now Row 6 Pos 5)"

@@ -1,0 +1,40 @@
+{
+  "orchard": "washington",
+  "mapping": [
+    {
+      "old_tree_id": "WA-R01-P01",
+      "new_tree_id": "WA-001-001",
+      "row_id": "001",
+      "position": 1,
+      "block_id": "A"
+    },
+    {
+      "old_tree_id": "WA-R01-P02",
+      "new_tree_id": "WA-001-002",
+      "row_id": "001",
+      "position": 2,
+      "block_id": "A"
+    },
+    {
+      "old_tree_id": "WA-R01-P03",
+      "new_tree_id": "WA-001-003",
+      "row_id": "001",
+      "position": 3,
+      "block_id": "A"
+    },
+    {
+      "old_tree_id": "WA-R02-P01",
+      "new_tree_id": "WA-002-001",
+      "row_id": "002",
+      "position": 1,
+      "block_id": "A"
+    },
+    {
+      "old_tree_id": "WA-R02-P02",
+      "new_tree_id": "WA-002-002",
+      "row_id": "002",
+      "position": 2,
+      "block_id": "A"
+    }
+  ]
+}

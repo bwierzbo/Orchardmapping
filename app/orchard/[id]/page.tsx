@@ -52,34 +52,43 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
   const map = useRef<maplibregl.Map | null>(null);
   const popupRef = useRef<maplibregl.Popup | null>(null);
   const isInitializing = useRef(false); // Track initialization state
+  const createPopupContentRef = useRef<any>();
+  const fetchTreeDetailsRef = useRef<any>();
   const [selectedTreeId, setSelectedTreeId] = useState<string | null>(null);
   const [selectedTreeFeature, setSelectedTreeFeature] = useState<any>(null);
   const [showOrchardSelector, setShowOrchardSelector] = useState(false);
   const [pmtilesEnabled, setPmtilesEnabled] = useState(false);
 
-  // Function to fetch tree details from API (prepared for future implementation)
+  // Function to fetch tree details from API
   const fetchTreeDetails = useCallback(async (treeId: string): Promise<TreeDetails | null> => {
-    // Placeholder for API integration
     try {
-      // Uncomment when API endpoint is ready:
-      // const response = await fetch(`/api/trees/${treeId}`);
-      // if (!response.ok) throw new Error('Failed to fetch tree details');
-      // return await response.json();
+      const response = await fetch(`/api/trees/${treeId}`);
+      if (!response.ok) {
+        if (response.status === 404) {
+          // Tree not found in database, return null to use PMTiles data
+          return null;
+        }
+        throw new Error('Failed to fetch tree details');
+      }
+      const data = await response.json();
 
-      // For now, simulate API call with timeout
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      // Return mock enhanced data for demo
+      // Convert database format to frontend format
       return {
-        tree_id: treeId,
-        variety: 'Demo Variety',
-        health: 'healthy',
-        status: 'healthy',
-        age: 5,
-        height: 3.5,
-        last_pruned: '2024-03-15',
-        last_harvest: '2024-09-01',
-        yield_estimate: 150
+        tree_id: data.tree_id,
+        name: data.name,
+        variety: data.variety,
+        health: data.status,
+        status: data.status,
+        age: data.age,
+        height: data.height,
+        planted_date: data.planted_date,
+        block_id: data.block_id,
+        row_id: data.row_id,
+        position: data.position,
+        last_pruned: data.last_pruned,
+        last_harvest: data.last_harvest,
+        yield_estimate: data.yield_estimate,
+        notes: data.notes
       };
     } catch (error) {
       console.error('Error fetching tree details:', error);
@@ -250,7 +259,7 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
       const saveButton = document.createElement('button');
       saveButton.className = 'flex-1 px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded hover:bg-green-700 transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1';
       saveButton.textContent = 'Save';
-      saveButton.onclick = () => {
+      saveButton.onclick = async () => {
         // Collect edited values
         const editedData: any = { ...properties };
 
@@ -259,20 +268,51 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
           editedData[elem.dataset.key] = elem.value;
         });
 
-        // TODO: Save to backend API
-        // For now, just update the local display
-        if (popupRef.current) {
-          popupRef.current.setDOMContent(createPopupContent(editedData, details, false, false));
-        }
+        // Save to backend API
+        try {
+          const response = await fetch(`/api/trees/${editedData.tree_id}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              orchard_id: orchard?.id,
+              ...editedData
+            }),
+          });
 
-        // Update the map feature properties (for visual feedback)
-        if (map.current && selectedTreeFeature) {
-          // Update the visual appearance based on new status
-          const newStatus = editedData.status || editedData.health;
-          if (newStatus) {
-            // This would update the circle color based on new status
-            // Note: This is a visual update only, actual data needs backend persistence
+          if (response.ok) {
+            const updatedTree = await response.json();
+
+            // Update the local display with saved data
+            if (popupRef.current) {
+              popupRef.current.setDOMContent(createPopupContentRef.current?.(updatedTree, updatedTree, false, false));
+            }
+
+            // Update the map feature properties (for visual feedback)
+            if (map.current && selectedTreeFeature) {
+              // Update the visual appearance based on new status
+              const newStatus = updatedTree.status;
+              if (newStatus) {
+                // Update the circle color based on new status
+                const colors: { [key: string]: string } = {
+                  'healthy': '#2ecc71',
+                  'stressed': '#f39c12',
+                  'dead': '#e74c3c',
+                  'unknown': '#95a5a6'
+                };
+
+                // Update the feature properties
+                selectedTreeFeature.properties = updatedTree;
+              }
+            }
+          } else {
+            console.error('Failed to save tree data');
+            alert('Failed to save tree data. Please try again.');
           }
+        } catch (error) {
+          console.error('Error saving tree:', error);
+          alert('Error saving tree data. Please try again.');
         }
       };
 
@@ -282,7 +322,7 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
       cancelButton.onclick = () => {
         // Exit edit mode without saving
         if (popupRef.current) {
-          popupRef.current.setDOMContent(createPopupContent(properties, details, false, false));
+          popupRef.current.setDOMContent(createPopupContentRef.current?.(properties, details, false, false));
         }
       };
 
@@ -297,17 +337,17 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
       viewButton.onclick = async () => {
         // Show loading state
         if (data.tree_id && popupRef.current) {
-          const loadingContent = createPopupContent(properties, null, true, false);
+          const loadingContent = createPopupContentRef.current?.(properties, null, true, false);
           popupRef.current.setDOMContent(loadingContent);
 
           // Fetch and update with full details
-          const fullDetails = await fetchTreeDetails(data.tree_id);
+          const fullDetails = await fetchTreeDetailsRef.current?.(data.tree_id);
 
           // Small delay to show loading state
           await new Promise(resolve => setTimeout(resolve, 300));
 
           if (popupRef.current) {
-            const newContent = createPopupContent(properties, fullDetails || properties, false, false);
+            const newContent = createPopupContentRef.current?.(properties, fullDetails || properties, false, false);
             popupRef.current.setDOMContent(newContent);
           }
         }
@@ -320,7 +360,7 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
       editButton.onclick = () => {
         // Enter edit mode
         if (popupRef.current) {
-          popupRef.current.setDOMContent(createPopupContent(properties, details, false, true));
+          popupRef.current.setDOMContent(createPopupContentRef.current?.(properties, details, false, true));
         }
       };
 
@@ -331,7 +371,11 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
     container.appendChild(actions);
 
     return container;
-  }, [selectedTreeFeature, fetchTreeDetails]);
+  }, []);
+
+  // Store stable references to callbacks
+  createPopupContentRef.current = createPopupContent;
+  fetchTreeDetailsRef.current = fetchTreeDetails;
 
   useEffect(() => {
     // Prevent multiple initializations using ref flag
@@ -450,6 +494,18 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
         glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
         layers: [],
         sources: {
+          // Add OpenStreetMap basemap
+          'osm-raster': {
+            type: 'raster',
+            tiles: [
+              'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
+              'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
+              'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png'
+            ],
+            tileSize: 256,
+            attribution: '© OpenStreetMap contributors',
+            maxzoom: 19
+          },
           // Only add orthomosaic if we have a source
           ...(orchard.orthoPmtilesPath ? {
             'orchard-orthomosaic': {
@@ -485,7 +541,22 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
 
     // Add layers after map is created
     map.current.on('load', () => {
-      // Add orthomosaic layer if available
+      // Add basemap layer first
+      if (map.current) {
+        map.current.addLayer({
+          id: 'osm-basemap',
+          type: 'raster',
+          source: 'osm-raster',
+          minzoom: 0,
+          maxzoom: 22,
+          paint: {
+            'raster-opacity': 0.8, // Slightly transparent to blend with orthomosaic
+            'raster-fade-duration': 100
+          }
+        });
+      }
+
+      // Add orthomosaic layer if available (on top of basemap)
       if (orchard.orthoPmtilesPath && map.current) {
         map.current.addLayer({
           id: 'orchard-orthomosaic-layer',
@@ -605,8 +676,6 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
         });
       }
 
-      console.log('Map loaded. Orthomosaic layer:', map.current?.getLayer('orchard-orthomosaic-layer') ? 'exists' : 'missing');
-
       if (pmtilesValid) {
         // Change cursor on hover
         map.current?.on('mouseenter', 'orchard-trees', () => {
@@ -639,11 +708,18 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
 
     // Handle tree click events
     map.current.on('click', 'orchard-trees', async (e) => {
-      if (!e.features || !e.features[0]) return;
-      if (!map.current) return;
+      try {
+        e.preventDefault?.(); // Prevent any default behavior
 
-      const feature = e.features[0];
-      const properties = feature.properties as TreeProperties;
+        if (!e.features || !e.features[0]) {
+          return;
+        }
+        if (!map.current) {
+          return;
+        }
+
+        const feature = e.features[0];
+        const properties = feature.properties as TreeProperties;
 
       // Close existing popup
       if (popupRef.current) {
@@ -666,7 +742,7 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
       }
 
       // Try to fetch detailed data from API (prepared for future)
-      const details = properties.tree_id ? await fetchTreeDetails(properties.tree_id) : null;
+      const details = properties.tree_id ? await fetchTreeDetailsRef.current?.(properties.tree_id) : null;
 
       // Create popup with all settings at once
       const popup = new maplibregl.Popup({
@@ -678,7 +754,7 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
         anchor: 'bottom'
       })
         .setLngLat(clickCoordinates)
-        .setDOMContent(createPopupContent(properties, details))
+        .setDOMContent(createPopupContentRef.current?.(properties, details))
         .addTo(map.current);
 
       // Store reference
@@ -694,6 +770,9 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
           map.current.setLayoutProperty('orchard-tree-labels', 'text-allow-overlap', false);
         }
       });
+      } catch (error) {
+        console.error('Error in tree click handler:', error);
+      }
     });
 
     // Change cursor to pointer when hovering over trees
@@ -771,7 +850,7 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
         // Protocol might not exist, ignore error
       }
     };
-  }, [orchard, createPopupContent, selectedTreeFeature, fetchTreeDetails]); // Re-render if orchard changes
+  }, [orchard]); // Only re-render if orchard changes
 
   // Handle invalid orchard ID or loading state
   if (!orchardId) {
