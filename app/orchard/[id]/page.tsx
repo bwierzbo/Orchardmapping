@@ -52,8 +52,8 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
   const map = useRef<maplibregl.Map | null>(null);
   const popupRef = useRef<maplibregl.Popup | null>(null);
   const isInitializing = useRef(false); // Track initialization state
-  const createPopupContentRef = useRef<any>();
-  const fetchTreeDetailsRef = useRef<any>();
+  const createPopupContentRef = useRef<any>(null);
+  const fetchTreeDetailsRef = useRef<any>(null);
   const [selectedTreeId, setSelectedTreeId] = useState<string | null>(null);
   const [selectedTreeFeature, setSelectedTreeFeature] = useState<any>(null);
   const [showOrchardSelector, setShowOrchardSelector] = useState(false);
