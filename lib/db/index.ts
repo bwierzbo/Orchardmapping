@@ -65,26 +65,32 @@ export async function getTreeById(treeId: string): Promise<Tree | null> {
 // Update tree information
 export async function updateTree(treeId: string, updates: Partial<Tree>): Promise<Tree | null> {
   try {
-    // Build dynamic update query
-    const updateFields = Object.entries(updates)
-      .filter(([key]) => key !== 'tree_id' && key !== 'id')
-      .map(([key]) => `${key} = EXCLUDED.${key}`)
-      .join(', ');
+    // Filter out fields that shouldn't be updated
+    const { tree_id, id, created_at, ...updateData } = updates;
 
-    if (!updateFields) {
+    if (Object.keys(updateData).length === 0) {
       return null;
     }
 
-    const result = await sql`
-      INSERT INTO trees (tree_id, ${sql.raw(Object.keys(updates).join(', '))})
-      VALUES (${treeId}, ${sql.raw(Object.values(updates).map(() => '?').join(', '))})
-      ON CONFLICT (tree_id) DO UPDATE SET
-        ${sql.raw(updateFields)},
-        updated_at = CURRENT_TIMESTAMP
-      RETURNING *
-    `;
+    // Build the SET clause dynamically - safe because we control the keys from TypeScript
+    const setClause = Object.keys(updateData)
+      .map((key, i) => `${key} = $${i + 1}`)
+      .join(', ');
 
-    return result.rows[0] as Tree;
+    const values = Object.values(updateData);
+    values.push(treeId); // Add tree_id as last parameter
+
+    // Use raw SQL query since sql template literals don't support dynamic columns
+    const client = await sql.connect();
+    try {
+      const result = await client.query(
+        `UPDATE trees SET ${setClause}, updated_at = CURRENT_TIMESTAMP WHERE tree_id = $${values.length} RETURNING *`,
+        values
+      );
+      return result.rows[0] as Tree;
+    } finally {
+      client.release();
+    }
   } catch (error) {
     console.error('Error updating tree:', error);
     return null;
@@ -120,8 +126,13 @@ export async function upsertTree(tree: Partial<Tree>): Promise<Tree | null> {
       RETURNING *
     `;
 
-    const result = await sql.query(query, values);
-    return result.rows[0] as Tree;
+    const client = await sql.connect();
+    try {
+      const result = await client.query(query, values);
+      return result.rows[0] as Tree;
+    } finally {
+      client.release();
+    }
   } catch (error) {
     console.error('Error upserting tree:', error);
     return null;
