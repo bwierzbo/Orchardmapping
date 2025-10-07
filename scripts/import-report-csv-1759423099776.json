@@ -1,0 +1,9 @@
+{
+  "timestamp": "2025-10-02T16:38:19.776Z",
+  "input_file": "/Users/benjaminwierzbanowski/Code/orchard-map/scripts/import-trees-sample.csv",
+  "orchard": "washington",
+  "total_trees": 11,
+  "success_count": 11,
+  "error_count": 0,
+  "errors": []
+}

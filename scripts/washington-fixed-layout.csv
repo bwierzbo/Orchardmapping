@@ -1,0 +1,12 @@
+tree_id,name,variety,status,planted_date,block_id,row_id,position,age,height,lat,lng,last_pruned,last_harvest,yield_estimate,notes
+WA-R01-P01,Apple Tree #4,Honeycrisp,healthy,2019-04-10,A,1,1,5,4.10,48.11395000,-123.26416000,2024-02-22,2024-09-20,180.00,Excellent health
+WA-R01-P02,Apple Tree #1,Honeycrisp,healthy,2020-03-15,A,1,2,4,3.50,48.11393500,-123.26415400,2024-02-20,2024-09-15,150.50,Good producer
+WA-R02-P01,Apple Tree #5,Gala,healthy,2019-04-10,A,2,1,5,4.00,48.11395500,-123.26415500,2024-02-22,2024-09-20,175.00,
+WA-R02-P02,Apple Tree #2,Gala,stressed,2020-03-15,A,2,2,4,3.20,48.11394000,-123.26415000,2024-02-20,2024-09-15,120.00,Showing signs of water stress
+WA-R03-P01,Apple Tree #6,Fuji,dead,2019-04-10,A,3,1,5,3.80,48.11396000,-123.26415000,2024-02-22,,0.00,Died from disease
+WA-R03-P02,Apple Tree #3,Fuji,healthy,2020-03-15,A,3,2,4,3.30,48.11394500,-123.26414500,2024-02-20,2024-09-15,145.00,
+WA-R04-P01,Apple Tree #7,Honeycrisp,healthy,2019-04-10,A,4,1,5,4.20,48.11396500,-123.26414500,2024-02-22,2024-09-20,190.00,Top producer
+WA-R05-P01,Apple Tree #8,Gala,stressed,2019-04-10,A,5,1,5,3.90,48.11397000,-123.26414000,2024-02-22,2024-09-20,140.00,Needs attention
+WA-R06-P01,Apple Tree #9,Fuji,healthy,2019-04-10,A,6,1,5,4.10,48.11397500,-123.26413500,2024-02-22,2024-09-20,185.00,
+WA-R07-P01,Apple Tree #10,Honeycrisp,healthy,2019-04-10,A,7,1,5,4.00,48.11398000,-123.26413000,2024-02-22,2024-09-20,180.00,
+WA-R08-P01,Apple Tree #11,Gala,healthy,2019-04-10,A,8,1,5,4.10,48.11398500,-123.26412500,2024-02-22,2024-09-20,182.00,

@@ -1,0 +1,59 @@
+{
+  "orchard": "washington",
+  "trees": [
+    {
+      "tree_id": "WA-R01-P01",
+      "name": "Apple Tree #1",
+      "variety": "Honeycrisp",
+      "status": "healthy",
+      "planted_date": "2020-03-15",
+      "block_id": "A",
+      "row_id": "1",
+      "position": 1,
+      "age": 4,
+      "height": 3.5,
+      "lat": 48.113935,
+      "lng": -123.264154,
+      "last_pruned": "2024-02-20",
+      "last_harvest": "2024-09-15",
+      "yield_estimate": 150.5,
+      "notes": "Good producer, minor pest damage in spring"
+    },
+    {
+      "tree_id": "WA-R01-P02",
+      "name": "Apple Tree #2",
+      "variety": "Gala",
+      "status": "stressed",
+      "planted_date": "2020-03-15",
+      "block_id": "A",
+      "row_id": "1",
+      "position": 2,
+      "age": 4,
+      "height": 3.2,
+      "lat": 48.113940,
+      "lng": -123.264150,
+      "last_pruned": "2024-02-20",
+      "last_harvest": "2024-09-15",
+      "yield_estimate": 120.0,
+      "notes": "Showing signs of water stress"
+    },
+    {
+      "tree_id": "WA-R02-P01",
+      "name": "Apple Tree #3",
+      "variety": "Fuji",
+      "status": "healthy",
+      "planted_date": "2019-04-10",
+      "block_id": "A",
+      "row_id": "2",
+      "position": 1,
+      "age": 5,
+      "height": 4.1,
+      "lat": 48.113945,
+      "lng": -123.264160,
+      "last_pruned": "2024-02-22",
+      "last_harvest": "2024-09-20",
+      "yield_estimate": 180.0,
+      "notes": "Excellent health, high yield"
+    }
+  ]
+}

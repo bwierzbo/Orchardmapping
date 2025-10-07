@@ -1,0 +1,82 @@
+{
+  "orchard": "washington",
+  "mapping": [
+    {
+      "old_tree_id": "WA-R01-P01",
+      "new_tree_id": "WA-R01-P06",
+      "row_id": "1",
+      "position": 6,
+      "comment": "Was marked as row 1 pos 1 → Actually Row 1 (from old pos 1), Position 6 (old row 1 maps to pos 6)"
+    },
+    {
+      "old_tree_id": "WA-R01-P02",
+      "new_tree_id": "WA-R02-P06",
+      "row_id": "2",
+      "position": 6,
+      "comment": "Was marked as row 1 pos 2 → Actually Row 2 (from old pos 2), Position 6 (old row 1 maps to pos 6)"
+    },
+    {
+      "old_tree_id": "WA-R01-P03",
+      "new_tree_id": "WA-R03-P06",
+      "row_id": "3",
+      "position": 6,
+      "comment": "Was marked as row 1 pos 3 → Actually Row 3 (from old pos 3), Position 6 (old row 1 maps to pos 6)"
+    },
+    {
+      "old_tree_id": "WA-R02-P01",
+      "new_tree_id": "WA-R01-P05",
+      "row_id": "1",
+      "position": 5,
+      "comment": "Was marked as row 2 pos 1 → Actually Row 1 (from old pos 1), Position 5 (old row 2 maps to pos 5)"
+    },
+    {
+      "old_tree_id": "WA-R02-P02",
+      "new_tree_id": "WA-R02-P05",
+      "row_id": "2",
+      "position": 5,
+      "comment": "Was marked as row 2 pos 2 → Actually Row 2 (from old pos 2), Position 5 (old row 2 maps to pos 5)"
+    },
+    {
+      "old_tree_id": "WA-R02-P03",
+      "new_tree_id": "WA-R03-P05",
+      "row_id": "3",
+      "position": 5,
+      "comment": "Was marked as row 2 pos 3 → Actually Row 3 (from old pos 3), Position 5 (old row 2 maps to pos 5)"
+    },
+    {
+      "old_tree_id": "WA-R02-P04",
+      "new_tree_id": "WA-R04-P05",
+      "row_id": "4",
+      "position": 5,
+      "comment": "Was marked as row 2 pos 4 → Actually Row 4 (from old pos 4), Position 5 (old row 2 maps to pos 5)"
+    },
+    {
+      "old_tree_id": "WA-R02-P05",
+      "new_tree_id": "WA-R05-P05",
+      "row_id": "5",
+      "position": 5,
+      "comment": "Was marked as row 2 pos 5 → Actually Row 5 (from old pos 5), Position 5 (old row 2 maps to pos 5)"
+    },
+    {
+      "old_tree_id": "WA-R02-P06",
+      "new_tree_id": "WA-R06-P05",
+      "row_id": "6",
+      "position": 5,
+      "comment": "Was marked as row 2 pos 6 → Actually Row 6 (from old pos 6), Position 5 (old row 2 maps to pos 5)"
+    },
+    {
+      "old_tree_id": "WA-R02-P07",
+      "new_tree_id": "WA-R07-P05",
+      "row_id": "7",
+      "position": 5,
+      "comment": "Was marked as row 2 pos 7 → Actually beyond row 6, might need adjustment"
+    },
+    {
+      "old_tree_id": "WA-R02-P08",
+      "new_tree_id": "WA-R08-P05",
+      "row_id": "8",
+      "position": 5,
+      "comment": "Was marked as row 2 pos 8 → Actually beyond row 6, might need adjustment"
+    }
+  ]
+}
