@@ -114,6 +114,28 @@ export const orchards: Record<string, OrchardConfig> = {
       rows: 32,
       acres: 10
     }
+  },
+  manytrees: {
+    id: 'manytrees',
+    name: 'Many Trees Orchard',
+    location: 'Washington State, USA',
+    description: 'Orchard mapping with ODM orthophoto',
+    center: [-123.16743, 48.14192],
+    bounds: {
+      minLng: -123.16823,
+      minLat: 48.14138,
+      maxLng: -123.16663,
+      maxLat: 48.14245
+    },
+    defaultZoom: 18,
+    minZoom: 5,
+    maxZoom: 21.5, // Limited below tile max to prevent map disappearing at full zoom
+    tileMinZoom: 5,
+    tileMaxZoom: 23,
+    orthoPath: '/orchards/manytreesorchard/ortho',
+    orthoPmtilesPath: '/orchards/manytreesorchard/manytrees.pmtiles', // PMTiles with orthomosaic imagery
+    pmtilesPath: '', // No vector tree data yet
+    previewImage: '/orchards/manytreesorchard/preview.jpg'
   }
 };
 
