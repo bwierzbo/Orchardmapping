@@ -1,23 +1,28 @@
 #!/usr/bin/env node
 
 /**
- * Import tree data from CSV into the database
- * Usage: npx tsx scripts/import-trees-csv.ts <orchard-id> <csv-file>
- * Example: npx tsx scripts/import-trees-csv.ts manytrees trees.csv
+ * Import tree data from CSV with AUTO-GENERATED tree_id
+ * Usage: npx tsx scripts/import-trees-csv-autoid.ts <orchard-id> <csv-file>
+ * Example: npx tsx scripts/import-trees-csv-autoid.ts manytrees trees.csv
  *
- * MINIMAL CSV - Only tree_id and coordinates required:
- *   tree_id,X,Y
- *   MT-001,-123.16743,48.14192
- *   MT-002,-123.16740,48.14195
+ * ULTRA-SIMPLE QGIS WORKFLOW:
+ * Just create two fields in QGIS:
+ *   - row_id (Text or Integer) - Row number/name
+ *   - position (Integer) - Position in row (column number)
  *
- * OR use lat/lng column names:
- *   tree_id,lng,lat
+ * CSV format:
+ *   row_id,position,X,Y
+ *   1,1,-123.16743,48.14192
+ *   1,2,-123.16740,48.14195
+ *   2,1,-123.16743,48.14200
  *
- * OPTIONAL COLUMNS (add any you want, skip the rest):
- *   name, variety, status, block_id, row_id, position, age, height,
- *   planted_date, last_pruned, last_harvest, yield_estimate, notes
+ * The script will auto-generate tree_id like:
+ *   MT-R01-P001 (ManYTrees-Row01-Position001)
  *
- * You can add minimal data now and update details later via the map UI!
+ * OPTIONAL COLUMNS (add any you want):
+ *   name, variety, status, block_id, age, height, notes, etc.
+ *
+ * You can add detailed info later via the web map!
  */
 
 import { sql } from '@vercel/postgres';
@@ -28,6 +33,21 @@ import dotenv from 'dotenv';
 
 // Load environment variables
 dotenv.config({ path: '.env.local' });
+
+// Orchard prefixes for tree_id generation
+const ORCHARD_PREFIXES: Record<string, string> = {
+  washington: 'WA',
+  california: 'CA',
+  oregon: 'OR',
+  manytrees: 'MT',
+};
+
+function generateTreeId(orchardId: string, rowId: string, position: number): string {
+  const prefix = ORCHARD_PREFIXES[orchardId] || orchardId.substring(0, 2).toUpperCase();
+  const rowPadded = String(rowId).padStart(2, '0');
+  const posPadded = String(position).padStart(3, '0');
+  return `${prefix}-R${rowPadded}-P${posPadded}`;
+}
 
 async function importTreesFromCSV(orchardId: string, filePath: string) {
   try {
@@ -63,9 +83,21 @@ async function importTreesFromCSV(orchardId: string, filePath: string) {
 
     for (const record of records) {
       try {
+        // Validate required fields
+        if (!record.row_id) {
+          throw new Error('row_id is required');
+        }
+        if (!record.position) {
+          throw new Error('position is required');
+        }
+
+        // Auto-generate tree_id
+        const treeId = generateTreeId(orchardId, record.row_id, record.position);
+
         // Add orchard_id to the record
         const treeData: any = {
           ...record,
+          tree_id: treeId,
           orchard_id: orchardId,
         };
 
@@ -106,14 +138,15 @@ async function importTreesFromCSV(orchardId: string, filePath: string) {
 
         await sql.query(query, values);
         successCount++;
-        console.log(`✅ Imported tree: ${treeData.tree_id}`);
+        console.log(`✅ Imported tree: ${treeId} (Row ${record.row_id}, Pos ${record.position})`);
       } catch (error: any) {
         errorCount++;
+        const treeId = record.tree_id || `R${record.row_id}-P${record.position}`;
         errors.push({
-          tree_id: record.tree_id || 'Unknown',
+          tree_id: treeId,
           error: error.message || 'Unknown error',
         });
-        console.error(`❌ Failed to import tree ${record.tree_id}:`, error.message);
+        console.error(`❌ Failed to import tree ${treeId}:`, error.message);
       }
     }
 
@@ -133,7 +166,7 @@ async function importTreesFromCSV(orchardId: string, filePath: string) {
     // Create a report file
     const reportPath = path.join(
       path.dirname(filePath),
-      `import-report-csv-${Date.now()}.json`
+      `import-report-autoid-${Date.now()}.json`
     );
 
     await fs.writeFile(
@@ -163,12 +196,14 @@ async function importTreesFromCSV(orchardId: string, filePath: string) {
 // Check command line arguments
 const args = process.argv.slice(2);
 if (args.length < 2) {
-  console.log('Usage: npx tsx scripts/import-trees-csv.ts <orchard-id> <csv-file>');
-  console.log('Example: npx tsx scripts/import-trees-csv.ts manytrees trees.csv');
+  console.log('Usage: npx tsx scripts/import-trees-csv-autoid.ts <orchard-id> <csv-file>');
+  console.log('Example: npx tsx scripts/import-trees-csv-autoid.ts manytrees trees.csv');
   console.log('\nAvailable orchards: washington, california, oregon, manytrees');
-  console.log('\nMinimal CSV format (only tree_id + coordinates required):');
-  console.log('  tree_id,X,Y');
-  console.log('  MT-001,-123.16743,48.14192');
+  console.log('\nULTRA-SIMPLE CSV format (row + position only):');
+  console.log('  row_id,position,X,Y');
+  console.log('  1,1,-123.16743,48.14192');
+  console.log('  1,2,-123.16740,48.14195');
+  console.log('\nTree IDs will be auto-generated like: MT-R01-P001');
   process.exit(1);
 }
 
