@@ -42,4 +42,9 @@ next-env.d.ts
 
 # large geospatial files
 *.tif
-*.mbtiles*.pmtiles
+*.mbtiles
+*.pmtiles
+
+# test and temporary files
+test-map.html
+scripts/import-report-*.json

@@ -74,7 +74,8 @@ export async function POST(request: NextRequest) {
       INSERT INTO orchards (id, name, location, center_lat, center_lng) VALUES
         ('washington', 'Washington Orchard', 'Washington State, USA', 48.113935, -123.264154),
         ('california', 'California Orchard', 'California, USA', 36.778259, -119.417931),
-        ('oregon', 'Oregon Orchard', 'Oregon, USA', 44.058173, -123.092650)
+        ('oregon', 'Oregon Orchard', 'Oregon, USA', 44.058173, -123.092650),
+        ('manytrees', 'Many Trees Orchard', 'Washington State, USA', 48.14192, -123.16743)
       ON CONFLICT (id) DO UPDATE SET
         updated_at = CURRENT_TIMESTAMP
     `;

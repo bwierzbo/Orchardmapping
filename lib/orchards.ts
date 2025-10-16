@@ -132,8 +132,8 @@ export const orchards: Record<string, OrchardConfig> = {
     maxZoom: 21.5, // Limited below tile max to prevent map disappearing at full zoom
     tileMinZoom: 5,
     tileMaxZoom: 23,
-    orthoPath: '/orchards/manytreesorchard/ortho',
-    orthoPmtilesPath: '/orchards/manytreesorchard/manytrees.pmtiles', // PMTiles with orthomosaic imagery
+    orthoPath: '/api/tiles/manytrees/{z}/{x}/{y}', // Served via API with Y-flip fix
+    orthoPmtilesPath: '', // Using API tiles instead due to hemisphere issue
     pmtilesPath: '', // No vector tree data yet
     previewImage: '/orchards/manytreesorchard/preview.jpg'
   }
