@@ -455,34 +455,61 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
       let pmtilesValid = false;
       let sourceLayerName = 'default'; // Default layer name
 
-      if (orchard.pmtilesPath) {
-        const validation = await validatePMTiles(orchard.pmtilesPath);
+      // Register protocol if we have ANY PMTiles files (ortho or vector)
+      if (orchard.orthoPmtilesPath || orchard.pmtilesPath) {
+        try {
+          // Remove any existing protocol first
+          maplibregl.removeProtocol('pmtiles');
+        } catch (e) {
+          // Protocol doesn't exist, that's fine
+        }
 
-        if (validation.valid) {
-          pmtilesValid = true;
-          setPmtilesEnabled(true);
+        protocol = new Protocol();
+        maplibregl.addProtocol('pmtiles', protocol.tile);
 
-          // Check available layers and use the first one or look for 'trees'
-          if (validation.metadata?.vector_layers && validation.metadata.vector_layers.length > 0) {
-            // Look for a 'trees' layer first, otherwise use the first available
-            const treesLayer = validation.metadata.vector_layers.find((l: any) => l.id === 'trees');
-            sourceLayerName = treesLayer ? 'trees' : validation.metadata.vector_layers[0].id || 'default';
-          } else {
-            sourceLayerName = 'default';
-          }
-
-          // Register protocol only if valid and not already registered
+        // Add orthomosaic PMTiles if it exists
+        if (orchard.orthoPmtilesPath) {
           try {
-            // Remove any existing protocol first
-            maplibregl.removeProtocol('pmtiles');
-          } catch (e) {
-            // Protocol doesn't exist, that's fine
+            // PMTiles needs the full URL when running in browser
+            const orthoUrl = window.location.origin + orchard.orthoPmtilesPath;
+            const orthoPMTiles = new PMTiles(orthoUrl);
+            protocol.add(orthoPMTiles);
+            console.log('Registered orthomosaic PMTiles:', orthoUrl);
+          } catch (error) {
+            console.error('Failed to register orthomosaic PMTiles:', error);
           }
-          protocol = new Protocol();
-          maplibregl.addProtocol('pmtiles', protocol.tile);
-        } else {
-          pmtilesValid = false;
-          setPmtilesEnabled(false);
+        }
+
+        // Add vector PMTiles if it exists
+        if (orchard.pmtilesPath) {
+          const vectorUrl = window.location.origin + orchard.pmtilesPath;
+          const validation = await validatePMTiles(vectorUrl);
+
+          if (validation.valid) {
+            pmtilesValid = true;
+            setPmtilesEnabled(true);
+
+            // Check available layers and use the first one or look for 'trees'
+            if (validation.metadata?.vector_layers && validation.metadata.vector_layers.length > 0) {
+              // Look for a 'trees' layer first, otherwise use the first available
+              const treesLayer = validation.metadata.vector_layers.find((l: any) => l.id === 'trees');
+              sourceLayerName = treesLayer ? 'trees' : validation.metadata.vector_layers[0].id || 'default';
+            } else {
+              sourceLayerName = 'default';
+            }
+
+            try {
+              // vectorUrl already defined above for validation
+              const vectorPMTiles = new PMTiles(vectorUrl);
+              protocol.add(vectorPMTiles);
+              console.log('Registered vector PMTiles:', vectorUrl);
+            } catch (error) {
+              console.error('Failed to register vector PMTiles:', error);
+            }
+          } else {
+            pmtilesValid = false;
+            setPmtilesEnabled(false);
+          }
         }
       }
 
@@ -512,6 +539,16 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
               // Use PMTiles for orthomosaic if available
               type: 'raster',
               url: `pmtiles://${orchard.orthoPmtilesPath}`,
+              attribution: `${orchard.name} Orthomosaic`,
+              tileSize: 256,
+              minzoom: orchard.tileMinZoom,
+              maxzoom: orchard.tileMaxZoom
+            }
+          } : orchard.orthoPath ? {
+            'orchard-orthomosaic': {
+              // Use regular tiles (XYZ or API)
+              type: 'raster',
+              tiles: [orchard.orthoPath],
               attribution: `${orchard.name} Orthomosaic`,
               tileSize: 256,
               minzoom: orchard.tileMinZoom,
@@ -557,7 +594,7 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
       }
 
       // Add orthomosaic layer if available (on top of basemap)
-      if (orchard.orthoPmtilesPath && map.current) {
+      if ((orchard.orthoPmtilesPath || orchard.orthoPath) && map.current) {
         map.current.addLayer({
           id: 'orchard-orthomosaic-layer',
           type: 'raster',

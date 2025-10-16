@@ -1,0 +1,29 @@
+{
+  "orchard": "manytrees",
+  "trees": [
+    {
+      "tree_id": "MT-A-01-001",
+      "name": "Tree 1",
+      "variety": "Apple",
+      "status": "healthy",
+      "block_id": "A",
+      "row_id": "01",
+      "position": 1,
+      "lat": 48.14192,
+      "lng": -123.16743,
+      "notes": "Sample tree - update with actual coordinates"
+    },
+    {
+      "tree_id": "MT-A-01-002",
+      "name": "Tree 2",
+      "variety": "Apple",
+      "status": "healthy",
+      "block_id": "A",
+      "row_id": "01",
+      "position": 2,
+      "lat": 48.14195,
+      "lng": -123.16740,
+      "notes": "Sample tree - update with actual coordinates"
+    }
+  ]
+}
