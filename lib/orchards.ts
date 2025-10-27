@@ -24,10 +24,9 @@ export interface OrchardConfig {
   pmtilesPath: string; // Path to PMTiles file for vector data
   previewImage?: string; // Optional preview image for selector
   stats?: {
-    trees?: number;
+    trees?: number; // Note: Tree count is now fetched dynamically from database
     blocks?: number;
     rows?: number;
-    acres?: number;
   };
 }
 
@@ -35,7 +34,7 @@ export interface OrchardConfig {
 export const orchards: Record<string, OrchardConfig> = {
   washington: {
     id: 'washington',
-    name: 'Washington Orchard',
+    name: 'Home Orchard',
     location: 'Washington State, USA',
     description: 'Apple orchard in the Pacific Northwest',
     center: [-123.26415, 48.11401],
@@ -52,67 +51,11 @@ export const orchards: Record<string, OrchardConfig> = {
     tileMaxZoom: 23,
     orthoPath: '/orchards/washington/ortho',
     orthoPmtilesPath: '/orchards/washington/tiles/orthomap.pmtiles', // PMTiles with orthomosaic imagery
-    pmtilesPath: '/orchards/washington/tiles/trees.pmtiles', // PMTiles with tree data
+    // pmtilesPath removed - now using database trees only
     previewImage: '/orchards/washington/preview.jpg',
     stats: {
-      trees: 1250,
       blocks: 8,
-      rows: 42,
-      acres: 15
-    }
-  },
-  california: {
-    id: 'california',
-    name: 'Central Valley Orchard',
-    location: 'Central Valley, California',
-    description: 'Citrus orchard in California\'s agricultural heartland',
-    center: [-119.7871, 36.7378],
-    bounds: {
-      minLng: -119.7900,
-      minLat: 36.7350,
-      maxLng: -119.7842,
-      maxLat: 36.7406
-    },
-    defaultZoom: 17,
-    minZoom: 5,
-    maxZoom: 20.5, // Limited below tile max to prevent map disappearing at full zoom
-    tileMinZoom: 5,
-    tileMaxZoom: 21,
-    orthoPath: '/orchards/california/ortho',
-    pmtilesPath: '',
-    previewImage: '/orchards/california/preview.jpg',
-    stats: {
-      trees: 2100,
-      blocks: 12,
-      rows: 68,
-      acres: 25
-    }
-  },
-  oregon: {
-    id: 'oregon',
-    name: 'Willamette Valley Orchard',
-    location: 'Willamette Valley, Oregon',
-    description: 'Pear and cherry orchard in Oregon\'s fertile valley',
-    center: [-123.0351, 44.9429],
-    bounds: {
-      minLng: -123.0380,
-      minLat: 44.9400,
-      maxLng: -123.0322,
-      maxLat: 44.9458
-    },
-    defaultZoom: 17,
-    minZoom: 5,
-    maxZoom: 21.5, // Limited below tile max to prevent map disappearing at full zoom
-    tileMinZoom: 6,
-    tileMaxZoom: 22,
-    orthoPath: '/orchards/oregon/ortho',
-    pmtilesPath: '',
-    previewImage: '/orchards/oregon/preview.jpg',
-    stats: {
-      trees: 850,
-      blocks: 6,
-      rows: 32,
-      acres: 10
+      rows: 42
     }
   },
   manytrees: {

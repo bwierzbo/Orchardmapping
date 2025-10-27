@@ -7,15 +7,15 @@ import {
 } from '@/lib/db/trees';
 
 /**
- * GET /api/trees/[id]
+ * GET /api/trees/[tree_id]
  * Fetch a single tree by tree_id
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ tree_id: string }> }
 ) {
   try {
-    const { id: tree_id } = await params;
+    const { tree_id } = await params;
 
     if (!tree_id) {
       return NextResponse.json(
@@ -51,13 +51,13 @@ export async function GET(
 }
 
 /**
- * PUT /api/trees/[id]
+ * PUT /api/trees/[tree_id]
  * Update a tree
  * Requires authentication
  */
 export async function PUT(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ tree_id: string }> }
 ) {
   try {
     // Check authentication
@@ -69,7 +69,7 @@ export async function PUT(
       );
     }
 
-    const { id: tree_id } = await params;
+    const { tree_id } = await params;
 
     if (!tree_id) {
       return NextResponse.json(
@@ -139,13 +139,13 @@ export async function PUT(
 }
 
 /**
- * DELETE /api/trees/[id]
+ * DELETE /api/trees/[tree_id]
  * Delete a tree
  * Requires authentication
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ tree_id: string }> }
 ) {
   try {
     // Check authentication
@@ -157,7 +157,7 @@ export async function DELETE(
       );
     }
 
-    const { id: tree_id } = await params;
+    const { tree_id } = await params;
 
     if (!tree_id) {
       return NextResponse.json(

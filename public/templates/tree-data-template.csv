@@ -1,0 +1,4 @@
+row_id,position,variety,status,planted_date,age,last_pruned,last_harvest,yield_estimate,notes
+R01,1,Honeycrisp,healthy,2020-04-15,5,2024-02-10,2024-09-15,45.5,Strong growth
+R01,2,Gala,healthy,2020-04-15,5,2024-02-10,2024-09-20,38.2,Good yield
+R02,1,Fuji,stressed,2019-03-20,6,2024-01-15,2024-09-10,25.0,Needs attention

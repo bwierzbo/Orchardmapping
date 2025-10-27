@@ -1,11 +1,20 @@
 import Link from 'next/link';
 import { getAllOrchards } from '../lib/orchards';
+import AddOrchardFAB from '@/components/AddOrchardFAB';
+import AddOrchardCard from '@/components/AddOrchardCard';
+import { getTreeCountsByOrchard } from '../lib/db/trees';
 
-export default function Home() {
+export default async function Home() {
   const orchards = getAllOrchards();
+
+  // Get actual tree counts from database
+  const treeCounts = await getTreeCountsByOrchard();
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50">
+      {/* Floating Action Button - only visible when authenticated */}
+      <AddOrchardFAB />
+
       <div className="container mx-auto px-4 py-12">
         {/* Header */}
         <div className="text-center mb-12">
@@ -64,49 +73,16 @@ export default function Home() {
                     {orchard.description}
                   </p>
 
-                  {/* Stats Grid */}
-                  {orchard.stats && (
-                    <div className="grid grid-cols-2 gap-3 mb-4">
-                      {orchard.stats.trees && (
-                        <div className="bg-gray-50 rounded-lg p-2 text-center">
-                          <p className="text-xs text-gray-500">Trees</p>
-                          <p className="text-lg font-semibold text-gray-900">
-                            {orchard.stats.trees.toLocaleString()}
-                          </p>
-                        </div>
-                      )}
-                      {orchard.stats.acres && (
-                        <div className="bg-gray-50 rounded-lg p-2 text-center">
-                          <p className="text-xs text-gray-500">Acres</p>
-                          <p className="text-lg font-semibold text-gray-900">
-                            {orchard.stats.acres}
-                          </p>
-                        </div>
-                      )}
-                      {orchard.stats.blocks && (
-                        <div className="bg-gray-50 rounded-lg p-2 text-center">
-                          <p className="text-xs text-gray-500">Blocks</p>
-                          <p className="text-lg font-semibold text-gray-900">
-                            {orchard.stats.blocks}
-                          </p>
-                        </div>
-                      )}
-                      {orchard.stats.rows && (
-                        <div className="bg-gray-50 rounded-lg p-2 text-center">
-                          <p className="text-xs text-gray-500">Rows</p>
-                          <p className="text-lg font-semibold text-gray-900">
-                            {orchard.stats.rows}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  {/* Stats - Dynamic tree count from database */}
+                  <div className="bg-gray-50 rounded-lg p-3 mb-4">
+                    <p className="text-xs text-gray-500 text-center">Trees</p>
+                    <p className="text-2xl font-bold text-gray-900 text-center">
+                      {(treeCounts[orchard.id] || 0).toLocaleString()}
+                    </p>
+                  </div>
 
                   {/* View Button */}
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-500">
-                      Zoom: {orchard.tileMinZoom}-{orchard.tileMaxZoom}
-                    </span>
+                  <div className="flex items-center justify-end">
                     <span className="inline-flex items-center text-green-600 font-medium text-sm group-hover:translate-x-1 transition-transform">
                       View Map
                       <svg
@@ -130,31 +106,8 @@ export default function Home() {
           ))}
         </div>
 
-        {/* Add New Orchard Card */}
-        <div className="max-w-6xl mx-auto mt-6">
-          <div className="bg-white/50 border-2 border-dashed border-gray-300 rounded-xl p-8 text-center">
-            <svg
-              className="w-12 h-12 text-gray-400 mx-auto mb-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 4v16m8-8H4"
-              />
-            </svg>
-            <h3 className="text-lg font-semibold text-gray-700 mb-2">
-              Add Your Orchard
-            </h3>
-            <p className="text-sm text-gray-500 max-w-md mx-auto">
-              To add a new orchard, place your orthomosaic tiles and PMTiles in the public/orchards directory
-              and update the configuration in lib/orchards.ts
-            </p>
-          </div>
-        </div>
+        {/* Add New Orchard Card - Auth-aware */}
+        <AddOrchardCard />
 
         {/* Footer */}
         <div className="text-center mt-12 text-sm text-gray-500">
