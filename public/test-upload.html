@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Orchard Upload</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #2d3748;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #718096;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .form-group {
+            margin-bottom: 24px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #4a5568;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        input[type="text"],
+        input[type="file"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+
+        input[type="text"]:focus,
+        input[type="file"]:focus {
+            outline: none;
+            border-color: #10b981;
+        }
+
+        .file-info {
+            margin-top: 8px;
+            padding: 8px 12px;
+            background: #f7fafc;
+            border-radius: 6px;
+            font-size: 13px;
+            color: #4a5568;
+            display: none;
+        }
+
+        .file-info.show {
+            display: block;
+        }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            background: #10b981;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        button:hover:not(:disabled) {
+            background: #059669;
+        }
+
+        button:disabled {
+            background: #cbd5e0;
+            cursor: not-allowed;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #10b981;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .result {
+            margin-top: 24px;
+            padding: 16px;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .result.show {
+            display: block;
+        }
+
+        .result.success {
+            background: #d1fae5;
+            border: 2px solid #10b981;
+            color: #065f46;
+        }
+
+        .result.error {
+            background: #fee2e2;
+            border: 2px solid #ef4444;
+            color: #991b1b;
+        }
+
+        .result h3 {
+            margin-bottom: 8px;
+            font-size: 16px;
+        }
+
+        .result pre {
+            background: rgba(0, 0, 0, 0.05);
+            padding: 12px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 12px;
+            margin-top: 8px;
+        }
+
+        .warning {
+            background: #fef3c7;
+            border: 2px solid #f59e0b;
+            color: #92400e;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 24px;
+            font-size: 14px;
+        }
+
+        .link {
+            display: inline-block;
+            margin-top: 12px;
+            color: #10b981;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌳 Orchard Upload Test</h1>
+        <p class="subtitle">Test the PMTiles upload API endpoint</p>
+
+        <div class="warning">
+            ⚠️ You must be <strong>signed in</strong> to upload orchards.
+            <a href="/login" style="color: #92400e; text-decoration: underline;">Sign in here</a>
+        </div>
+
+        <form id="uploadForm">
+            <div class="form-group">
+                <label for="name">Orchard Name *</label>
+                <input type="text" id="name" name="name" required placeholder="e.g., My Test Orchard">
+            </div>
+
+            <div class="form-group">
+                <label for="location">Location *</label>
+                <input type="text" id="location" name="location" required placeholder="e.g., Washington State, USA">
+            </div>
+
+            <div class="form-group">
+                <label for="pmtilesFile">PMTiles File *</label>
+                <input type="file" id="pmtilesFile" name="pmtilesFile" accept=".pmtiles" required>
+                <div class="file-info" id="fileInfo"></div>
+            </div>
+
+            <button type="submit" id="submitBtn">Upload Orchard</button>
+        </form>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Uploading and processing PMTiles file...</p>
+            <p style="font-size: 12px; color: #718096; margin-top: 8px;">This may take a while for large files</p>
+        </div>
+
+        <div class="result" id="result"></div>
+    </div>
+
+    <script>
+        const form = document.getElementById('uploadForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const loading = document.getElementById('loading');
+        const result = document.getElementById('result');
+        const fileInput = document.getElementById('pmtilesFile');
+        const fileInfo = document.getElementById('fileInfo');
+
+        // Show file info when selected
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+                fileInfo.textContent = `📄 ${file.name} (${sizeMB} MB)`;
+                fileInfo.classList.add('show');
+
+                if (sizeMB > 500) {
+                    fileInfo.textContent += ' ⚠️ Large file - upload may take time';
+                    fileInfo.style.background = '#fef3c7';
+                }
+            } else {
+                fileInfo.classList.remove('show');
+            }
+        });
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            // Reset UI
+            result.classList.remove('show', 'success', 'error');
+            result.innerHTML = '';
+            submitBtn.disabled = true;
+            loading.classList.add('show');
+
+            try {
+                const formData = new FormData(form);
+
+                const response = await fetch('/api/orchards/create', {
+                    method: 'POST',
+                    body: formData,
+                    credentials: 'include'
+                });
+
+                const data = await response.json();
+
+                loading.classList.remove('show');
+
+                if (response.ok) {
+                    result.className = 'result show success';
+                    let html = '<h3>✓ Upload Successful!</h3>';
+                    html += `<p>Orchard ID: <strong>${data.orchardId}</strong></p>`;
+
+                    if (data.warnings && data.warnings.length > 0) {
+                        html += '<p style="margin-top: 8px;"><strong>Warnings:</strong></p>';
+                        html += '<ul style="margin-left: 20px; margin-top: 4px;">';
+                        data.warnings.forEach(w => {
+                            html += `<li>${w}</li>`;
+                        });
+                        html += '</ul>';
+                    }
+
+                    if (data.metadata) {
+                        html += '<pre>' + JSON.stringify(data.metadata, null, 2) + '</pre>';
+                    }
+
+                    html += `<a href="/orchard/${data.orchardId}" class="link">View Orchard →</a>`;
+
+                    result.innerHTML = html;
+
+                    // Reset form
+                    form.reset();
+                    fileInfo.classList.remove('show');
+                } else {
+                    result.className = 'result show error';
+                    let html = '<h3>✗ Upload Failed</h3>';
+                    html += `<p>${data.error || 'Unknown error'}</p>`;
+
+                    if (data.details) {
+                        if (typeof data.details === 'object') {
+                            html += '<pre>' + JSON.stringify(data.details, null, 2) + '</pre>';
+                        } else {
+                            html += `<p style="margin-top: 8px;">${data.details}</p>`;
+                        }
+                    }
+
+                    result.innerHTML = html;
+                }
+            } catch (error) {
+                loading.classList.remove('show');
+                result.className = 'result show error';
+                result.innerHTML = `
+                    <h3>✗ Network Error</h3>
+                    <p>${error.message}</p>
+                    <p style="margin-top: 8px; font-size: 13px;">Make sure you're signed in and the server is running.</p>
+                `;
+            } finally {
+                submitBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>

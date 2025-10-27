@@ -2,12 +2,15 @@
 
 import { useEffect, useRef, useState, use, useCallback } from 'react';
 import { notFound, useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import maplibregl from 'maplibre-gl';
 import { PMTiles, Protocol } from 'pmtiles';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './popup-styles.css';
 import { getOrchardById, getAllOrchards, OrchardConfig } from '../../../lib/orchards';
 import { validatePMTiles } from '../../../lib/pmtiles-utils';
+import BulkTreeImport from './components/BulkTreeImport';
+import { ToastContainer, ToastProps } from '@/components/Toast';
 
 // Type definitions for tree data
 interface TreeProperties {
@@ -39,6 +42,7 @@ interface PageProps {
 
 export default function OrchardPage({ params: paramsPromise }: PageProps) {
   const router = useRouter();
+  const { data: session } = useSession();
 
   // Unwrap the params promise in Next.js 15
   const params = use(paramsPromise);
@@ -54,10 +58,48 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
   const isInitializing = useRef(false); // Track initialization state
   const createPopupContentRef = useRef<any>(null);
   const fetchTreeDetailsRef = useRef<any>(null);
+
+  // Refs for edit mode state (to access current values in map click handler)
+  const isEditModeRef = useRef(false);
+  const currentRowRef = useRef('');
+  const currentPositionRef = useRef(1);
+  const autoIncrementRef = useRef(false);
+
   const [selectedTreeId, setSelectedTreeId] = useState<string | null>(null);
   const [selectedTreeFeature, setSelectedTreeFeature] = useState<any>(null);
   const [showOrchardSelector, setShowOrchardSelector] = useState(false);
   const [pmtilesEnabled, setPmtilesEnabled] = useState(false);
+
+  // Edit mode state
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [currentRow, setCurrentRow] = useState('');
+  const [currentPosition, setCurrentPosition] = useState(1);
+  const [trees, setTrees] = useState<TreeDetails[]>([]);
+  const [autoIncrement, setAutoIncrement] = useState(true);
+
+  // Tree editing state
+  const [isEditingTree, setIsEditingTree] = useState(false);
+  const [editingTree, setEditingTree] = useState<TreeDetails | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Drag state
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartPos = useRef<{ lat: number; lng: number } | null>(null);
+
+  // Toast notifications
+  const [toasts, setToasts] = useState<ToastProps[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Toast helper functions
+  const showToast = useCallback((type: ToastProps['type'], message: string, duration = 3000) => {
+    const id = `toast-${Date.now()}-${Math.random()}`;
+    setToasts(prev => [...prev, { id, type, message, duration, onClose: removeToast }]);
+  }, []);
+
+  const removeToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
 
   // Function to fetch tree details from API
   const fetchTreeDetails = useCallback(async (treeId: string): Promise<TreeDetails | null> => {
@@ -72,23 +114,28 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
       }
       const data = await response.json();
 
+      // API returns { success: true, tree: {...} }
+      const treeData = data.tree || data;
+
       // Convert database format to frontend format
       return {
-        tree_id: data.tree_id,
-        name: data.name,
-        variety: data.variety,
-        health: data.status,
-        status: data.status,
-        age: data.age,
-        height: data.height,
-        planted_date: data.planted_date,
-        block_id: data.block_id,
-        row_id: data.row_id,
-        position: data.position,
-        last_pruned: data.last_pruned,
-        last_harvest: data.last_harvest,
-        yield_estimate: data.yield_estimate,
-        notes: data.notes
+        tree_id: treeData.tree_id,
+        name: treeData.name,
+        variety: treeData.variety,
+        health: treeData.status,
+        status: treeData.status,
+        age: treeData.age,
+        height: treeData.height,
+        planted_date: treeData.planted_date,
+        block_id: treeData.block_id,
+        row_id: treeData.row_id,
+        position: treeData.position,
+        lat: treeData.lat,
+        lng: treeData.lng,
+        last_pruned: treeData.last_pruned,
+        last_harvest: treeData.last_harvest,
+        yield_estimate: treeData.yield_estimate,
+        notes: treeData.notes
       };
     } catch (error) {
       console.error('Error fetching tree details:', error);
@@ -377,6 +424,281 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
   createPopupContentRef.current = createPopupContent;
   fetchTreeDetailsRef.current = fetchTreeDetails;
 
+  // Helper function to get marker color based on status
+  const getMarkerColor = useCallback((status?: string): string => {
+    switch (status) {
+      case 'healthy':
+        return '#10b981'; // Green
+      case 'stressed':
+        return '#f59e0b'; // Yellow/Orange
+      case 'dead':
+        return '#ef4444'; // Red
+      case 'unknown':
+      default:
+        return '#6b7280'; // Gray
+    }
+  }, []);
+
+  // Helper function to apply marker styles
+  const getMarkerStyle = useCallback((el: HTMLElement, status?: string, isNew: boolean = false) => {
+    const baseSize = isEditMode ? 14 : 12; // Slightly larger in edit mode
+
+    el.className = 'tree-marker';
+    el.style.width = `${baseSize}px`;
+    el.style.height = `${baseSize}px`;
+    el.style.borderRadius = '50%';
+    el.style.backgroundColor = getMarkerColor(status);
+    el.style.border = '2px solid white';
+    el.style.cursor = isEditMode ? 'move' : 'pointer';
+    el.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)';
+    el.style.transition = 'transform 0.3s ease, box-shadow 0.3s ease';
+
+    // Add fade-in and pulse for new trees
+    if (isNew) {
+      el.style.animation = 'fadeInPulse 2s ease-out';
+    }
+  }, [isEditMode, getMarkerColor]);
+
+  // Load trees function
+  const loadTrees = useCallback(async () => {
+    if (!orchard) return;
+
+    try {
+      setIsLoading(true);
+      const response = await fetch(`/api/trees?orchard_id=${orchard.id}`);
+      if (response.ok) {
+        const data = await response.json();
+        setTrees(data.trees || []);
+      } else {
+        showToast('error', 'Failed to load trees');
+      }
+    } catch (error) {
+      console.error('Error loading trees:', error);
+      showToast('error', 'Error loading trees');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [orchard, showToast]);
+
+  // Load trees on mount
+  useEffect(() => {
+    loadTrees();
+  }, [loadTrees]);
+
+  // Sync refs with state for map click handler
+  useEffect(() => {
+    isEditModeRef.current = isEditMode;
+    currentRowRef.current = currentRow;
+    currentPositionRef.current = currentPosition;
+    autoIncrementRef.current = autoIncrement;
+    console.log('📝 Refs updated:', {
+      isEditMode: isEditModeRef.current,
+      currentRow: currentRowRef.current,
+      currentPosition: currentPositionRef.current,
+      autoIncrement: autoIncrementRef.current
+    });
+  }, [isEditMode, currentRow, currentPosition, autoIncrement]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Skip if user is typing in an input
+      if ((e.target as HTMLElement).tagName === 'INPUT' ||
+          (e.target as HTMLElement).tagName === 'TEXTAREA' ||
+          (e.target as HTMLElement).tagName === 'SELECT') {
+        return;
+      }
+
+      switch (e.key) {
+        case 'Escape':
+          // Exit edit mode or close modal
+          if (isEditingTree) {
+            setIsEditingTree(false);
+            setEditingTree(null);
+            setShowDeleteConfirm(false);
+          } else if (isEditMode) {
+            setIsEditMode(false);
+            setCurrentRow('');
+            setCurrentPosition(1);
+          }
+          break;
+
+        case 'e':
+        case 'E':
+          // Toggle edit mode (only if not in edit modal)
+          if (!isEditingTree) {
+            setIsEditMode(!isEditMode);
+          }
+          break;
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isEditMode, isEditingTree]);
+
+  // Render tree markers for database trees not in PMTiles
+  useEffect(() => {
+    if (!map.current || trees.length === 0) return;
+
+    const markers: maplibregl.Marker[] = [];
+    const tooltips: HTMLElement[] = [];
+
+    // Add markers for each tree
+    trees.forEach((tree) => {
+      if (tree.lat && tree.lng) {
+        // Create outer container (this will be positioned by MapLibre)
+        const el = document.createElement('div');
+
+        // Create inner marker element that we can transform
+        const markerInner = document.createElement('div');
+
+        // Check if tree is new (created in last 5 seconds)
+        const isNew = Date.now() - new Date(tree.created_at || 0).getTime() < 5000;
+
+        // Apply marker styles using helper function
+        getMarkerStyle(markerInner, tree.status, isNew);
+
+        // Create tooltip element
+        const tooltip = document.createElement('div');
+        tooltip.className = 'tree-marker-tooltip';
+        tooltip.textContent = tree.tree_id || `Row ${tree.row_id}, Pos ${tree.position}`;
+        tooltip.style.cssText = `
+          position: absolute;
+          bottom: 100%;
+          left: 50%;
+          transform: translateX(-50%) translateY(-4px);
+          background: rgba(0, 0, 0, 0.8);
+          color: white;
+          padding: 4px 8px;
+          border-radius: 4px;
+          font-size: 11px;
+          white-space: nowrap;
+          pointer-events: none;
+          opacity: 0;
+          transition: opacity 0.2s ease;
+          z-index: 1000;
+        `;
+        markerInner.appendChild(tooltip);
+        el.appendChild(markerInner);
+        tooltips.push(tooltip);
+
+        // Hover effects - transform the inner element only
+        el.addEventListener('mouseenter', () => {
+          tooltip.style.opacity = '1';
+          if (!isEditMode) {
+            markerInner.style.transform = 'scale(1.3)';
+          }
+        });
+
+        el.addEventListener('mouseleave', () => {
+          tooltip.style.opacity = '0';
+          if (!isEditMode) {
+            markerInner.style.transform = 'scale(1)';
+          }
+        });
+
+        // Create marker with draggable option based on edit mode
+        const marker = new maplibregl.Marker({
+          element: el,
+          draggable: isEditMode,
+          anchor: 'center' // Anchor marker at center to prevent shifting
+        })
+          .setLngLat([tree.lng, tree.lat])
+          .addTo(map.current!);
+
+        // Track if this was a drag or click
+        let hasDragged = false;
+        let clickTimer: NodeJS.Timeout | null = null;
+
+        // Drag start handler
+        marker.on('dragstart', () => {
+          hasDragged = false;
+          setIsDragging(true);
+          dragStartPos.current = { lat: tree.lat!, lng: tree.lng! };
+
+          // Visual feedback during drag - transform inner element only
+          markerInner.style.transform = 'scale(1.5)';
+          markerInner.style.opacity = '0.7';
+          markerInner.style.boxShadow = '0 4px 8px rgba(0,0,0,0.5)';
+          tooltip.style.opacity = '0'; // Hide tooltip while dragging
+        });
+
+        // Drag handler
+        marker.on('drag', () => {
+          hasDragged = true;
+        });
+
+        // Drag end handler
+        marker.on('dragend', async () => {
+          const lngLat = marker.getLngLat();
+
+          // Reset visual feedback
+          markerInner.style.opacity = '1';
+          markerInner.style.transform = 'scale(1)';
+          markerInner.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)';
+
+          // Update position in database
+          await handleTreeDragEnd(tree, lngLat.lat, lngLat.lng, marker);
+        });
+
+        // Click handler to show tree details or edit form
+        el.addEventListener('click', async (e) => {
+          // Stop event propagation to prevent map click handler from firing
+          e.stopPropagation();
+
+          // Use a small delay to distinguish click from drag start
+          clickTimer = setTimeout(async () => {
+            if (!hasDragged && !isDragging) {
+              if (isEditMode) {
+                // In edit mode, open edit form
+                console.log('Tree clicked in edit mode:', JSON.stringify(tree, null, 2));
+                if (!tree.tree_id) {
+                  console.error('Tree has no tree_id:', JSON.stringify(tree, null, 2));
+                  showToast('error', 'Cannot edit tree without tree_id');
+                  return;
+                }
+                const details = await fetchTreeDetails(tree.tree_id);
+                console.log('Fetched tree details:', JSON.stringify(details, null, 2));
+                console.log('Setting editingTree to:', details || tree);
+                setEditingTree(details || tree);
+                setIsEditingTree(true);
+              } else {
+                // Normal mode, show popup
+                const details = await fetchTreeDetails(tree.tree_id);
+                if (map.current) {
+                  const popup = new maplibregl.Popup({ closeButton: true, closeOnClick: true })
+                    .setLngLat([tree.lng, tree.lat])
+                    .setDOMContent(createPopupContent(tree, details || tree))
+                    .addTo(map.current);
+
+                  popupRef.current = popup;
+                  setSelectedTreeId(tree.tree_id);
+                  setSelectedTreeFeature({ properties: tree });
+                }
+              }
+            }
+            hasDragged = false;
+          }, 100);
+        });
+
+        // Reset drag flag on mouse up
+        el.addEventListener('mouseup', () => {
+          setTimeout(() => {
+            hasDragged = false;
+          }, 150);
+        });
+
+        markers.push(marker);
+      }
+    });
+
+    // Cleanup markers on unmount or when trees change
+    return () => {
+      markers.forEach(marker => marker.remove());
+    };
+  }, [trees, isEditMode, createPopupContent, fetchTreeDetails, isDragging, getMarkerStyle]);
+
   useEffect(() => {
     // Prevent multiple initializations using ref flag
     if (isInitializing.current || map.current) return;
@@ -401,8 +723,8 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
         setSelectedTreeId(null);
         setSelectedTreeFeature(null);
         popupRef.current = null;
-        // Clear selected tree label filter
-        if (map.current) {
+        // Clear selected tree label filter (only if layer exists)
+        if (map.current && map.current.getLayer('orchard-tree-labels-selected')) {
           map.current.setFilter('orchard-tree-labels-selected', ['==', ['get', 'tree_id'], '']);
         }
         return;
@@ -444,6 +766,7 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
     };
 
     const initializeMap = async () => {
+      console.log('🗺️ Initializing map...');
       // Clear any existing map content in the container
       if (mapContainer.current) {
         mapContainer.current.innerHTML = '';
@@ -579,7 +902,7 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
     // Add layers after map is created
     map.current.on('load', () => {
       // Add basemap layer first
-      if (map.current) {
+      if (map.current && !map.current.getLayer('osm-basemap')) {
         map.current.addLayer({
           id: 'osm-basemap',
           type: 'raster',
@@ -594,7 +917,7 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
       }
 
       // Add orthomosaic layer if available (on top of basemap)
-      if ((orchard.orthoPmtilesPath || orchard.orthoPath) && map.current) {
+      if ((orchard.orthoPmtilesPath || orchard.orthoPath) && map.current && !map.current.getLayer('orchard-orthomosaic-layer')) {
         map.current.addLayer({
           id: 'orchard-orthomosaic-layer',
           type: 'raster',
@@ -612,11 +935,12 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
       // Add vector layers if PMTiles source exists and is valid
       if (pmtilesValid && orchard.pmtilesPath && map.current) {
         // Trees layer
-        map.current.addLayer({
-          id: 'orchard-trees',
-          type: 'circle',
-          source: 'orchard-vectors',
-          'source-layer': sourceLayerName,
+        if (!map.current.getLayer('orchard-trees')) {
+          map.current.addLayer({
+            id: 'orchard-trees',
+            type: 'circle',
+            source: 'orchard-vectors',
+            'source-layer': sourceLayerName,
           paint: {
               'circle-radius': [
                 'interpolate',
@@ -660,10 +984,12 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
               ],
             'circle-opacity': 0.9
           }
-        });
+          });
+        }
 
         // Tree labels at high zoom with collision avoidance
-        map.current.addLayer({
+        if (!map.current.getLayer('orchard-tree-labels')) {
+          map.current.addLayer({
           id: 'orchard-tree-labels',
           type: 'symbol',
           source: 'orchard-vectors',
@@ -685,10 +1011,12 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
               'text-halo-width': 1.5,
             'text-halo-blur': 0.5
           }
-        });
+          });
+        }
 
         // Selected tree label (always visible)
-        map.current.addLayer({
+        if (!map.current.getLayer('orchard-tree-labels-selected')) {
+          map.current.addLayer({
           id: 'orchard-tree-labels-selected',
           type: 'symbol',
           source: 'orchard-vectors',
@@ -710,7 +1038,8 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
               'text-halo-width': 2,
             'text-halo-blur': 0.5
           }
-        });
+          });
+        }
       }
 
       if (pmtilesValid) {
@@ -743,6 +1072,101 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
       }
     });
 
+    // Handle general map clicks for edit mode tree placement
+    map.current.on('click', async (e) => {
+      console.log('Map clicked!', {
+        isEditMode: isEditModeRef.current,
+        row: currentRowRef.current,
+        position: currentPositionRef.current
+      });
+
+      // Only handle if in edit mode and not clicking on an existing tree
+      // Use ref values to get current state (not closure-captured values)
+      if (!isEditModeRef.current) {
+        console.log('Not in edit mode, ignoring click');
+        return;
+      }
+
+      // Check if clicking on an existing tree layer (only if layer exists)
+      let features: any[] = [];
+      if (map.current && map.current.getLayer('orchard-trees')) {
+        features = map.current.queryRenderedFeatures(e.point, {
+          layers: ['orchard-trees']
+        });
+        console.log('Features at click point:', features);
+      } else {
+        console.log('orchard-trees layer does not exist, skipping feature check');
+      }
+
+      // If clicking on an existing tree, let the tree click handler deal with it
+      if (features && features.length > 0) {
+        console.log('Clicked on existing tree, skipping');
+        return;
+      }
+
+      // Validate inputs - use ref values
+      const row = currentRowRef.current;
+      const position = currentPositionRef.current;
+
+      console.log('Placing tree at row:', row, 'position:', position);
+
+      if (!row || !position) {
+        console.log('Missing row or position');
+        showToast('warning', 'Please enter both row ID and position before placing a tree');
+        return;
+      }
+
+      try {
+        const { lng, lat } = e.lngLat;
+
+        // Create tree data
+        const treeData = {
+          orchard_id: orchard.id,
+          row_id: row,
+          position: position,
+          lat,
+          lng,
+          status: 'healthy' // Default status
+        };
+
+        // Send to API
+        const response = await fetch('/api/trees', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(treeData),
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+
+          // Add to local trees state
+          setTrees(prev => [...prev, result.tree]);
+
+          // Auto-increment position if enabled - use ref value
+          if (autoIncrementRef.current) {
+            setCurrentPosition(prev => prev + 1);
+          }
+
+          // Show success feedback
+          showToast('success', `Tree added at Row ${row}, Position ${position}`);
+        } else {
+          const error = await response.json();
+          if (error.error?.includes('Duplicate')) {
+            showToast('error', `Duplicate tree at Row ${row}, Position ${position}`);
+          } else {
+            showToast('error', `Failed to place tree: ${error.details || error.error}`);
+          }
+        }
+      } catch (error: any) {
+        console.error('Error placing tree:', error);
+        showToast('error', `Error placing tree: ${error.message}`);
+      }
+    });
+
+    console.log('✅ Map click handler for tree placement registered');
+
     // Handle tree click events
     map.current.on('click', 'orchard-trees', async (e) => {
       try {
@@ -757,6 +1181,21 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
 
         const feature = e.features[0];
         const properties = feature.properties as TreeProperties;
+
+        // In edit mode, open edit form instead of popup - use ref value
+        if (isEditModeRef.current && properties.tree_id) {
+          const details = await fetchTreeDetailsRef.current?.(properties.tree_id);
+          // Only open edit form if we have details from database or properties has tree_id
+          if (details && details.tree_id) {
+            setEditingTree(details);
+            setIsEditingTree(true);
+            return;
+          } else if (!details) {
+            // Tree exists in PMTiles but not in database - can't edit
+            showToast('warning', 'This tree exists in the map file but not in the database. Cannot edit or delete.');
+            return;
+          }
+        }
 
       // Close existing popup
       if (popupRef.current) {
@@ -773,9 +1212,12 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
 
       // Force selected tree label to show
       if (map.current && feature) {
-        // Temporarily allow overlap for selected tree
-        const filter: any = ['==', ['get', 'tree_id'], properties.tree_id || ''];
-        map.current.setFilter('orchard-tree-labels-selected', filter);
+        // Temporarily allow overlap for selected tree (only if layer exists)
+        const layer = map.current.getLayer('orchard-tree-labels-selected');
+        if (layer) {
+          const filter: any = ['==', ['get', 'tree_id'], properties.tree_id || ''];
+          map.current.setFilter('orchard-tree-labels-selected', filter);
+        }
       }
 
       // Try to fetch detailed data from API (prepared for future)
@@ -889,6 +1331,153 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
     };
   }, [orchard]); // Only re-render if orchard changes
 
+  // Handle save tree changes
+  const handleSaveTree = async () => {
+    if (!editingTree || !editingTree.tree_id) return;
+
+    setIsSaving(true);
+    try {
+      const response = await fetch(`/api/trees/${editingTree.tree_id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          variety: editingTree.variety,
+          status: editingTree.status,
+          planted_date: editingTree.planted_date,
+          age: editingTree.age,
+          height: editingTree.height,
+          last_pruned: editingTree.last_pruned,
+          last_harvest: editingTree.last_harvest,
+          yield_estimate: editingTree.yield_estimate,
+          notes: editingTree.notes,
+        }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+
+        // Update trees in local state
+        setTrees(prev => prev.map(t =>
+          t.tree_id === editingTree.tree_id ? result.tree : t
+        ));
+
+        // Close modal
+        setIsEditingTree(false);
+        setEditingTree(null);
+
+        // Show success
+        showToast('success', `Tree ${editingTree.tree_id} updated successfully`);
+      } else {
+        const error = await response.json();
+        showToast('error', `Failed to save tree: ${error.details || error.error}`);
+      }
+    } catch (error: any) {
+      console.error('Error saving tree:', error);
+      showToast('error', `Error saving tree: ${error.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Handle delete tree
+  const handleDeleteTree = async () => {
+    console.log('handleDeleteTree called with:', editingTree);
+    if (!editingTree || !editingTree.tree_id) {
+      console.error('Cannot delete: missing editingTree or tree_id', editingTree);
+      showToast('error', 'Cannot delete tree: missing tree ID');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      console.log('Deleting tree:', editingTree.tree_id);
+      const response = await fetch(`/api/trees/${editingTree.tree_id}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        // Remove tree from local state
+        setTrees(prev => prev.filter(t => t.tree_id !== editingTree.tree_id));
+
+        const treeId = editingTree.tree_id;
+
+        // Close modal and confirmation
+        setIsEditingTree(false);
+        setEditingTree(null);
+        setShowDeleteConfirm(false);
+
+        // Show success
+        showToast('success', `Tree ${treeId} deleted successfully`);
+      } else {
+        const error = await response.json();
+        showToast('error', `Failed to delete tree: ${error.details || error.error}`);
+      }
+    } catch (error: any) {
+      console.error('Error deleting tree:', error);
+      showToast('error', `Error deleting tree: ${error.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Handle tree drag end - update position
+  const handleTreeDragEnd = async (tree: TreeDetails, newLat: number, newLng: number, marker: maplibregl.Marker) => {
+    if (!tree.tree_id) return;
+
+    try {
+      const response = await fetch(`/api/trees/${tree.tree_id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          lat: newLat,
+          lng: newLng,
+        }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+
+        // Update trees in local state
+        setTrees(prev => prev.map(t =>
+          t.tree_id === tree.tree_id ? result.tree : t
+        ));
+
+        // Show success with highlight animation
+        const el = marker.getElement();
+        el.style.animation = 'highlightPulse 0.6s ease-out';
+        setTimeout(() => {
+          el.style.animation = '';
+        }, 600);
+
+        showToast('success', `Tree ${tree.tree_id} repositioned`);
+      } else {
+        const error = await response.json();
+        console.error('Failed to update position:', error);
+
+        // Revert to original position on error
+        if (dragStartPos.current) {
+          marker.setLngLat([dragStartPos.current.lng, dragStartPos.current.lat]);
+        }
+        showToast('error', `Failed to reposition tree: ${error.details || error.error}`);
+      }
+    } catch (error: any) {
+      console.error('Error updating tree position:', error);
+
+      // Revert to original position on error
+      if (dragStartPos.current) {
+        marker.setLngLat([dragStartPos.current.lng, dragStartPos.current.lat]);
+      }
+      showToast('error', `Error repositioning tree: ${error.message}`);
+    } finally {
+      setIsDragging(false);
+      dragStartPos.current = null;
+    }
+  };
+
   // Handle invalid orchard ID or loading state
   if (!orchardId) {
     return <div className="h-screen w-screen flex items-center justify-center">Loading...</div>;
@@ -900,7 +1489,23 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
 
   return (
     <div className="h-screen w-screen relative">
-      <div ref={mapContainer} className="h-full w-full bg-gray-200" />
+      {/* Toast Notifications */}
+      <ToastContainer toasts={toasts} onClose={removeToast} />
+
+      {/* Loading Overlay */}
+      {isLoading && (
+        <div className="absolute inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="bg-white rounded-lg p-6 shadow-2xl flex flex-col items-center gap-3">
+            <div className="w-12 h-12 border-4 border-green-600 border-t-transparent rounded-full animate-spin"></div>
+            <p className="text-gray-700 font-medium">Loading trees...</p>
+          </div>
+        </div>
+      )}
+
+      <div
+        ref={mapContainer}
+        className={`h-full w-full bg-gray-200 ${isEditMode ? 'cursor-crosshair ring-4 ring-green-500 ring-inset' : ''}`}
+      />
 
       {/* Orchard Info Header with Switcher */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg px-4 py-2 z-10">
@@ -954,10 +1559,9 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
             >
               <div className="font-medium text-gray-900">{o.name}</div>
               <div className="text-xs text-gray-500">{o.location}</div>
-              {o.stats && (
+              {o.stats && o.stats.trees !== undefined && (
                 <div className="text-xs text-gray-400 mt-1">
-                  {o.stats.trees && `${o.stats.trees} trees`}
-                  {o.stats.acres && ` • ${o.stats.acres} acres`}
+                  {o.stats.trees} trees
                 </div>
               )}
             </button>
@@ -986,8 +1590,134 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
         </svg>
       </button>
 
+      {/* Bottom Toolbar - Centered */}
+      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-3 z-10">
+        {/* Bulk Import Button - Only show when authenticated and not in edit mode */}
+        {session && !isEditMode && (
+          <BulkTreeImport
+            orchardId={orchard.id}
+            onImportComplete={loadTrees}
+          />
+        )}
+
+        <button
+          onClick={() => {
+            if (isEditMode) {
+              setIsEditMode(false);
+              setCurrentRow('');
+              setCurrentPosition(1);
+            } else {
+              setIsEditMode(true);
+            }
+          }}
+          className={`px-6 py-3 rounded-lg shadow-lg font-medium transition-all ${
+            isEditMode
+              ? 'bg-red-600 text-white hover:bg-red-700'
+              : 'bg-white/95 text-gray-700 hover:bg-white backdrop-blur-sm'
+          }`}
+          aria-label={isEditMode ? 'Exit Edit Mode' : 'Enter Edit Mode'}
+        >
+          {isEditMode ? (
+            <span className="flex items-center gap-2">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              Exit Edit Mode
+            </span>
+          ) : (
+            'Enter Edit Mode'
+          )}
+        </button>
+      </div>
+
+      {/* Edit Mode Panel */}
+      {isEditMode && (
+        <div className="absolute top-20 left-4 bg-white/95 backdrop-blur-sm rounded-lg shadow-xl p-4 z-10 w-full max-w-[280px] sm:max-w-sm">
+          <div className="border-l-4 border-green-600 pl-3 mb-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-gray-900 text-base sm:text-lg">Edit Mode Active</h3>
+              <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded font-mono">
+                ESC
+              </span>
+            </div>
+            <p className="text-xs sm:text-sm text-gray-600 mt-1">
+              Click on the map to place trees at the specified row and position
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            {/* Row ID Input */}
+            <div>
+              <label htmlFor="row-input" className="block text-sm font-medium text-gray-700 mb-1">
+                Row ID
+              </label>
+              <input
+                id="row-input"
+                type="text"
+                value={currentRow}
+                onChange={(e) => setCurrentRow(e.target.value)}
+                placeholder="e.g., 1, A, R1"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              />
+            </div>
+
+            {/* Position Input */}
+            <div>
+              <label htmlFor="position-input" className="block text-sm font-medium text-gray-700 mb-1">
+                Position
+              </label>
+              <input
+                id="position-input"
+                type="number"
+                min="1"
+                value={currentPosition}
+                onChange={(e) => setCurrentPosition(parseInt(e.target.value) || 1)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              />
+            </div>
+
+            {/* Auto-increment Checkbox */}
+            <div className="flex items-center">
+              <input
+                id="auto-increment"
+                type="checkbox"
+                checked={autoIncrement}
+                onChange={(e) => setAutoIncrement(e.target.checked)}
+                className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500"
+              />
+              <label htmlFor="auto-increment" className="ml-2 text-sm text-gray-700">
+                Auto-increment position after placing
+              </label>
+            </div>
+
+            {/* Current Values Display */}
+            <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+              <p className="text-xs font-medium text-gray-500 mb-1">Next Tree ID</p>
+              <p className="text-sm font-mono text-gray-900">
+                {currentRow && currentPosition
+                  ? `${orchard.id}-R${String(currentRow).padStart(2, '0')}-P${String(currentPosition).padStart(3, '0')}`
+                  : 'Enter row and position'}
+              </p>
+            </div>
+
+            {/* Instructions */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <p className="text-xs text-blue-800">
+                <span className="font-semibold">Instructions:</span> Fill in the row and position, then click anywhere on the map to place a tree at that location.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Mode Visual Indicator - Border around map */}
+      {isEditMode && (
+        <div className="absolute inset-0 pointer-events-none border-4 border-green-500 z-[5] rounded-lg"
+             style={{ boxShadow: 'inset 0 0 20px rgba(34, 197, 94, 0.3)' }} />
+      )}
+
       {/* Optional: Selected tree indicator with close button */}
-      {selectedTreeId && (
+      {selectedTreeId && !isEditingTree && (
         <div className="absolute bottom-4 left-4 bg-white rounded-lg shadow-lg p-3 max-w-xs flex items-center justify-between animate-fade-in">
           <p className="text-sm text-gray-600">
             Selected: <span className="font-medium text-gray-900">Tree {selectedTreeId}</span>
@@ -1000,8 +1730,8 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
                 popupRef.current.remove();
                 popupRef.current = null;
               }
-              // Clear selected tree label filter
-              if (map.current) {
+              // Clear selected tree label filter (only if layer exists)
+              if (map.current && map.current.getLayer('orchard-tree-labels-selected')) {
                 map.current.setFilter('orchard-tree-labels-selected', ['==', ['get', 'tree_id'], '']);
               }
             }}
@@ -1013,6 +1743,266 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
             </svg>
           </button>
         </div>
+      )}
+
+      {/* Tree Edit Modal */}
+      {isEditingTree && editingTree && (
+        <>
+          {/* Modal Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40"
+            onClick={() => {
+              if (!isSaving) {
+                setIsEditingTree(false);
+                setEditingTree(null);
+                setShowDeleteConfirm(false);
+              }
+            }}
+          />
+
+          {/* Modal Content */}
+          <div className="fixed inset-y-0 right-0 w-full max-w-md bg-white shadow-2xl z-50 overflow-y-auto">
+            <div className="p-6">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-200">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">Edit Tree</h2>
+                  <p className="text-sm text-gray-500 mt-1 font-mono">{editingTree.tree_id}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    if (!isSaving) {
+                      setIsEditingTree(false);
+                      setEditingTree(null);
+                      setShowDeleteConfirm(false);
+                    }
+                  }}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                  disabled={isSaving}
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Form Fields */}
+              <div className="space-y-4">
+                {/* Row ID (Read-only) */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Row ID</label>
+                  <input
+                    type="text"
+                    value={editingTree.row_id || ''}
+                    disabled
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-600 cursor-not-allowed"
+                  />
+                </div>
+
+                {/* Position (Read-only) */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Position</label>
+                  <input
+                    type="number"
+                    value={editingTree.position || ''}
+                    disabled
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-600 cursor-not-allowed"
+                  />
+                </div>
+
+                {/* Variety */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Variety</label>
+                  <input
+                    type="text"
+                    value={editingTree.variety || ''}
+                    onChange={(e) => setEditingTree({ ...editingTree, variety: e.target.value })}
+                    placeholder="e.g., Fuji, Gala, Honeycrisp"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    disabled={isSaving}
+                  />
+                </div>
+
+                {/* Status */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                  <select
+                    value={editingTree.status || 'unknown'}
+                    onChange={(e) => setEditingTree({ ...editingTree, status: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    disabled={isSaving}
+                  >
+                    <option value="unknown">Unknown</option>
+                    <option value="healthy">Healthy</option>
+                    <option value="stressed">Stressed</option>
+                    <option value="dead">Dead</option>
+                  </select>
+                </div>
+
+                {/* Planted Date */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Planted Date</label>
+                  <input
+                    type="date"
+                    value={editingTree.planted_date ? new Date(editingTree.planted_date).toISOString().split('T')[0] : ''}
+                    onChange={(e) => setEditingTree({ ...editingTree, planted_date: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    disabled={isSaving}
+                  />
+                </div>
+
+                {/* Age */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Age (years)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={editingTree.age || ''}
+                    onChange={(e) => setEditingTree({ ...editingTree, age: parseFloat(e.target.value) || undefined })}
+                    placeholder="e.g., 5"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    disabled={isSaving}
+                  />
+                </div>
+
+                {/* Height */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Height (meters)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={editingTree.height || ''}
+                    onChange={(e) => setEditingTree({ ...editingTree, height: parseFloat(e.target.value) || undefined })}
+                    placeholder="e.g., 3.5"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    disabled={isSaving}
+                  />
+                </div>
+
+                {/* Last Pruned */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Last Pruned</label>
+                  <input
+                    type="date"
+                    value={editingTree.last_pruned ? new Date(editingTree.last_pruned).toISOString().split('T')[0] : ''}
+                    onChange={(e) => setEditingTree({ ...editingTree, last_pruned: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    disabled={isSaving}
+                  />
+                </div>
+
+                {/* Last Harvest */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Last Harvest</label>
+                  <input
+                    type="date"
+                    value={editingTree.last_harvest ? new Date(editingTree.last_harvest).toISOString().split('T')[0] : ''}
+                    onChange={(e) => setEditingTree({ ...editingTree, last_harvest: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    disabled={isSaving}
+                  />
+                </div>
+
+                {/* Yield Estimate */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Last Harvest Yield (kg)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={editingTree.yield_estimate || ''}
+                    onChange={(e) => setEditingTree({ ...editingTree, yield_estimate: parseFloat(e.target.value) || undefined })}
+                    placeholder="e.g., 45.5"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    disabled={isSaving}
+                  />
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                  <textarea
+                    value={editingTree.notes || ''}
+                    onChange={(e) => setEditingTree({ ...editingTree, notes: e.target.value })}
+                    placeholder="Add any notes about this tree..."
+                    rows={4}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
+                    disabled={isSaving}
+                  />
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="mt-6 space-y-3">
+                {/* Save Button */}
+                <button
+                  onClick={handleSaveTree}
+                  disabled={isSaving}
+                  className="w-full px-4 py-3 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {isSaving ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Save Changes'
+                  )}
+                </button>
+
+                {/* Delete Button */}
+                {!showDeleteConfirm ? (
+                  <button
+                    onClick={() => setShowDeleteConfirm(true)}
+                    disabled={isSaving}
+                    className="w-full px-4 py-3 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Delete Tree
+                  </button>
+                ) : (
+                  <div className="bg-red-50 border-2 border-red-600 rounded-lg p-4">
+                    <p className="text-sm font-medium text-red-900 mb-3">
+                      Delete {editingTree.tree_id}? This cannot be undone.
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleDeleteTree}
+                        disabled={isSaving}
+                        className="flex-1 px-4 py-2 bg-red-600 text-white font-medium rounded hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isSaving ? 'Deleting...' : 'Yes, Delete'}
+                      </button>
+                      <button
+                        onClick={() => setShowDeleteConfirm(false)}
+                        disabled={isSaving}
+                        className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 font-medium rounded hover:bg-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Cancel Button */}
+                <button
+                  onClick={() => {
+                    if (!isSaving) {
+                      setIsEditingTree(false);
+                      setEditingTree(null);
+                      setShowDeleteConfirm(false);
+                    }
+                  }}
+                  disabled={isSaving}
+                  className="w-full px-4 py-3 bg-gray-200 text-gray-700 font-medium rounded-lg hover:bg-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
