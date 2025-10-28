@@ -51,7 +51,7 @@ export const orchards: Record<string, OrchardConfig> = {
     tileMaxZoom: 23,
     orthoPath: '/orchards/washington/ortho',
     orthoPmtilesPath: '/orchards/washington/tiles/orthomap.pmtiles', // PMTiles with orthomosaic imagery
-    // pmtilesPath removed - now using database trees only
+    pmtilesPath: '', // Using database trees only
     previewImage: '/orchards/washington/preview.jpg',
     stats: {
       blocks: 8,

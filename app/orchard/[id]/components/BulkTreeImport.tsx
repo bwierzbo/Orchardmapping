@@ -171,7 +171,7 @@ export default function BulkTreeImport({ orchardId, onImportComplete }: BulkTree
                   <div className="text-sm text-blue-800 space-y-1">
                     <p><strong>Required columns (first two):</strong></p>
                     <ul className="ml-4 list-disc">
-                      <li><code className="bg-blue-100 px-1 rounded">row_id</code> - Row identifier (e.g., "R01", "1", "A")</li>
+                      <li><code className="bg-blue-100 px-1 rounded">row_id</code> - Row identifier (e.g., &quot;R01&quot;, &quot;1&quot;, &quot;A&quot;)</li>
                       <li><code className="bg-blue-100 px-1 rounded">position</code> - Position number in row (e.g., 1, 2, 3)</li>
                     </ul>
                     <p className="mt-2"><strong>Optional columns (any order):</strong></p>

@@ -71,7 +71,10 @@ export async function GET(
       contentType = 'image/webp';
     }
 
-    return new NextResponse(tileData, {
+    // Convert Buffer to Uint8Array for NextResponse compatibility
+    const arrayBuffer = new Uint8Array(tileData).buffer;
+
+    return new NextResponse(arrayBuffer, {
       headers: {
         'Content-Type': contentType,
         'Cache-Control': 'public, max-age=31536000, immutable',
