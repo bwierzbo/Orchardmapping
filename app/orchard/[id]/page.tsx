@@ -665,7 +665,7 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
                 setIsEditingTree(true);
               } else {
                 // Normal mode, show popup
-                const details = await fetchTreeDetails(tree.tree_id);
+                const details = tree.tree_id ? await fetchTreeDetails(tree.tree_id) : null;
                 if (map.current) {
                   const popup = new maplibregl.Popup({ closeButton: true, closeOnClick: true })
                     .setLngLat([tree.lng, tree.lat])
@@ -673,7 +673,7 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
                     .addTo(map.current);
 
                   popupRef.current = popup;
-                  setSelectedTreeId(tree.tree_id);
+                  setSelectedTreeId(tree.tree_id || null);
                   setSelectedTreeFeature({ properties: tree });
                 }
               }
