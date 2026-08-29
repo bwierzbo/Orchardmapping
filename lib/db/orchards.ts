@@ -1,5 +1,5 @@
 import { sql } from '@vercel/postgres';
-import { OrchardConfig, OrchardBounds } from '../orchards';
+import { OrchardConfig } from '../types';
 import { buildUpdateSet } from './sql-helpers';
 import { toNum } from './decode';
 

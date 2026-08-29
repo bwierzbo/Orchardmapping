@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireSession, WRITER_ROLES } from '@/lib/api-auth';
 import { validateTreeUpdate, formatValidationErrors, TreeRowData } from '@/lib/tree-validation';
+import { serializeTree } from '@/lib/serialize';
 import { handleApiError } from '@/lib/api-errors';
 import {
   getTreeById,
@@ -38,7 +39,7 @@ export async function GET(
 
     return NextResponse.json({
       success: true,
-      tree
+      tree: serializeTree(tree)
     });
   } catch (error) {
     return handleApiError(error, 'GET /api/trees/[id]');
@@ -122,7 +123,7 @@ export async function PUT(
     return NextResponse.json({
       success: true,
       message: 'Tree updated successfully',
-      tree: updatedTree
+      tree: serializeTree(updatedTree)
     });
   } catch (error) {
     return handleApiError(error, 'PUT /api/trees/[id]');

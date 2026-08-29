@@ -7,7 +7,7 @@ import maplibregl from 'maplibre-gl';
 import { PMTiles, Protocol } from 'pmtiles';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './popup-styles.css';
-import { OrchardConfig } from '../../../lib/orchards';
+import { OrchardConfig } from '@/lib/types';
 import { validatePMTiles } from '../../../lib/pmtiles-utils';
 import BulkTreeImport from './components/BulkTreeImport';
 import { ToastContainer, ToastProps } from '@/components/Toast';

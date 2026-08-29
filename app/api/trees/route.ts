@@ -8,6 +8,7 @@ import {
   TreeInsertData
 } from '@/lib/db/trees';
 import { validateTreeRow, formatValidationErrors, TreeRowData } from '@/lib/tree-validation';
+import { serializeTree } from '@/lib/serialize';
 
 /**
  * GET /api/trees?orchard_id=washington
@@ -32,7 +33,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       count: trees.length,
-      trees
+      trees: trees.map(serializeTree)
     });
   } catch (error) {
     return handleApiError(error, 'GET /api/trees');
@@ -138,7 +139,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: 'Tree created successfully',
-      tree
+      tree: serializeTree(tree)
     }, { status: 201 });
   } catch (error) {
     return handleApiError(error, 'POST /api/trees');
