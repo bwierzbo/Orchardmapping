@@ -2,36 +2,94 @@
 @tailwind components;
 @tailwind utilities;
 
-html {
+/* "Conifer & Flag" tokens (RGB triplets so Tailwind alpha works).
+   Light is the default; .dark flips the palette. */
+:root {
+  color-scheme: light;
+  --ink: 20 33 26;        /* #14211A */
+  --paper: 245 246 241;   /* #F5F6F1 */
+  --surface: 255 255 255; /* #FFFFFF */
+  --canopy-50: 240 246 241;
+  --canopy-100: 222 236 226;
+  --canopy-600: 47 107 63;   /* #2F6B3F */
+  --canopy-700: 38 87 51;    /* #265733 */
+  --canopy-800: 30 69 41;
+  --bark: 95 90 80;          /* #5F5A50 */
+  --flag-600: 217 72 28;     /* #D9481C */
+  --flag-700: 184 58 20;
+  --line: 226 229 223;
+}
+
+.dark {
+  color-scheme: dark;
+  --ink: 235 240 236;
+  --paper: 16 23 19;       /* deep conifer night */
+  --surface: 26 35 29;
+  --canopy-50: 26 38 30;
+  --canopy-100: 32 48 37;
+  --canopy-600: 92 168 112; /* lightened for contrast on dark */
+  --canopy-700: 122 190 140;
+  --canopy-800: 150 208 164;
+  --bark: 160 155 144;
+  --flag-600: 240 100 56;
+  --flag-700: 248 128 90;
+  --line: 45 56 49;
+}
+
+html,
+body {
   height: 100%;
 }
 
 body {
-  height: 100%;
   margin: 0;
   padding: 0;
+  background-color: rgb(var(--paper));
+  color: rgb(var(--ink));
 }
 
-:root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 214, 219, 220;
-  --background-end-rgb: 255, 255, 255;
+/* Safe-area helpers for phone-in-the-field use */
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 0, 0, 0;
-    --background-end-rgb: 0, 0, 0;
+/* Focus visibility everywhere */
+:focus-visible {
+  outline: 2px solid rgb(var(--canopy-600));
+  outline-offset: 2px;
+}
+
+/* Survey caption — the signature: thin rule + mono metadata line */
+.survey-caption {
+  @apply font-mono text-xs uppercase tracking-widest text-bark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
-body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
+/* MapLibre chrome adjustments: larger touch targets, mono scale bar */
+.maplibregl-ctrl-group button {
+  width: 40px !important;
+  height: 40px !important;
+}
+.maplibregl-ctrl-scale {
+  font-family: var(--font-plex-mono), monospace;
+  font-size: 10px;
+}
+.dark .maplibregl-ctrl-group {
+  background: rgb(var(--surface));
+}
+.dark .maplibregl-ctrl-group button {
+  filter: invert(0.9) hue-rotate(180deg);
 }

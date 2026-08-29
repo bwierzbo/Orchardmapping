@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import maplibregl from 'maplibre-gl';
-import { Protocol } from 'pmtiles';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { OrchardConfig, ClientTree, TreeStatus } from '@/lib/types';
 import { TREE_STATUSES } from '@/lib/types';
 import { buildMapStyle } from '@/lib/map-style';
-import { ToastContainer, ToastProps } from '@/components/Toast';
+import { ensurePmtilesProtocol } from '@/lib/pmtiles-protocol';
+import { toast } from 'sonner';
 import BulkTreeImport from '../components/BulkTreeImport';
 import { useTrees } from './useTrees';
 import { useTreeLayer } from './useTreeLayer';
@@ -17,27 +17,6 @@ import TreeDetailPanel from './TreeDetailPanel';
 import EditModePanel from './EditModePanel';
 import MapLegend from './MapLegend';
 import OrchardSwitcher from './OrchardSwitcher';
-
-// Module-level singleton: registering/unregistering the global pmtiles
-// protocol per mount races in-flight tile requests under StrictMode.
-const pmtilesProtocol = new Protocol();
-
-// 1x1 transparent PNG. PMTiles archives are sparse — tiles outside the
-// imagery footprint are absent and the protocol resolves {data: null},
-// which MapLibre leaves in 'loading' forever (so 'load'/'idle' never
-// fire). Serve a transparent tile for gaps instead.
-const EMPTY_TILE = Uint8Array.from(
-  atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII='),
-  (c) => c.charCodeAt(0)
-);
-
-maplibregl.addProtocol('pmtiles', async (params, abortController) => {
-  const result = await pmtilesProtocol.tile(params, abortController);
-  if (params.type !== 'json' && (!result || result.data === null)) {
-    return { data: EMPTY_TILE };
-  }
-  return result;
-});
 
 export interface OrchardViewerProps {
   orchard: OrchardConfig;
@@ -59,17 +38,11 @@ export default function OrchardViewer({
   const [mapObj, setMapObj] = useState<maplibregl.Map | null>(null);
   const mapReady = mapObj !== null;
 
-  // Toasts (legacy component; replaced by sonner in the design pass)
-  const [toasts, setToasts] = useState<ToastProps[]>([]);
-  const removeToast = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  }, []);
   const showToast = useCallback(
-    (type: ToastProps['type'], message: string) => {
-      const id = `toast-${Date.now()}-${Math.random()}`;
-      setToasts((prev) => [...prev, { id, type, message, duration: 3000, onClose: removeToast }]);
+    (type: 'success' | 'error' | 'warning' | 'info', message: string) => {
+      toast[type](message);
     },
-    [removeToast]
+    []
   );
 
   // Trees: server-seeded, optimistic CRUD
@@ -111,6 +84,7 @@ export default function OrchardViewer({
   // ---- map lifecycle ----
   useEffect(() => {
     if (!mapContainer.current) return;
+    ensurePmtilesProtocol();
 
     // Camera precedence: ?tree= (handled after load) > #map= > orchard defaults
     const hashCamera = parseMapHash(window.location.hash);
@@ -268,12 +242,10 @@ export default function OrchardViewer({
 
   return (
     <div className="h-dvh w-full relative" onKeyDown={onKeyDown}>
-      <ToastContainer toasts={toasts} onClose={removeToast} />
-
       <div
         ref={mapContainer}
-        className={`h-full w-full bg-gray-200 ${
-          editMode ? 'cursor-crosshair ring-4 ring-orange-500 ring-inset' : ''
+        className={`h-full w-full bg-line ${
+          editMode ? 'cursor-crosshair ring-4 ring-flag-600 ring-inset' : ''
         }`}
       />
 
@@ -281,19 +253,19 @@ export default function OrchardViewer({
       <button
         onClick={() => router.push('/')}
         aria-label="All orchards"
-        className="absolute top-4 left-4 z-10 bg-white rounded-lg shadow-lg p-2.5 hover:bg-gray-50"
+        className="absolute top-4 left-4 z-10 bg-surface rounded-lg shadow-lg p-2.5 hover:bg-canopy-50"
       >
-        <svg aria-hidden className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg aria-hidden className="w-5 h-5 text-ink" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
         </svg>
       </button>
 
       {/* Orchard header */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg px-4 py-2 z-10 max-w-[calc(100vw-9rem)]">
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-surface/95 backdrop-blur-sm rounded-lg shadow-lg px-4 py-2 z-10 max-w-[calc(100vw-9rem)]">
         <div className="flex items-center gap-3">
           <div className="min-w-0">
-            <h1 className="text-base sm:text-lg font-bold text-gray-900 truncate">{orchard.name}</h1>
-            <p className="text-xs text-gray-600 truncate">{orchard.location}</p>
+            <h1 className="text-base sm:text-lg font-bold text-ink truncate">{orchard.name}</h1>
+            <p className="text-xs text-bark truncate">{orchard.location}</p>
           </div>
           <OrchardSwitcher orchards={allOrchards} currentId={orchard.id} />
         </div>
@@ -305,9 +277,9 @@ export default function OrchardViewer({
       {/* Empty state */}
       {trees.length === 0 && !editMode && (
         <div className="absolute inset-x-0 bottom-28 z-10 flex justify-center pointer-events-none">
-          <div className="bg-white/95 rounded-xl shadow-lg px-5 py-4 text-center pointer-events-auto">
-            <p className="text-sm font-medium text-gray-800">No trees mapped yet</p>
-            <p className="text-xs text-gray-500 mt-1">
+          <div className="bg-surface/95 rounded-xl shadow-lg px-5 py-4 text-center pointer-events-auto">
+            <p className="text-sm font-medium text-ink">No trees mapped yet</p>
+            <p className="text-xs text-bark mt-1">
               {canEdit
                 ? 'Enter edit mode to place trees, or import a CSV.'
                 : 'Sign in to start mapping trees.'}
@@ -326,8 +298,8 @@ export default function OrchardViewer({
             onClick={() => setEditMode((v) => !v)}
             className={`px-4 py-3 rounded-lg shadow-lg text-sm font-medium ${
               editMode
-                ? 'bg-orange-600 text-white hover:bg-orange-700'
-                : 'bg-white text-gray-800 hover:bg-gray-50'
+                ? 'bg-flag-600 text-white hover:bg-flag-700'
+                : 'bg-surface text-ink hover:bg-canopy-50'
             }`}
           >
             {editMode ? 'Exit Edit Mode' : 'Enter Edit Mode'}

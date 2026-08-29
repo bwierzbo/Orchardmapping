@@ -21,6 +21,7 @@ export async function uploadPMTilesToBlob(
   const blob = await put(pathname, file, {
     access: 'public',
     addRandomSuffix: false,
+    allowOverwrite: true,
     contentType: 'application/vnd.pmtiles',
     // Required for reliable >100MB uploads
     multipart: options?.multipart ?? false,
@@ -46,6 +47,7 @@ export async function uploadPreviewImageToBlob(
   const blob = await put(pathname, file, {
     access: 'public',
     addRandomSuffix: false,
+    allowOverwrite: true,
   });
 
   return {

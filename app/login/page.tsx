@@ -3,11 +3,19 @@
 import { signIn } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, Suspense } from 'react';
+import Link from 'next/link';
+import { Loader2 } from 'lucide-react';
+
+function safeCallbackUrl(raw: string | null): string {
+  // Only allow same-site relative paths — never an absolute URL
+  if (!raw || !raw.startsWith('/') || raw.startsWith('//')) return '/';
+  return raw;
+}
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get('callbackUrl') || '/';
+  const callbackUrl = safeCallbackUrl(searchParams.get('callbackUrl'));
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -33,89 +41,94 @@ function LoginForm() {
         router.push(callbackUrl);
         router.refresh();
       }
-    } catch (error) {
+    } catch {
       setError('An error occurred. Please try again.');
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-blue-50">
-      <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Orchard Map</h1>
-          <p className="text-gray-600">Sign in to manage your orchards</p>
+    <main className="min-h-screen flex items-center justify-center bg-paper px-5">
+      <div className="w-full max-w-sm">
+        <div className="bg-surface border border-line rounded-lg shadow-xs overflow-hidden">
+          <div aria-hidden className="h-1.5 bg-gradient-to-r from-canopy-600 via-canopy-700 to-flag-600" />
+          <div className="p-7">
+            <h1 className="font-display text-2xl font-semibold text-ink">Sign in</h1>
+            <p className="text-sm text-bark mt-1">
+              For collaborators. Just visiting?{' '}
+              <Link href="/" className="text-canopy-600 hover:text-canopy-700 underline underline-offset-2">
+                The maps are public →
+              </Link>
+            </p>
+
+            <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+              {error && (
+                <div
+                  role="alert"
+                  aria-live="polite"
+                  className="bg-status-dead/10 border border-status-dead/30 text-status-dead px-3.5 py-2.5 rounded-md text-sm"
+                >
+                  {error}
+                </div>
+              )}
+
+              <div>
+                <label htmlFor="email" className="block text-xs font-medium text-bark mb-1.5">
+                  Email
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  autoFocus
+                  autoComplete="email"
+                  className="w-full px-3.5 py-2 bg-surface text-ink border border-line rounded-md focus:ring-2 focus:ring-canopy-600 focus:border-transparent outline-none"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="password" className="block text-xs font-medium text-bark mb-1.5">
+                  Password
+                </label>
+                <input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  autoComplete="current-password"
+                  className="w-full px-3.5 py-2 bg-surface text-ink border border-line rounded-md focus:ring-2 focus:ring-canopy-600 focus:border-transparent outline-none"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-canopy-600 text-white dark:text-paper py-2.5 px-4 rounded-md hover:bg-canopy-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-base font-medium flex items-center justify-center gap-2"
+              >
+                {loading && <Loader2 aria-hidden size={16} className="animate-spin" />}
+                {loading ? 'Signing in…' : 'Sign in'}
+              </button>
+            </form>
+          </div>
         </div>
-
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-              {error}
-            </div>
-          )}
-
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all"
-              placeholder="Enter your email"
-              autoComplete="email"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all"
-              placeholder="Enter your password"
-              autoComplete="current-password"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 focus:ring-4 focus:ring-green-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-medium"
-          >
-            {loading ? (
-              <span className="flex items-center justify-center">
-                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Signing in...
-              </span>
-            ) : (
-              'Sign In'
-            )}
-          </button>
-        </form>
+        <p className="survey-caption text-center mt-5">Orchard Map · Field Access</p>
       </div>
-    </div>
+    </main>
   );
 }
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-blue-50">
-        <div className="text-gray-600">Loading...</div>
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-paper">
+          <Loader2 aria-hidden size={24} className="animate-spin text-bark" />
+        </div>
+      }
+    >
       <LoginForm />
     </Suspense>
   );

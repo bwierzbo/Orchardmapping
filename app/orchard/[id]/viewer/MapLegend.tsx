@@ -29,7 +29,7 @@ export default function MapLegend({ counts, active, onToggle }: MapLegendProps) 
             onClick={() => onToggle(status)}
             aria-pressed={on}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium shadow whitespace-nowrap transition-colors ${
-              on ? 'bg-white text-gray-800' : 'bg-white/60 text-gray-400'
+              on ? 'bg-surface text-ink' : 'bg-surface/60 text-bark/70'
             }`}
           >
             <span

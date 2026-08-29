@@ -2,93 +2,133 @@
 
 import { useSession, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useTheme } from 'next-themes';
+import { ChevronDown, LogOut, Moon, Plus, Sun, Upload } from 'lucide-react';
+import Link from 'next/link';
 
 export default function UserMenu() {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const [isOpen, setIsOpen] = useState(false);
+  const { resolvedTheme, setTheme } = useTheme();
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  // true after hydration; avoids server/client theme-icon mismatch
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
 
-  const handleSignOut = async () => {
-    await signOut({ redirect: false });
-    router.push('/');
-    router.refresh();
-  };
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    const onClick = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onClick);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onClick);
+    };
+  }, [open]);
+
+  const themeButton = mounted ? (
+    <button
+      onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+      aria-label={resolvedTheme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+      className="p-2 rounded-md text-bark hover:text-ink hover:bg-canopy-50 transition-colors duration-base"
+    >
+      {resolvedTheme === 'dark' ? <Sun aria-hidden size={18} /> : <Moon aria-hidden size={18} />}
+    </button>
+  ) : (
+    <span className="p-2 w-[34px]" aria-hidden />
+  );
 
   if (status === 'loading') {
-    return null; // Don't show anything while loading
+    return (
+      <div className="flex items-center gap-1">
+        {themeButton}
+        <span className="w-20 h-9 rounded-md bg-line/60 animate-pulse" aria-hidden />
+      </div>
+    );
   }
 
   if (!session) {
     return (
-      <button
-        onClick={() => router.push('/login')}
-        className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
-      >
-        Sign In
-      </button>
+      <div className="flex items-center gap-1">
+        {themeButton}
+        <Link
+          href="/login"
+          className="bg-canopy-600 text-white dark:text-paper px-4 py-2 rounded-md hover:bg-canopy-700 transition-colors duration-base text-sm font-medium"
+        >
+          Sign in
+        </Link>
+      </div>
     );
   }
 
   return (
-    <div className="relative">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2 hover:bg-gray-50 transition-colors"
-      >
-        <div className="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center text-white font-medium">
-          {session.user?.name?.charAt(0).toUpperCase() || 'U'}
-        </div>
-        <span className="text-sm font-medium text-gray-700 hidden sm:block">
-          {session.user?.name}
-        </span>
-        <svg
-          className={`w-4 h-4 text-gray-600 transition-transform ${isOpen ? 'rotate-180' : ''}`}
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
+    <div className="flex items-center gap-1">
+      {themeButton}
+      <div ref={rootRef} className="relative">
+        <button
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-haspopup="menu"
+          className="flex items-center gap-2 bg-surface border border-line rounded-md px-2.5 py-1.5 hover:bg-canopy-50 transition-colors duration-base"
         >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-
-      {isOpen && (
-        <>
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 z-10"
-            onClick={() => setIsOpen(false)}
+          <span className="w-7 h-7 bg-canopy-600 rounded-full flex items-center justify-center text-white dark:text-paper text-sm font-medium">
+            {session.user?.name?.charAt(0).toUpperCase() || 'U'}
+          </span>
+          <span className="text-sm font-medium text-ink hidden sm:block">{session.user?.name}</span>
+          <ChevronDown
+            aria-hidden
+            size={16}
+            className={`text-bark transition-transform duration-base ${open ? 'rotate-180' : ''}`}
           />
-
-          {/* Dropdown Menu */}
-          <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20">
-            <div className="px-4 py-2 border-b border-gray-100">
-              <p className="text-sm font-medium text-gray-900">{session.user?.name}</p>
-              <p className="text-xs text-gray-500">{session.user?.email}</p>
+        </button>
+        {open && (
+          <div
+            role="menu"
+            className="absolute right-0 top-full mt-2 w-52 bg-surface border border-line rounded-lg shadow-md py-1 z-50"
+          >
+            <div className="px-3 py-2 border-b border-line">
+              <p className="text-sm font-medium text-ink truncate">{session.user?.name}</p>
+              <p className="text-xs text-bark truncate">{session.user?.email}</p>
             </div>
-
-            <button
-              onClick={handleSignOut}
-              className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2"
+            <Link
+              href="/orchards/new"
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className="flex items-center gap-2 px-3 py-2 text-sm text-ink hover:bg-canopy-50"
             >
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-                />
-              </svg>
-              Sign Out
+              <Plus aria-hidden size={16} /> Add orchard
+            </Link>
+            <Link
+              href="/"
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className="flex items-center gap-2 px-3 py-2 text-sm text-ink hover:bg-canopy-50"
+            >
+              <Upload aria-hidden size={16} /> All orchards
+            </Link>
+            <button
+              role="menuitem"
+              onClick={async () => {
+                setOpen(false);
+                await signOut({ redirect: false });
+                router.push('/');
+                router.refresh();
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-ink hover:bg-canopy-50"
+            >
+              <LogOut aria-hidden size={16} /> Sign out
             </button>
           </div>
-        </>
-      )}
+        )}
+      </div>
     </div>
   );
 }

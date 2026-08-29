@@ -2,18 +2,22 @@ import Link from 'next/link';
 
 export default function NotFound() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="text-center">
-        <h1 className="text-6xl font-bold text-gray-900 mb-4">404</h1>
-        <h2 className="text-2xl font-semibold text-gray-700 mb-4">Orchard Not Found</h2>
-        <p className="text-gray-600 mb-8">The orchard you&apos;re looking for doesn&apos;t exist.</p>
+    <main className="min-h-screen flex items-center justify-center bg-paper px-5">
+      <div className="text-center max-w-md">
+        <p className="survey-caption">0 results at these coordinates</p>
+        <h1 className="font-display text-3xl font-semibold text-ink mt-3 [text-wrap:balance]">
+          This orchard isn&apos;t on the map.
+        </h1>
+        <p className="text-bark mt-2 text-sm">
+          The page you&apos;re looking for doesn&apos;t exist or was removed.
+        </p>
         <Link
           href="/"
-          className="inline-block px-6 py-3 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-colors"
+          className="inline-block mt-6 px-5 py-2.5 bg-canopy-600 text-white dark:text-paper text-sm font-medium rounded-md hover:bg-canopy-700 transition-colors duration-base"
         >
-          Return to Home
+          Back to all orchards
         </Link>
       </div>
-    </div>
+    </main>
   );
 }

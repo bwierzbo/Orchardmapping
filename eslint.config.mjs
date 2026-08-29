@@ -8,6 +8,12 @@ export default [
   ...coreWebVitals,
   ...typescript,
   {
+    files: ['tailwind.config.js'],
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+    },
+  },
+  {
     rules: {
       // Legacy code is any-heavy; the overhaul replaces it piecewise.
       // Keep as a warning so new code is nudged without blocking builds.

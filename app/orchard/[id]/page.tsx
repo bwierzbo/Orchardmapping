@@ -20,9 +20,17 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { id } = await params;
   const orchard = await getOrchard(id).catch(() => null);
   if (!orchard) return { title: 'Orchard Map' };
+  const description = `Drone-mapped orthomosaic of ${orchard.name}${orchard.location ? ` in ${orchard.location}` : ''}, with a record for every tree.`;
   return {
     title: `${orchard.name} — Orchard Map`,
-    description: `Drone-mapped orthomosaic of ${orchard.name}${orchard.location ? ` in ${orchard.location}` : ''}, with a record for every tree.`,
+    description,
+    openGraph: orchard.previewImage
+      ? {
+          title: orchard.name,
+          description,
+          images: [{ url: orchard.previewImage, width: 1200, height: 800 }],
+        }
+      : undefined,
   };
 }
 
