@@ -13,14 +13,17 @@ export async function uploadPMTilesToBlob(
   orchardId: string,
   file: Buffer | Blob,
   filename: string,
-  type: 'ortho' | 'vector'
+  type: 'ortho' | 'vector',
+  options?: { multipart?: boolean }
 ): Promise<BlobUploadResult> {
   const pathname = `orchards/${orchardId}/${type}/${filename}`;
 
   const blob = await put(pathname, file, {
     access: 'public',
     addRandomSuffix: false,
-    contentType: 'application/octet-stream',
+    contentType: 'application/vnd.pmtiles',
+    // Required for reliable >100MB uploads
+    multipart: options?.multipart ?? false,
   });
 
   return {
@@ -56,11 +59,14 @@ export async function uploadPreviewImageToBlob(
  * Delete all blobs for an orchard
  */
 export async function deleteOrchardBlobs(orchardId: string): Promise<void> {
-  const { blobs } = await list({ prefix: `orchards/${orchardId}/` });
-
-  for (const blob of blobs) {
-    await del(blob.url);
-  }
+  let cursor: string | undefined;
+  do {
+    const page = await list({ prefix: `orchards/${orchardId}/`, cursor });
+    if (page.blobs.length > 0) {
+      await del(page.blobs.map((b) => b.url));
+    }
+    cursor = page.cursor;
+  } while (cursor);
 }
 
 /**

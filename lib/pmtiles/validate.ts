@@ -10,7 +10,8 @@ interface PMTilesHeader {
   centerZoom: number;
   centerLon: number;
   centerLat: number;
-  tileType: number; // 1 = raster (PNG/JPG), 2 = vector (MVT)
+  /** PMTiles spec: 0 unknown, 1 MVT vector, 2 PNG, 3 JPEG, 4 WEBP, 5 AVIF */
+  tileType: number;
 }
 
 export interface PMTilesValidationResult {
@@ -53,15 +54,16 @@ export async function validatePMTilesFromUrl(url: string): Promise<PMTilesValida
     }
 
     let tileType: 'raster' | 'vector';
-    if (header.tileType === 1) {
+    if (header.tileType >= 2 && header.tileType <= 5) {
+      // PNG / JPEG / WEBP / AVIF
       tileType = 'raster';
-    } else if (header.tileType === 2) {
+    } else if (header.tileType === 1) {
       tileType = 'vector';
-      warnings.push('Vector PMTiles detected. This endpoint is optimized for raster/imagery tiles.');
+      warnings.push('Vector (MVT) PMTiles detected. This flow is optimized for raster imagery tiles.');
     } else {
       return {
         valid: false,
-        error: `Unsupported tile type: ${header.tileType}. Expected raster (1) or vector (2).`,
+        error: `Unsupported tile type: ${header.tileType}. Expected raster (2-5) or vector (1).`,
       };
     }
 

@@ -48,3 +48,11 @@ next-env.d.ts
 # test and temporary files
 test-map.html
 scripts/import-report-*.json
+
+# large images / project scratch
+*.qmd
+*.tif.aux.xml
+registry.jpeg
+
+# AI assistant workspace
+.claude/
