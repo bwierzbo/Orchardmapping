@@ -1,8 +1,11 @@
 {
   "name": "orchard-map",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Drone-mapped orchards with a record for every tree",
+  "packageManager": "pnpm@9.12.3",
+  "engines": {
+    "node": ">=20.9"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
