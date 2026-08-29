@@ -61,14 +61,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Coerce date strings to Date objects
+    // Dates stay as YYYY-MM-DD strings all the way to Postgres
     const rows: BulkUpsertRow[] = updates.map((u: Record<string, unknown>) => ({
       ...u,
       row_id: String(u.row_id),
       position: Number(u.position),
-      planted_date: u.planted_date ? new Date(u.planted_date as string) : undefined,
-      last_pruned: u.last_pruned ? new Date(u.last_pruned as string) : undefined,
-      last_harvest: u.last_harvest ? new Date(u.last_harvest as string) : undefined,
+      planted_date: (u.planted_date as string) || undefined,
+      last_pruned: (u.last_pruned as string) || undefined,
+      last_harvest: (u.last_harvest as string) || undefined,
     }));
 
     const result = await bulkUpsertTrees(orchard_id, rows);

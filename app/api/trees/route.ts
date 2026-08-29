@@ -124,11 +124,13 @@ export async function POST(request: NextRequest) {
       lng,
       variety,
       status,
-      planted_date: planted_date ? new Date(planted_date) : undefined,
+      // YYYY-MM-DD strings go to Postgres verbatim; new Date() would
+      // shift the calendar day through UTC in western timezones
+      planted_date: planted_date || undefined,
       age,
       height,
-      last_pruned: last_pruned ? new Date(last_pruned) : undefined,
-      last_harvest: last_harvest ? new Date(last_harvest) : undefined,
+      last_pruned: last_pruned || undefined,
+      last_harvest: last_harvest || undefined,
       yield_estimate,
       notes
     };

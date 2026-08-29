@@ -36,7 +36,7 @@ export interface Tree {
   name?: string;
   variety?: string;
   status?: string;
-  planted_date?: Date;
+  planted_date?: Date | string;
   block_id?: string;
   row_id?: string;
   position?: number;
@@ -44,8 +44,8 @@ export interface Tree {
   height?: number;
   lat?: number;
   lng?: number;
-  last_pruned?: Date;
-  last_harvest?: Date;
+  last_pruned?: Date | string;
+  last_harvest?: Date | string;
   yield_estimate?: number;
   notes?: string;
   created_at?: Date;
@@ -63,11 +63,11 @@ export interface TreeInsertData {
   lng?: number;
   variety?: string;
   status?: string;
-  planted_date?: Date;
+  planted_date?: Date | string;
   age?: number;
   height?: number;
-  last_pruned?: Date;
-  last_harvest?: Date;
+  last_pruned?: Date | string;
+  last_harvest?: Date | string;
   yield_estimate?: number;
   notes?: string;
 }
@@ -310,14 +310,14 @@ export interface BulkUpsertRow {
   name?: string;
   variety?: string;
   status?: string;
-  planted_date?: Date;
+  planted_date?: Date | string;
   block_id?: string;
   age?: number;
   height?: number;
   lat?: number;
   lng?: number;
-  last_pruned?: Date;
-  last_harvest?: Date;
+  last_pruned?: Date | string;
+  last_harvest?: Date | string;
   yield_estimate?: number;
   notes?: string;
 }

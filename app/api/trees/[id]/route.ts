@@ -92,17 +92,6 @@ export async function PUT(
       );
     }
 
-    // Convert date strings to Date objects if provided
-    if (updateData.planted_date) {
-      updateData.planted_date = new Date(updateData.planted_date);
-    }
-    if (updateData.last_pruned) {
-      updateData.last_pruned = new Date(updateData.last_pruned);
-    }
-    if (updateData.last_harvest) {
-      updateData.last_harvest = new Date(updateData.last_harvest);
-    }
-
     if (Object.keys(updateData).length === 0) {
       return NextResponse.json(
         { error: 'No valid fields to update' },
