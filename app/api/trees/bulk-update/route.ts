@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
+import { requireSession, WRITER_ROLES } from '@/lib/api-auth';
+import { handleApiError } from '@/lib/api-errors';
 import { bulkUpdateTrees } from '@/lib/db/trees';
 
 /**
@@ -18,14 +19,8 @@ import { bulkUpdateTrees } from '@/lib/db/trees';
  */
 export async function POST(request: NextRequest) {
   try {
-    // Check authentication
-    const session = await auth();
-    if (!session) {
-      return NextResponse.json(
-        { error: 'Unauthorized. Please sign in.' },
-        { status: 401 }
-      );
-    }
+    const { response } = await requireSession(WRITER_ROLES);
+    if (response) return response;
 
     // Parse request body
     const body = await request.json();
@@ -116,14 +111,7 @@ export async function POST(request: NextRequest) {
     }, {
       status: partialSuccess ? 207 : 200 // 207 = Multi-Status
     });
-  } catch (error: any) {
-    console.error('Error in bulk update:', error);
-    return NextResponse.json(
-      {
-        error: 'Failed to perform bulk update',
-        details: error.message
-      },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleApiError(error, 'POST /api/trees/bulk-update');
   }
 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { handleApiError } from '@/lib/api-errors';
 import { getOrchardConfigById, getAllOrchardConfigs } from '@/lib/db/orchards';
 
 // GET /api/orchards/config?id=orchardId - Get single orchard config
@@ -25,11 +26,7 @@ export async function GET(request: NextRequest) {
       const orchards = await getAllOrchardConfigs();
       return NextResponse.json(orchards);
     }
-  } catch (error: any) {
-    console.error('Error fetching orchard config:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch orchard config', details: error.message },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleApiError(error, 'GET /api/orchards/config');
   }
 }

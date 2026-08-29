@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { handleApiError } from '@/lib/api-errors';
 import { auth } from '@/auth';
 import { getAllUsers, createUser, findUserByEmail } from '@/lib/db/users';
 
@@ -21,12 +22,8 @@ export async function GET() {
     const users = await getAllUsers();
 
     return NextResponse.json({ users });
-  } catch (error: any) {
-    console.error('Error fetching users:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch users', details: error.message },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleApiError(error, 'GET /api/users');
   }
 }
 
@@ -95,11 +92,7 @@ export async function POST(request: NextRequest) {
     const user = await createUser({ email, password, name, role });
 
     return NextResponse.json({ user }, { status: 201 });
-  } catch (error: any) {
-    console.error('Error creating user:', error);
-    return NextResponse.json(
-      { error: 'Failed to create user', details: error.message },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleApiError(error, 'POST /api/users');
   }
 }

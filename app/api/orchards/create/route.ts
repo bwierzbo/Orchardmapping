@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
+import { requireSession, WRITER_ROLES } from '@/lib/api-auth';
+import { handleApiError } from '@/lib/api-errors';
 import { orchardExists, insertOrchardFull } from '@/lib/db/orchards';
 import { uploadPMTilesToBlob, deleteOrchardBlobs } from '@/lib/blob/upload';
 import { PMTiles } from 'pmtiles';
@@ -44,14 +45,8 @@ export async function POST(request: NextRequest) {
   let orchardId: string | null = null;
 
   try {
-    // Check authentication
-    const session = await auth();
-    if (!session) {
-      return NextResponse.json(
-        { error: 'Unauthorized. Please sign in.' },
-        { status: 401 }
-      );
-    }
+    const { response } = await requireSession(WRITER_ROLES);
+    if (response) return response;
 
     // Parse the multipart form data
     const formData = await request.formData();
@@ -203,9 +198,7 @@ export async function POST(request: NextRequest) {
       }
     });
 
-  } catch (error: any) {
-    console.error('Error creating orchard:', error);
-
+  } catch (error) {
     // Clean up blob on error if it was uploaded
     if (uploadedBlobUrl && orchardId) {
       try {
@@ -215,13 +208,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json(
-      {
-        error: 'Failed to create orchard',
-        details: error.message
-      },
-      { status: 500 }
-    );
+    return handleApiError(error, 'POST /api/orchards/create');
   }
 }
 

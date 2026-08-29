@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
+import { requireSession, WRITER_ROLES } from '@/lib/api-auth';
+import { handleApiError } from '@/lib/api-errors';
 import {
   getTreesByOrchard,
   insertTree,
@@ -32,15 +33,8 @@ export async function GET(request: NextRequest) {
       count: trees.length,
       trees
     });
-  } catch (error: any) {
-    console.error('Error fetching trees:', error);
-    return NextResponse.json(
-      {
-        error: 'Failed to fetch trees',
-        details: error.message
-      },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleApiError(error, 'GET /api/trees');
   }
 }
 
@@ -51,14 +45,8 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    // Check authentication
-    const session = await auth();
-    if (!session) {
-      return NextResponse.json(
-        { error: 'Unauthorized. Please sign in.' },
-        { status: 401 }
-      );
-    }
+    const { response } = await requireSession(WRITER_ROLES);
+    if (response) return response;
 
     // Parse request body
     const body = await request.json();
@@ -139,14 +127,7 @@ export async function POST(request: NextRequest) {
       message: 'Tree created successfully',
       tree
     }, { status: 201 });
-  } catch (error: any) {
-    console.error('Error creating tree:', error);
-    return NextResponse.json(
-      {
-        error: 'Failed to create tree',
-        details: error.message
-      },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleApiError(error, 'POST /api/trees');
   }
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/auth';
+import { requireSession, WRITER_ROLES } from '@/lib/api-auth';
+import { handleApiError } from '@/lib/api-errors';
 import {
   getTreeById,
   updateTree,
@@ -38,15 +39,8 @@ export async function GET(
       success: true,
       tree
     });
-  } catch (error: any) {
-    console.error('Error fetching tree:', error);
-    return NextResponse.json(
-      {
-        error: 'Failed to fetch tree',
-        details: error.message
-      },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleApiError(error, 'GET /api/trees/[id]');
   }
 }
 
@@ -60,14 +54,8 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    // Check authentication
-    const session = await auth();
-    if (!session) {
-      return NextResponse.json(
-        { error: 'Unauthorized. Please sign in.' },
-        { status: 401 }
-      );
-    }
+    const { response } = await requireSession(WRITER_ROLES);
+    if (response) return response;
 
     const { id: tree_id } = await params;
 
@@ -126,15 +114,8 @@ export async function PUT(
       message: 'Tree updated successfully',
       tree: updatedTree
     });
-  } catch (error: any) {
-    console.error('Error updating tree:', error);
-    return NextResponse.json(
-      {
-        error: 'Failed to update tree',
-        details: error.message
-      },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleApiError(error, 'PUT /api/trees/[id]');
   }
 }
 
@@ -148,14 +129,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    // Check authentication
-    const session = await auth();
-    if (!session) {
-      return NextResponse.json(
-        { error: 'Unauthorized. Please sign in.' },
-        { status: 401 }
-      );
-    }
+    const { response } = await requireSession(WRITER_ROLES);
+    if (response) return response;
 
     const { id: tree_id } = await params;
 
@@ -180,14 +155,7 @@ export async function DELETE(
       success: true,
       message: 'Tree deleted successfully'
     });
-  } catch (error: any) {
-    console.error('Error deleting tree:', error);
-    return NextResponse.json(
-      {
-        error: 'Failed to delete tree',
-        details: error.message
-      },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleApiError(error, 'DELETE /api/trees/[id]');
   }
 }

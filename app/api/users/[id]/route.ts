@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { handleApiError } from '@/lib/api-errors';
 import { auth } from '@/auth';
 import { findUserById, updateUser, deleteUser, findUserByEmail } from '@/lib/db/users';
 
@@ -42,12 +43,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const { password_hash, ...safeUser } = user;
 
     return NextResponse.json({ user: safeUser });
-  } catch (error: any) {
-    console.error('Error fetching user:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch user', details: error.message },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleApiError(error, 'GET /api/users/[id]');
   }
 }
 
@@ -154,12 +151,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
 
     return NextResponse.json({ user });
-  } catch (error: any) {
-    console.error('Error updating user:', error);
-    return NextResponse.json(
-      { error: 'Failed to update user', details: error.message },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleApiError(error, 'PUT /api/users/[id]');
   }
 }
 
@@ -201,11 +194,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     }
 
     return NextResponse.json({ success: true });
-  } catch (error: any) {
-    console.error('Error deleting user:', error);
-    return NextResponse.json(
-      { error: 'Failed to delete user', details: error.message },
-      { status: 500 }
-    );
+  } catch (error) {
+    return handleApiError(error, 'DELETE /api/users/[id]');
   }
 }
