@@ -17,7 +17,7 @@ export default [
   {
     // Legacy map viewer: being decomposed and rewritten (see overhaul plan).
     // The react-compiler findings here are real and are fixed by the rewrite.
-    files: ['app/orchard/\\[id\\]/page.tsx'],
+    files: ['app/orchard/\\[id\\]/viewer/OrchardViewer.tsx'],
     rules: {
       'react-hooks/immutability': 'warn',
       'react-hooks/preserve-manual-memoization': 'warn',
