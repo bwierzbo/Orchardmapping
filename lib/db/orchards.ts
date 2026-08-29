@@ -1,5 +1,31 @@
 import { sql } from '@vercel/postgres';
 import { OrchardConfig, OrchardBounds } from '../orchards';
+import { buildUpdateSet } from './sql-helpers';
+
+/**
+ * Columns a caller may change through updateOrchard. The primary key and
+ * timestamps are excluded; column names must never come from request data.
+ */
+export const ORCHARD_UPDATABLE_COLUMNS = [
+  'name',
+  'location',
+  'description',
+  'center_lat',
+  'center_lng',
+  'bounds_min_lng',
+  'bounds_min_lat',
+  'bounds_max_lng',
+  'bounds_max_lat',
+  'default_zoom',
+  'min_zoom',
+  'max_zoom',
+  'tile_min_zoom',
+  'tile_max_zoom',
+  'ortho_pmtiles_url',
+  'vector_pmtiles_url',
+  'preview_image_url',
+  'ortho_api_path',
+] as const;
 
 /**
  * Orchard database interface
@@ -254,38 +280,19 @@ export async function updateOrchard(
   id: string,
   updates: Partial<Omit<Orchard, 'id' | 'created_at' | 'updated_at'>>
 ): Promise<Orchard | null> {
+  const update = buildUpdateSet(updates, ORCHARD_UPDATABLE_COLUMNS);
+  if (!update) return null;
+
+  const values = [...update.values, id];
+  const client = await sql.connect();
   try {
-    // Filter out undefined values
-    const updateData = Object.fromEntries(
-      Object.entries(updates).filter(([_, v]) => v !== undefined)
+    const result = await client.query(
+      `UPDATE orchards SET ${update.setClause}, updated_at = CURRENT_TIMESTAMP WHERE id = $${values.length} RETURNING *`,
+      values
     );
-
-    if (Object.keys(updateData).length === 0) {
-      return null;
-    }
-
-    // Build the SET clause dynamically
-    const setClause = Object.keys(updateData)
-      .map((key, i) => `${key} = $${i + 1}`)
-      .join(', ');
-
-    const values = Object.values(updateData);
-    values.push(id); // Add id as last parameter
-
-    // Use raw SQL query since sql template literals don't support dynamic columns
-    const client = await sql.connect();
-    try {
-      const result = await client.query(
-        `UPDATE orchards SET ${setClause}, updated_at = CURRENT_TIMESTAMP WHERE id = $${values.length} RETURNING *`,
-        values
-      );
-      return result.rows.length > 0 ? (result.rows[0] as Orchard) : null;
-    } finally {
-      client.release();
-    }
-  } catch (error) {
-    console.error('Error updating orchard:', error);
-    return null;
+    return result.rows.length > 0 ? (result.rows[0] as Orchard) : null;
+  } finally {
+    client.release();
   }
 }
 

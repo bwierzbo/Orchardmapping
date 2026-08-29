@@ -1,4 +1,28 @@
 import { sql } from '@vercel/postgres';
+import { buildUpdateSet } from './sql-helpers';
+
+/**
+ * Columns a client is allowed to change through updateTree.
+ * Identifier keys (id, tree_id, orchard_id, timestamps) are deliberately
+ * excluded; column names must never come from request data directly.
+ */
+export const TREE_UPDATABLE_COLUMNS = [
+  'name',
+  'variety',
+  'status',
+  'planted_date',
+  'block_id',
+  'row_id',
+  'position',
+  'age',
+  'height',
+  'lat',
+  'lng',
+  'last_pruned',
+  'last_harvest',
+  'yield_estimate',
+  'notes',
+] as const;
 
 /**
  * Tree database interface
@@ -153,41 +177,23 @@ export async function updateTree(
   tree_id: string,
   updates: Partial<Omit<Tree, 'id' | 'tree_id' | 'created_at' | 'updated_at'>>
 ): Promise<Tree | null> {
+  const update = buildUpdateSet(updates, TREE_UPDATABLE_COLUMNS);
+  if (!update) return null;
+
+  const values = [...update.values, tree_id];
+  const query = `
+    UPDATE trees
+    SET ${update.setClause}, updated_at = CURRENT_TIMESTAMP
+    WHERE tree_id = $${values.length}
+    RETURNING *
+  `;
+
+  const client = await sql.connect();
   try {
-    // Filter out undefined values and protected fields
-    const updateData = Object.fromEntries(
-      Object.entries(updates).filter(([_, v]) => v !== undefined)
-    );
-
-    if (Object.keys(updateData).length === 0) {
-      return null;
-    }
-
-    // Build the SET clause dynamically
-    const setClause = Object.keys(updateData)
-      .map((key, i) => `${key} = $${i + 1}`)
-      .join(', ');
-
-    const values = Object.values(updateData);
-    values.push(tree_id); // Add tree_id as last parameter
-
-    const query = `
-      UPDATE trees
-      SET ${setClause}, updated_at = CURRENT_TIMESTAMP
-      WHERE tree_id = $${values.length}
-      RETURNING *
-    `;
-
-    const client = await sql.connect();
-    try {
-      const result = await client.query(query, values);
-      return result.rows.length > 0 ? (result.rows[0] as Tree) : null;
-    } finally {
-      client.release();
-    }
-  } catch (error) {
-    console.error('Error updating tree:', error);
-    return null;
+    const result = await client.query(query, values);
+    return result.rows.length > 0 ? (result.rows[0] as Tree) : null;
+  } finally {
+    client.release();
   }
 }
 
