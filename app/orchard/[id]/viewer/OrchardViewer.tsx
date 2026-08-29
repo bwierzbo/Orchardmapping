@@ -3,14 +3,35 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import maplibregl from 'maplibre-gl';
-import { PMTiles, Protocol } from 'pmtiles';
+import { Protocol } from 'pmtiles';
+
+// Module-level singleton: registering/unregistering the global pmtiles
+// protocol per mount races in-flight tile requests under StrictMode.
+const pmtilesProtocol = new Protocol();
+
+// 1x1 transparent PNG. PMTiles archives are sparse — tiles outside the
+// imagery footprint are absent and the protocol resolves {data: null},
+// which MapLibre leaves in 'loading' forever (so 'load'/'idle' never
+// fire). Serve a transparent tile for gaps instead.
+const EMPTY_TILE = Uint8Array.from(
+  atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII='),
+  (c) => c.charCodeAt(0)
+);
+
+maplibregl.addProtocol('pmtiles', async (params, abortController) => {
+  const result = await pmtilesProtocol.tile(params, abortController);
+  if (params.type !== 'json' && (!result || result.data === null)) {
+    return { data: EMPTY_TILE };
+  }
+  return result;
+});
 import 'maplibre-gl/dist/maplibre-gl.css';
 import '../popup-styles.css';
 import { OrchardConfig } from '@/lib/types';
-import { validatePMTiles } from '@/lib/pmtiles-utils';
 import BulkTreeImport from '../components/BulkTreeImport';
 import { ToastContainer, ToastProps } from '@/components/Toast';
 import type { ClientTree } from '@/lib/types';
+import { buildMapStyle } from '@/lib/map-style';
 
 // Type definitions for tree data
 interface TreeProperties {
@@ -49,6 +70,7 @@ export default function OrchardViewer({ orchard, allOrchards, initialTrees, canE
   // Initialize hooks first (before any early returns)
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
+  const [mapReady, setMapReady] = useState(false);
   const popupRef = useRef<maplibregl.Popup | null>(null);
   const createPopupContentRef = useRef<any>(null);
   const fetchTreeDetailsRef = useRef<any>(null);
@@ -62,7 +84,6 @@ export default function OrchardViewer({ orchard, allOrchards, initialTrees, canE
   const [selectedTreeId, setSelectedTreeId] = useState<string | null>(null);
   const [selectedTreeFeature, setSelectedTreeFeature] = useState<any>(null);
   const [showOrchardSelector, setShowOrchardSelector] = useState(false);
-  const [pmtilesEnabled, setPmtilesEnabled] = useState(false);
 
   // Edit mode state
   const [isEditMode, setIsEditMode] = useState(false);
@@ -528,7 +549,7 @@ export default function OrchardViewer({ orchard, allOrchards, initialTrees, canE
 
   // Render tree markers for database trees not in PMTiles
   useEffect(() => {
-    if (!map.current || trees.length === 0) return;
+    if (!mapReady || !map.current || trees.length === 0) return;
 
     const markers: maplibregl.Marker[] = [];
     const tooltips: HTMLElement[] = [];
@@ -686,328 +707,106 @@ export default function OrchardViewer({ orchard, allOrchards, initialTrees, canE
     return () => {
       markers.forEach(marker => marker.remove());
     };
-  }, [trees, isEditMode, createPopupContent, fetchTreeDetails, isDragging, getMarkerStyle]);
+  }, [mapReady, trees, isEditMode, createPopupContent, fetchTreeDetails, getMarkerStyle]);
 
+  // Keyboard shortcuts (legacy document-level handler; scoped in a later step)
   useEffect(() => {
-    // Prevent multiple initializations - only check map.current
-    if (map.current) return;
-    if (!mapContainer.current || !orchard) return;
-
-    // Define keyboard handler outside initializeMap so we can clean it up
     const handleKeyPress = (e: KeyboardEvent) => {
       if (!map.current) return;
-
-      // Skip if user is typing in an input
       if ((e.target as HTMLElement).tagName === 'INPUT' ||
           (e.target as HTMLElement).tagName === 'TEXTAREA') {
         return;
       }
-
-      // Escape key to close popup
       if (e.key === 'Escape' && popupRef.current) {
         popupRef.current.remove();
         setSelectedTreeId(null);
         setSelectedTreeFeature(null);
         popupRef.current = null;
-        return;
-      }
-
-      // Arrow keys for map panning (when no popup is open)
-      if (!popupRef.current) {
-        const panDistance = 100; // pixels to pan
-
-        switch(e.key) {
-          case 'ArrowUp':
-            e.preventDefault();
-            map.current.panBy([0, -panDistance]);
-            break;
-          case 'ArrowDown':
-            e.preventDefault();
-            map.current.panBy([0, panDistance]);
-            break;
-          case 'ArrowLeft':
-            e.preventDefault();
-            map.current.panBy([-panDistance, 0]);
-            break;
-          case 'ArrowRight':
-            e.preventDefault();
-            map.current.panBy([panDistance, 0]);
-            break;
-          case '+':
-          case '=':
-            e.preventDefault();
-            map.current.zoomIn();
-            break;
-          case '-':
-          case '_':
-            e.preventDefault();
-            map.current.zoomOut();
-            break;
-        }
       }
     };
+    document.addEventListener('keydown', handleKeyPress);
+    return () => document.removeEventListener('keydown', handleKeyPress);
+  }, []);
 
-    const initializeMap = async () => {
-      console.log('🗺️ Initializing map with orchard:', JSON.stringify({
-        id: orchard.id,
-        center: orchard.center,
-        defaultZoom: orchard.defaultZoom,
-        orthoPmtilesPath: orchard.orthoPmtilesPath,
-      }, null, 2));
-      // Clear any existing map content in the container
-      if (mapContainer.current) {
-        mapContainer.current.innerHTML = '';
-      }
-      // Register PMTiles protocol with error handling
-      let protocol: Protocol | null = null;
+  // Map lifecycle: synchronous init, paired protocol add/remove, ready as state
+  useEffect(() => {
+    if (!mapContainer.current) return;
 
-      // Validate and load PMTiles if it exists
-      let pmtilesValid = false;
-      let sourceLayerName = 'default'; // Default layer name
-
-      // Register protocol if we have ANY PMTiles files (ortho or vector)
-      if (orchard.orthoPmtilesPath || orchard.pmtilesPath) {
-        try {
-          // Remove any existing protocol first
-          maplibregl.removeProtocol('pmtiles');
-        } catch (e) {
-          // Protocol doesn't exist, that's fine
-        }
-
-        protocol = new Protocol();
-        maplibregl.addProtocol('pmtiles', protocol.tile);
-
-        // Add orthomosaic PMTiles if it exists
-        if (orchard.orthoPmtilesPath) {
-          try {
-            // Check if URL is already absolute (Blob URLs) or relative (legacy)
-            const orthoUrl = orchard.orthoPmtilesPath.startsWith('http')
-              ? orchard.orthoPmtilesPath
-              : window.location.origin + orchard.orthoPmtilesPath;
-            const orthoPMTiles = new PMTiles(orthoUrl);
-            protocol.add(orthoPMTiles);
-            console.log('Registered orthomosaic PMTiles:', orthoUrl);
-          } catch (error) {
-            console.error('Failed to register orthomosaic PMTiles:', error);
-          }
-        }
-
-        // Add vector PMTiles if it exists
-        if (orchard.pmtilesPath) {
-          // Check if URL is already absolute (Blob URLs) or relative (legacy)
-          const vectorUrl = orchard.pmtilesPath.startsWith('http')
-            ? orchard.pmtilesPath
-            : window.location.origin + orchard.pmtilesPath;
-          const validation = await validatePMTiles(vectorUrl);
-
-          if (validation.valid) {
-            pmtilesValid = true;
-            setPmtilesEnabled(true);
-
-            // Check available layers and use the first one or look for 'trees'
-            if (validation.metadata?.vector_layers && validation.metadata.vector_layers.length > 0) {
-              // Look for a 'trees' layer first, otherwise use the first available
-              const treesLayer = validation.metadata.vector_layers.find((l: any) => l.id === 'trees');
-              sourceLayerName = treesLayer ? 'trees' : validation.metadata.vector_layers[0].id || 'default';
-            } else {
-              sourceLayerName = 'default';
-            }
-
-            try {
-              // vectorUrl already defined above for validation
-              const vectorPMTiles = new PMTiles(vectorUrl);
-              protocol.add(vectorPMTiles);
-              console.log('Registered vector PMTiles:', vectorUrl);
-            } catch (error) {
-              console.error('Failed to register vector PMTiles:', error);
-            }
-          } else {
-            pmtilesValid = false;
-            setPmtilesEnabled(false);
-          }
-        }
-      }
-
-    // Create map with orthomosaic tiles from PMTiles or public directory
-    map.current = new maplibregl.Map({
-      container: mapContainer.current!,
-      style: {
-        version: 8,
-        glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
-        layers: [],
-        sources: {
-          // Add OpenStreetMap basemap
-          'osm-raster': {
-            type: 'raster',
-            tiles: [
-              'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
-              'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
-              'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png'
-            ],
-            tileSize: 256,
-            attribution: '© OpenStreetMap contributors',
-            maxzoom: 19
-          },
-          // Only add orthomosaic if we have a source
-          ...(orchard.orthoPmtilesPath ? {
-            'orchard-orthomosaic': {
-              // Use PMTiles for orthomosaic if available
-              // For Blob URLs (absolute), use pmtiles:// + full URL; for relative paths, just pmtiles:// + path
-              type: 'raster',
-              url: orchard.orthoPmtilesPath.startsWith('http')
-                ? `pmtiles://${orchard.orthoPmtilesPath}`
-                : `pmtiles://${orchard.orthoPmtilesPath}`,
-              attribution: `${orchard.name} Orthomosaic`,
-              tileSize: 256,
-              minzoom: orchard.tileMinZoom,
-              maxzoom: orchard.tileMaxZoom
-            }
-          } : orchard.orthoPath ? {
-            'orchard-orthomosaic': {
-              // Use regular tiles (XYZ or API)
-              type: 'raster',
-              tiles: [orchard.orthoPath],
-              attribution: `${orchard.name} Orthomosaic`,
-              tileSize: 256,
-              minzoom: orchard.tileMinZoom,
-              maxzoom: orchard.tileMaxZoom
-            }
-          } : {}),
-          // Only add vector source if PMTiles file exists and is valid
-          ...(pmtilesValid && orchard.pmtilesPath ? {
-            'orchard-vectors': {
-              type: 'vector',
-              url: orchard.pmtilesPath.startsWith('http')
-                ? `pmtiles://${orchard.pmtilesPath}`
-                : `pmtiles://${orchard.pmtilesPath}`,
-              attribution: `${orchard.name} Geometry Data`,
-              minzoom: 0,   // Request tiles from zoom 0
-              maxzoom: 22,  // Up to max zoom
-              promoteId: 'tree_id' // Use tree_id as feature ID for better performance
-            }
-          } : {})
-        }
-      },
-      center: orchard.center, // Dynamic orchard center
-      zoom: orchard.defaultZoom, // Dynamic default zoom
-      maxZoom: orchard.maxZoom, // Dynamic max zoom
-      minZoom: orchard.minZoom, // Dynamic min zoom
+    const m = new maplibregl.Map({
+      container: mapContainer.current,
+      style: buildMapStyle(orchard, window.location.origin),
+      center: orchard.center,
+      zoom: orchard.defaultZoom,
+      maxZoom: orchard.maxZoom,
+      minZoom: orchard.minZoom,
       pitch: 0,
-      bearing: 0
+      bearing: 0,
     });
 
-    // Add layers after map is created
-    map.current.on('load', () => {
-      console.log('🗺️ Map loaded, adding layers...');
-      // Add basemap layer first
-      if (map.current && !map.current.getLayer('osm-basemap')) {
-        map.current.addLayer({
-          id: 'osm-basemap',
-          type: 'raster',
-          source: 'osm-raster',
-          minzoom: 0,
-          maxzoom: 22,
-          paint: {
-            'raster-opacity': 0.8, // Slightly transparent to blend with orthomosaic
-            'raster-fade-duration': 100
-          }
-        });
+    m.addControl(new maplibregl.NavigationControl(), 'top-right');
+    m.addControl(
+      new maplibregl.GeolocateControl({
+        positionOptions: { enableHighAccuracy: true },
+        trackUserLocation: true,
+      }),
+      'top-right'
+    );
+    m.addControl(new maplibregl.ScaleControl({ maxWidth: 100, unit: 'metric' }), 'bottom-left');
+
+    if (process.env.NODE_ENV === 'development') {
+      m.on('error', (e) => console.error('Map error:', e.error?.message || e));
+    }
+
+    m.on('load', () => setMapReady(true));
+    map.current = m;
+
+    return () => {
+      setMapReady(false);
+      if (popupRef.current) {
+        popupRef.current.remove();
+        popupRef.current = null;
       }
+      map.current = null;
+      m.remove();
+    };
+  }, [orchard]);
 
-      // Add orthomosaic layer if available (on top of basemap)
-      if ((orchard.orthoPmtilesPath || orchard.orthoPath) && map.current && !map.current.getLayer('orchard-orthomosaic-layer')) {
-        map.current.addLayer({
-          id: 'orchard-orthomosaic-layer',
-          type: 'raster',
-          source: 'orchard-orthomosaic',
-          minzoom: 0,
-          maxzoom: 22,
-          paint: {
-            'raster-opacity': 1,
-            'raster-fade-duration': 100,
-            'raster-resampling': 'linear'
-          }
-        });
-      }
+  // Edit-mode tree placement clicks (refs pending the placement-hook step)
+  useEffect(() => {
+    const m = map.current;
+    if (!mapReady || !m) return;
 
-      // PMTiles vector tree layers removed - using database markers only
-    });
+    const onClick = async (e: maplibregl.MapMouseEvent) => {
+      if (!isEditModeRef.current) return;
 
-    // Add navigation controls
-    map.current.addControl(new maplibregl.NavigationControl(), 'top-right');
-
-    // Add scale control
-    map.current.addControl(new maplibregl.ScaleControl({
-      maxWidth: 100,
-      unit: 'metric'
-    }), 'bottom-left');
-
-    // Add error handler for map errors - log all errors for debugging
-    map.current.on('error', (e) => {
-      console.error('Map error:', e.error?.message || e);
-    });
-
-    // Handle general map clicks for edit mode tree placement
-    map.current.on('click', async (e) => {
-      console.log('Map clicked!', {
-        isEditMode: isEditModeRef.current,
-        row: currentRowRef.current,
-        position: currentPositionRef.current
-      });
-
-      // Only handle if in edit mode and not clicking on an existing tree
-      // Use ref values to get current state (not closure-captured values)
-      if (!isEditModeRef.current) {
-        console.log('Not in edit mode, ignoring click');
-        return;
-      }
-
-      // Validate inputs - use ref values
       const row = currentRowRef.current;
       const position = currentPositionRef.current;
-
-      console.log('Placing tree at row:', row, 'position:', position);
-
       if (!row || !position) {
-        console.log('Missing row or position');
         showToast('warning', 'Please enter both row ID and position before placing a tree');
         return;
       }
 
       try {
         const { lng, lat } = e.lngLat;
-
-        // Create tree data
-        const treeData = {
-          orchard_id: orchard.id,
-          row_id: row,
-          position: position,
-          lat,
-          lng,
-          status: 'healthy' // Default status
-        };
-
-        // Send to API
         const response = await fetch('/api/trees', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(treeData),
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            orchard_id: orchard.id,
+            row_id: row,
+            position,
+            lat,
+            lng,
+            status: 'healthy',
+          }),
         });
 
         if (response.ok) {
           const result = await response.json();
-
-          // Add to local trees state
           setTrees(prev => [...prev, result.tree]);
-
-          // Auto-increment position if enabled - use ref value
           if (autoIncrementRef.current) {
             setCurrentPosition(prev => prev + 1);
           }
-
-          // Show success feedback
           showToast('success', `Tree added at Row ${row}, Position ${position}`);
         } else {
           const error = await response.json();
@@ -1017,49 +816,16 @@ export default function OrchardViewer({ orchard, allOrchards, initialTrees, canE
             showToast('error', `Failed to place tree: ${error.details || error.error}`);
           }
         }
-      } catch (error: any) {
-        console.error('Error placing tree:', error);
-        showToast('error', `Error placing tree: ${error.message}`);
-      }
-    });
-
-    console.log('✅ Map click handler for tree placement registered');
-
-    // PMTiles tree click and hover handlers removed - using database markers only
-
-    }; // Close initializeMap function
-
-    // Call the async initialization
-    initializeMap();
-
-    // Add keyboard event listener after map initialization
-    document.addEventListener('keydown', handleKeyPress);
-
-    // Cleanup on unmount
-    return () => {
-      // Remove keyboard listener
-      document.removeEventListener('keydown', handleKeyPress);
-
-      // Clean up popup
-      if (popupRef.current) {
-        popupRef.current.remove();
-        popupRef.current = null;
-      }
-
-      // Clean up map
-      if (map.current) {
-        map.current.remove();
-        map.current = null;
-      }
-
-      // Remove PMTiles protocol if it was added
-      try {
-        maplibregl.removeProtocol('pmtiles');
-      } catch (e) {
-        // Protocol might not exist, ignore error
+      } catch (error) {
+        showToast('error', `Error placing tree: ${error instanceof Error ? error.message : 'unknown'}`);
       }
     };
-  }, [orchard]); // Only re-render if orchard changes
+
+    m.on('click', onClick);
+    return () => {
+      m.off('click', onClick);
+    };
+  }, [mapReady, orchard.id, showToast]);
 
   // Handle save tree changes
   const handleSaveTree = async () => {
