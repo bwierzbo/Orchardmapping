@@ -157,6 +157,21 @@ export function validateTreeRow(
 }
 
 /**
+ * Validates a partial tree update (PUT payload) — same field rules as
+ * validateTreeRow, minus the row_id/position requirement.
+ */
+export function validateTreeUpdate(fields: Partial<TreeRowData>): ValidationResult {
+  const probe = validateTreeRow({ ...fields, row_id: fields.row_id ?? '_', position: fields.position ?? 1 });
+  // Drop errors for the placeholder identity fields unless the caller supplied them
+  const errors = probe.errors.filter((e) => {
+    if (e.field === 'row_id' && fields.row_id === undefined) return false;
+    if (e.field === 'position' && fields.position === undefined) return false;
+    return true;
+  });
+  return { isValid: errors.length === 0, errors };
+}
+
+/**
  * Validates an entire bulk import dataset
  * Checks for duplicates within the dataset and against existing trees
  *

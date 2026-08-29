@@ -7,6 +7,7 @@ import {
   checkDuplicateRowPosition,
   TreeInsertData
 } from '@/lib/db/trees';
+import { validateTreeRow, formatValidationErrors, TreeRowData } from '@/lib/tree-validation';
 
 /**
  * GET /api/trees?orchard_id=washington
@@ -85,6 +86,18 @@ export async function POST(request: NextRequest) {
           error: 'Invalid position',
           details: 'position must be a positive number'
         },
+        { status: 400 }
+      );
+    }
+
+    // Validate field values (status enum, date formats, numeric ranges)
+    const validation = validateTreeRow({
+      row_id, position, variety, status, planted_date, age,
+      last_pruned, last_harvest, yield_estimate, notes,
+    } as TreeRowData);
+    if (!validation.isValid) {
+      return NextResponse.json(
+        { error: 'Validation failed', errors: formatValidationErrors(validation.errors) },
         { status: 400 }
       );
     }

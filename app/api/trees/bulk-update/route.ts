@@ -1,19 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireSession, WRITER_ROLES } from '@/lib/api-auth';
 import { handleApiError } from '@/lib/api-errors';
-import { bulkUpdateTrees } from '@/lib/db/trees';
+import { bulkUpsertTrees, BulkUpsertRow } from '@/lib/db/trees';
+import { orchardExists } from '@/lib/db/orchards';
+import { validateBulkImport, formatValidationErrors, TreeRowData } from '@/lib/tree-validation';
 
 /**
  * POST /api/trees/bulk-update
- * Bulk update trees from CSV data or batch operations
- * Requires authentication
+ * Bulk upsert trees from CSV data: creates rows that don't exist and
+ * updates ones that do, all in a single transaction.
+ * Requires operator/admin.
  *
  * Body format:
  * {
  *   orchard_id: "washington",
  *   updates: [
  *     { row_id: "1", position: 1, variety: "Fuji", status: "healthy" },
- *     { row_id: "1", position: 2, variety: "Gala", status: "sick" }
+ *     { row_id: "1", position: 2, variety: "Gala", status: "stressed" }
  *   ]
  * }
  */
@@ -22,94 +25,60 @@ export async function POST(request: NextRequest) {
     const { response } = await requireSession(WRITER_ROLES);
     if (response) return response;
 
-    // Parse request body
     const body = await request.json();
     const { orchard_id, updates } = body;
 
-    // Validate required fields
-    if (!orchard_id) {
+    if (!orchard_id || typeof orchard_id !== 'string') {
       return NextResponse.json(
-        {
-          error: 'Missing required field',
-          details: 'orchard_id is required'
-        },
+        { error: 'Missing required field', details: 'orchard_id is required' },
         { status: 400 }
       );
     }
 
     if (!Array.isArray(updates) || updates.length === 0) {
       return NextResponse.json(
-        {
-          error: 'Invalid updates',
-          details: 'updates must be a non-empty array'
-        },
+        { error: 'Invalid updates', details: 'updates must be a non-empty array' },
         { status: 400 }
       );
     }
 
-    // Validate each update has row_id and position
-    for (let i = 0; i < updates.length; i++) {
-      const update = updates[i];
-      if (!update.row_id || update.position === undefined || update.position === null) {
-        return NextResponse.json(
-          {
-            error: 'Invalid update format',
-            details: `Update at index ${i} is missing row_id or position`
-          },
-          { status: 400 }
-        );
-      }
+    if (!(await orchardExists(orchard_id))) {
+      return NextResponse.json(
+        { error: `Orchard "${orchard_id}" does not exist` },
+        { status: 404 }
+      );
     }
 
-    // Process dates in updates
-    const processedUpdates = updates.map((update: any) => {
-      const processed = { ...update };
-
-      // Convert date strings to Date objects
-      if (processed.planted_date) {
-        processed.planted_date = new Date(processed.planted_date);
-      }
-      if (processed.last_pruned) {
-        processed.last_pruned = new Date(processed.last_pruned);
-      }
-      if (processed.last_harvest) {
-        processed.last_harvest = new Date(processed.last_harvest);
-      }
-
-      return processed;
-    });
-
-    // Perform bulk update
-    const result = await bulkUpdateTrees(orchard_id, processedUpdates);
-
-    // Determine response status
-    const hasErrors = result.errors.length > 0;
-    const allFailed = result.updated === 0 && hasErrors;
-    const partialSuccess = result.updated > 0 && hasErrors;
-
-    if (allFailed) {
+    // Validate every row before touching the database
+    const validation = validateBulkImport(updates as TreeRowData[]);
+    if (!validation.isValid) {
       return NextResponse.json(
         {
-          success: false,
-          message: 'All updates failed',
-          updated: result.updated,
-          total: updates.length,
-          errors: result.errors
+          error: 'Validation failed',
+          errors: formatValidationErrors(validation.errors),
         },
         { status: 400 }
       );
     }
+
+    // Coerce date strings to Date objects
+    const rows: BulkUpsertRow[] = updates.map((u: Record<string, unknown>) => ({
+      ...u,
+      row_id: String(u.row_id),
+      position: Number(u.position),
+      planted_date: u.planted_date ? new Date(u.planted_date as string) : undefined,
+      last_pruned: u.last_pruned ? new Date(u.last_pruned as string) : undefined,
+      last_harvest: u.last_harvest ? new Date(u.last_harvest as string) : undefined,
+    }));
+
+    const result = await bulkUpsertTrees(orchard_id, rows);
 
     return NextResponse.json({
       success: true,
-      message: partialSuccess
-        ? `Updated ${result.updated} trees with ${result.errors.length} errors`
-        : `Successfully updated ${result.updated} trees`,
+      message: `Imported ${result.created + result.updated} trees (${result.created} new, ${result.updated} updated)`,
+      created: result.created,
       updated: result.updated,
       total: updates.length,
-      errors: result.errors.length > 0 ? result.errors : undefined
-    }, {
-      status: partialSuccess ? 207 : 200 // 207 = Multi-Status
     });
   } catch (error) {
     return handleApiError(error, 'POST /api/trees/bulk-update');

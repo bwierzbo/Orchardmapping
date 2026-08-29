@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireSession, WRITER_ROLES } from '@/lib/api-auth';
+import { validateTreeUpdate, formatValidationErrors, TreeRowData } from '@/lib/tree-validation';
 import { handleApiError } from '@/lib/api-errors';
 import {
   getTreeById,
@@ -80,6 +81,15 @@ export async function PUT(
       updated_at,
       ...updateData
     } = body;
+
+    // Validate field values before any coercion
+    const validation = validateTreeUpdate(updateData as Partial<TreeRowData>);
+    if (!validation.isValid) {
+      return NextResponse.json(
+        { error: 'Validation failed', errors: formatValidationErrors(validation.errors) },
+        { status: 400 }
+      );
+    }
 
     // Convert date strings to Date objects if provided
     if (updateData.planted_date) {

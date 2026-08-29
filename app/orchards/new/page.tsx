@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { upload } from '@vercel/blob/client';
 
 export default function NewOrchardPage() {
   const { data: session, status } = useSession();
@@ -111,26 +112,29 @@ export default function NewOrchardPage() {
         throw new Error('PMTiles file is required');
       }
 
-      // Create form data
-      const formData = new FormData();
-      formData.append('name', name.trim());
-      formData.append('location', location.trim());
-      formData.append('pmtilesFile', file);
+      // Upload straight to Blob storage with real progress
+      const slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      if (!slug) {
+        throw new Error('Orchard name must contain letters or numbers');
+      }
 
-      // Simulate progress for large files
-      const progressInterval = setInterval(() => {
-        setUploadProgress(prev => Math.min(prev + 10, 90));
-      }, 500);
-
-      // Submit to API
-      const response = await fetch('/api/orchards/create', {
-        method: 'POST',
-        body: formData,
-        credentials: 'include'
+      const blob = await upload(`orchards/${slug}/ortho/orthomap.pmtiles`, file, {
+        access: 'public',
+        handleUploadUrl: '/api/orchards/upload',
+        onUploadProgress: ({ percentage }) => setUploadProgress(Math.round(percentage)),
       });
 
-      clearInterval(progressInterval);
-      setUploadProgress(100);
+      // Create the orchard row from the uploaded file's metadata
+      const response = await fetch('/api/orchards/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name.trim(),
+          location: location.trim(),
+          blobUrl: blob.url,
+        }),
+        credentials: 'include'
+      });
 
       const result = await response.json();
 
@@ -140,11 +144,7 @@ export default function NewOrchardPage() {
 
       // Success!
       setSuccess(true);
-
-      // Redirect after 2 seconds
-      setTimeout(() => {
-        router.push(`/orchard/${result.orchardId}`);
-      }, 2000);
+      router.push(`/orchard/${result.orchardId}`);
 
     } catch (err: any) {
       setError(err.message || 'An error occurred while creating the orchard');

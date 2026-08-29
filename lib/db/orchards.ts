@@ -1,6 +1,7 @@
 import { sql } from '@vercel/postgres';
 import { OrchardConfig, OrchardBounds } from '../orchards';
 import { buildUpdateSet } from './sql-helpers';
+import { toNum } from './decode';
 
 /**
  * Columns a caller may change through updateOrchard. The primary key and
@@ -29,7 +30,7 @@ export const ORCHARD_UPDATABLE_COLUMNS = [
 
 /**
  * Orchard database interface
- * Matches the schema in lib/db/schema.sql
+ * Matches the schema in lib/db/migrations/
  */
 export interface Orchard {
   id: string;
@@ -101,13 +102,6 @@ export interface OrchardFullInsertData {
  * Note: PostgreSQL DECIMAL types are returned as strings, so we convert them to numbers
  */
 export function dbRowToOrchardConfig(row: Orchard): OrchardConfig {
-  // Helper to safely convert string/number to number
-  const toNum = (val: string | number | undefined | null, defaultVal: number): number => {
-    if (val === undefined || val === null) return defaultVal;
-    const num = typeof val === 'string' ? parseFloat(val) : val;
-    return isNaN(num) ? defaultVal : num;
-  };
-
   return {
     id: row.id,
     name: row.name,
@@ -198,19 +192,12 @@ export async function insertOrchard(orchardData: OrchardInsertData): Promise<Orc
  * }
  */
 export async function orchardExists(id: string): Promise<boolean> {
-  try {
-    const result = await sql`
-      SELECT id FROM orchards
-      WHERE id = ${id}
-      LIMIT 1
-    `;
-
-    return result.rows.length > 0;
-  } catch (error) {
-    console.error('Error checking orchard existence:', error);
-    // In case of error, return false to be safe (let other validations catch issues)
-    return false;
-  }
+  const result = await sql`
+    SELECT id FROM orchards
+    WHERE id = ${id}
+    LIMIT 1
+  `;
+  return result.rows.length > 0;
 }
 
 /**
@@ -223,17 +210,11 @@ export async function orchardExists(id: string): Promise<boolean> {
  * console.log(`Found ${orchards.length} orchards`);
  */
 export async function getAllOrchardsFromDb(): Promise<Orchard[]> {
-  try {
-    const result = await sql`
-      SELECT * FROM orchards
-      ORDER BY created_at DESC
-    `;
-
-    return result.rows as Orchard[];
-  } catch (error) {
-    console.error('Error fetching orchards:', error);
-    return [];
-  }
+  const result = await sql`
+    SELECT * FROM orchards
+    ORDER BY created_at DESC
+  `;
+  return result.rows as Orchard[];
 }
 
 /**
@@ -249,18 +230,12 @@ export async function getAllOrchardsFromDb(): Promise<Orchard[]> {
  * }
  */
 export async function getOrchardById(id: string): Promise<Orchard | null> {
-  try {
-    const result = await sql`
-      SELECT * FROM orchards
-      WHERE id = ${id}
-      LIMIT 1
-    `;
-
-    return result.rows.length > 0 ? (result.rows[0] as Orchard) : null;
-  } catch (error) {
-    console.error('Error fetching orchard:', error);
-    return null;
-  }
+  const result = await sql`
+    SELECT * FROM orchards
+    WHERE id = ${id}
+    LIMIT 1
+  `;
+  return result.rows.length > 0 ? (result.rows[0] as Orchard) : null;
 }
 
 /**
@@ -310,17 +285,11 @@ export async function updateOrchard(
  * }
  */
 export async function deleteOrchard(id: string): Promise<boolean> {
-  try {
-    const result = await sql`
-      DELETE FROM orchards
-      WHERE id = ${id}
-    `;
-
-    return result.rowCount !== null && result.rowCount > 0;
-  } catch (error) {
-    console.error('Error deleting orchard:', error);
-    return false;
-  }
+  const result = await sql`
+    DELETE FROM orchards
+    WHERE id = ${id}
+  `;
+  return result.rowCount !== null && result.rowCount > 0;
 }
 
 /**
@@ -333,16 +302,10 @@ export async function deleteOrchard(id: string): Promise<boolean> {
  * console.log(`Total orchards: ${count}`);
  */
 export async function getOrchardsCount(): Promise<number> {
-  try {
-    const result = await sql`
-      SELECT COUNT(*) as count FROM orchards
-    `;
-
-    return parseInt(result.rows[0].count, 10) || 0;
-  } catch (error) {
-    console.error('Error counting orchards:', error);
-    return 0;
-  }
+  const result = await sql`
+    SELECT COUNT(*) as count FROM orchards
+  `;
+  return parseInt(result.rows[0].count, 10) || 0;
 }
 
 /**
@@ -385,34 +348,21 @@ export async function insertOrchardFull(data: OrchardFullInsertData): Promise<Or
  * Get a single orchard by ID and return as OrchardConfig format
  */
 export async function getOrchardConfigById(id: string): Promise<OrchardConfig | null> {
-  try {
-    const result = await sql`
-      SELECT * FROM orchards WHERE id = ${id} LIMIT 1
-    `;
-
-    if (result.rows.length === 0) {
-      return null;
-    }
-
-    return dbRowToOrchardConfig(result.rows[0] as Orchard);
-  } catch (error) {
-    console.error('Error fetching orchard config:', error);
+  const result = await sql`
+    SELECT * FROM orchards WHERE id = ${id} LIMIT 1
+  `;
+  if (result.rows.length === 0) {
     return null;
   }
+  return dbRowToOrchardConfig(result.rows[0] as Orchard);
 }
 
 /**
  * Get all orchards as OrchardConfig format
  */
 export async function getAllOrchardConfigs(): Promise<OrchardConfig[]> {
-  try {
-    const result = await sql`
-      SELECT * FROM orchards ORDER BY created_at DESC
-    `;
-
-    return result.rows.map((row) => dbRowToOrchardConfig(row as Orchard));
-  } catch (error) {
-    console.error('Error fetching orchard configs:', error);
-    return [];
-  }
+  const result = await sql`
+    SELECT * FROM orchards ORDER BY created_at DESC
+  `;
+  return result.rows.map((row) => dbRowToOrchardConfig(row as Orchard));
 }
