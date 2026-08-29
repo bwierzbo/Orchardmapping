@@ -4,6 +4,9 @@ import AddOrchardFAB from '@/components/AddOrchardFAB';
 import AddOrchardCard from '@/components/AddOrchardCard';
 import { getTreeCountsByOrchard } from '../lib/db/trees';
 
+// Live DB data (orchards + tree counts) — never prerender at build time
+export const dynamic = 'force-dynamic';
+
 export default async function Home() {
   const orchards = await getAllOrchardConfigs();
 
