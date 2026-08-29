@@ -1,52 +1,42 @@
 import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
-
-// Admin users configuration
-// WARNING: Never hardcode passwords! Always use environment variables.
-const ADMIN_USERS = [
-  {
-    id: '1',
-    username: process.env.ADMIN_USERNAME || 'admin',
-    email: process.env.ADMIN_EMAIL || 'admin@orchard.local',
-    password: process.env.ADMIN_PASSWORD,
-    name: process.env.ADMIN_NAME || 'Admin',
-  },
-].filter(user => user.password); // Only include users with passwords set
+import { validateCredentials } from './lib/db/users';
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
     Credentials({
       name: 'Credentials',
       credentials: {
-        username: { label: 'Username', type: 'text' },
+        email: { label: 'Email', type: 'email' },
         password: { label: 'Password', type: 'password' },
       },
       async authorize(credentials) {
-        const username = credentials?.username as string;
+        const email = credentials?.email as string;
         const password = credentials?.password as string;
 
-        if (!username || !password) {
+        if (!email || !password) {
           return null;
         }
 
-        // Check against admin users (by username or email)
-        const user = ADMIN_USERS.find(
-          (u) =>
-            (u.username === username || u.email === username) &&
-            u.password === password
-        );
+        try {
+          // Validate credentials against database
+          const user = await validateCredentials(email, password);
 
-        if (user) {
-          // Return user object without password
+          if (!user) {
+            return null;
+          }
+
+          // Return user object for session
           return {
-            id: user.id,
-            name: user.name,
+            id: String(user.id),
+            name: user.name || user.email,
             email: user.email,
+            role: user.role,
           };
+        } catch (error) {
+          console.error('Auth error:', error);
+          return null;
         }
-
-        // Invalid credentials
-        return null;
       },
     }),
   ],
@@ -61,12 +51,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
+        token.role = (user as any).role;
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string;
+        (session.user as any).role = token.role;
       }
       return session;
     },

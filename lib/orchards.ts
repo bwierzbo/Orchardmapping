@@ -1,4 +1,12 @@
-// Orchard configuration types and data
+/**
+ * Orchard configuration types
+ *
+ * NOTE: Orchard data is now stored in the database, not in this file.
+ * Use functions from lib/db/orchards.ts to fetch orchard configurations.
+ *
+ * - getOrchardConfigById(id) - Get a single orchard config
+ * - getAllOrchardConfigs() - Get all orchard configs
+ */
 
 export interface OrchardBounds {
   minLng: number;
@@ -19,18 +27,21 @@ export interface OrchardConfig {
   maxZoom: number;
   tileMinZoom: number;
   tileMaxZoom: number;
-  orthoPath: string; // Path to orthomosaic tiles (deprecated, use orthoPmtilesPath)
-  orthoPmtilesPath?: string; // Path to orthomosaic PMTiles file
-  pmtilesPath: string; // Path to PMTiles file for vector data
-  previewImage?: string; // Optional preview image for selector
+  orthoPath: string; // Path to orthomosaic tiles via API (for Y-flip fix)
+  orthoPmtilesPath?: string; // URL to orthomosaic PMTiles (can be Blob URL or relative path)
+  pmtilesPath: string; // URL to PMTiles file for vector data (can be Blob URL or relative path)
+  previewImage?: string; // Optional preview image URL
   stats?: {
-    trees?: number; // Note: Tree count is now fetched dynamically from database
+    trees?: number; // Note: Tree count is fetched dynamically from database
     blocks?: number;
     rows?: number;
   };
 }
 
-// Registry of available orchards
+/**
+ * @deprecated Use getAllOrchardConfigs() from lib/db/orchards instead.
+ * This static registry is kept for backwards compatibility during migration.
+ */
 export const orchards: Record<string, OrchardConfig> = {
   washington: {
     id: 'washington',
@@ -82,20 +93,34 @@ export const orchards: Record<string, OrchardConfig> = {
   }
 };
 
-// Helper functions
+/**
+ * @deprecated Use getOrchardConfigById() from lib/db/orchards instead.
+ */
 export function getOrchardById(id: string): OrchardConfig | null {
+  console.warn('getOrchardById from lib/orchards is deprecated. Use getOrchardConfigById from lib/db/orchards.');
   return orchards[id] || null;
 }
 
+/**
+ * @deprecated Use getAllOrchardConfigs() from lib/db/orchards instead.
+ */
 export function getAllOrchards(): OrchardConfig[] {
+  console.warn('getAllOrchards from lib/orchards is deprecated. Use getAllOrchardConfigs from lib/db/orchards.');
   return Object.values(orchards);
 }
 
+/**
+ * @deprecated Orchard IDs should be fetched from database.
+ */
 export function getOrchardIds(): string[] {
+  console.warn('getOrchardIds from lib/orchards is deprecated.');
   return Object.keys(orchards);
 }
 
-// Get the default orchard (first in the list)
+/**
+ * @deprecated Use getAllOrchardConfigs() from lib/db/orchards and select the first one.
+ */
 export function getDefaultOrchard(): OrchardConfig {
+  console.warn('getDefaultOrchard from lib/orchards is deprecated.');
   return Object.values(orchards)[0];
 }

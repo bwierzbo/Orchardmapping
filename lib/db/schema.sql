@@ -2,14 +2,50 @@
 DROP TABLE IF EXISTS tree_health_logs CASCADE;
 DROP TABLE IF EXISTS trees CASCADE;
 DROP TABLE IF EXISTS orchards CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
+
+-- Create users table for authentication
+CREATE TABLE IF NOT EXISTS users (
+  id SERIAL PRIMARY KEY,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  name VARCHAR(255),
+  role VARCHAR(50) DEFAULT 'viewer' CHECK (role IN ('admin', 'operator', 'viewer')),
+  is_active BOOLEAN DEFAULT true,
+  last_login_at TIMESTAMP,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create index for email lookups
+CREATE INDEX idx_users_email ON users(email);
 
 -- Create orchards table
 CREATE TABLE IF NOT EXISTS orchards (
   id VARCHAR(50) PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
   location VARCHAR(255),
+  description TEXT,
   center_lat DECIMAL(10, 8),
   center_lng DECIMAL(11, 8),
+  -- Geographic bounds
+  bounds_min_lng DECIMAL(11, 8),
+  bounds_min_lat DECIMAL(10, 8),
+  bounds_max_lng DECIMAL(11, 8),
+  bounds_max_lat DECIMAL(10, 8),
+  -- Zoom levels
+  default_zoom DECIMAL(4, 2) DEFAULT 18,
+  min_zoom DECIMAL(4, 2) DEFAULT 5,
+  max_zoom DECIMAL(4, 2) DEFAULT 21.5,
+  tile_min_zoom INTEGER DEFAULT 5,
+  tile_max_zoom INTEGER DEFAULT 23,
+  -- Tile URLs (Vercel Blob storage)
+  ortho_pmtiles_url TEXT,
+  vector_pmtiles_url TEXT,
+  preview_image_url TEXT,
+  -- Legacy: API tile path for orchards using tile API instead of PMTiles
+  ortho_api_path TEXT,
+  -- Timestamps
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -55,10 +91,6 @@ CREATE INDEX idx_trees_location ON trees(lat, lng);
 CREATE INDEX idx_health_logs_tree ON tree_health_logs(tree_id);
 CREATE INDEX idx_health_logs_date ON tree_health_logs(logged_at);
 
--- Insert sample orchard data
-INSERT INTO orchards (id, name, location, center_lat, center_lng) VALUES
-  ('washington', 'Washington Orchard', 'Washington State, USA', 48.113935, -123.264154),
-  ('california', 'California Orchard', 'California, USA', 36.778259, -119.417931),
-  ('oregon', 'Oregon Orchard', 'Oregon, USA', 44.058173, -123.092650)
-ON CONFLICT (id) DO UPDATE SET
-  updated_at = CURRENT_TIMESTAMP;
+-- Note: Orchard data is now managed through the migration scripts
+-- and created via the /api/orchards/create endpoint.
+-- Sample data has been removed to avoid orchards without tile configuration.

@@ -7,7 +7,7 @@ import maplibregl from 'maplibre-gl';
 import { PMTiles, Protocol } from 'pmtiles';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './popup-styles.css';
-import { getOrchardById, getAllOrchards, OrchardConfig } from '../../../lib/orchards';
+import { OrchardConfig } from '../../../lib/orchards';
 import { validatePMTiles } from '../../../lib/pmtiles-utils';
 import BulkTreeImport from './components/BulkTreeImport';
 import { ToastContainer, ToastProps } from '@/components/Toast';
@@ -48,14 +48,15 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
   const params = use(paramsPromise);
   const orchardId = params.id;
 
-  const orchard = orchardId ? getOrchardById(orchardId) : null;
-  const allOrchards = getAllOrchards();
+  // Orchard config state (fetched from database)
+  const [orchard, setOrchard] = useState<OrchardConfig | null>(null);
+  const [allOrchards, setAllOrchards] = useState<OrchardConfig[]>([]);
+  const [orchardLoading, setOrchardLoading] = useState(true);
 
   // Initialize hooks first (before any early returns)
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const popupRef = useRef<maplibregl.Popup | null>(null);
-  const isInitializing = useRef(false); // Track initialization state
   const createPopupContentRef = useRef<any>(null);
   const fetchTreeDetailsRef = useRef<any>(null);
 
@@ -100,6 +101,40 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
   const removeToast = useCallback((id: string) => {
     setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
+
+  // Fetch orchard config from database
+  useEffect(() => {
+    async function fetchOrchardConfig() {
+      setOrchardLoading(true);
+      try {
+        // Fetch single orchard
+        const response = await fetch(`/api/orchards/config?id=${orchardId}`);
+        if (response.ok) {
+          const data = await response.json();
+          setOrchard(data);
+        } else {
+          console.error('Failed to fetch orchard config');
+          setOrchard(null);
+        }
+
+        // Fetch all orchards for selector
+        const allResponse = await fetch('/api/orchards/config');
+        if (allResponse.ok) {
+          const allData = await allResponse.json();
+          setAllOrchards(allData);
+        }
+      } catch (error) {
+        console.error('Error fetching orchard config:', error);
+        setOrchard(null);
+      } finally {
+        setOrchardLoading(false);
+      }
+    }
+
+    if (orchardId) {
+      fetchOrchardConfig();
+    }
+  }, [orchardId]);
 
   // Function to fetch tree details from API
   const fetchTreeDetails = useCallback(async (treeId: string): Promise<TreeDetails | null> => {
@@ -700,12 +735,9 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
   }, [trees, isEditMode, createPopupContent, fetchTreeDetails, isDragging, getMarkerStyle]);
 
   useEffect(() => {
-    // Prevent multiple initializations using ref flag
-    if (isInitializing.current || map.current) return;
+    // Prevent multiple initializations - only check map.current
+    if (map.current) return;
     if (!mapContainer.current || !orchard) return;
-
-    // Set flag to prevent double initialization
-    isInitializing.current = true;
 
     // Define keyboard handler outside initializeMap so we can clean it up
     const handleKeyPress = (e: KeyboardEvent) => {
@@ -723,10 +755,6 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
         setSelectedTreeId(null);
         setSelectedTreeFeature(null);
         popupRef.current = null;
-        // Clear selected tree label filter (only if layer exists)
-        if (map.current && map.current.getLayer('orchard-tree-labels-selected')) {
-          map.current.setFilter('orchard-tree-labels-selected', ['==', ['get', 'tree_id'], '']);
-        }
         return;
       }
 
@@ -766,7 +794,12 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
     };
 
     const initializeMap = async () => {
-      console.log('🗺️ Initializing map...');
+      console.log('🗺️ Initializing map with orchard:', JSON.stringify({
+        id: orchard.id,
+        center: orchard.center,
+        defaultZoom: orchard.defaultZoom,
+        orthoPmtilesPath: orchard.orthoPmtilesPath,
+      }, null, 2));
       // Clear any existing map content in the container
       if (mapContainer.current) {
         mapContainer.current.innerHTML = '';
@@ -793,8 +826,10 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
         // Add orthomosaic PMTiles if it exists
         if (orchard.orthoPmtilesPath) {
           try {
-            // PMTiles needs the full URL when running in browser
-            const orthoUrl = window.location.origin + orchard.orthoPmtilesPath;
+            // Check if URL is already absolute (Blob URLs) or relative (legacy)
+            const orthoUrl = orchard.orthoPmtilesPath.startsWith('http')
+              ? orchard.orthoPmtilesPath
+              : window.location.origin + orchard.orthoPmtilesPath;
             const orthoPMTiles = new PMTiles(orthoUrl);
             protocol.add(orthoPMTiles);
             console.log('Registered orthomosaic PMTiles:', orthoUrl);
@@ -805,7 +840,10 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
 
         // Add vector PMTiles if it exists
         if (orchard.pmtilesPath) {
-          const vectorUrl = window.location.origin + orchard.pmtilesPath;
+          // Check if URL is already absolute (Blob URLs) or relative (legacy)
+          const vectorUrl = orchard.pmtilesPath.startsWith('http')
+            ? orchard.pmtilesPath
+            : window.location.origin + orchard.pmtilesPath;
           const validation = await validatePMTiles(vectorUrl);
 
           if (validation.valid) {
@@ -860,8 +898,11 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
           ...(orchard.orthoPmtilesPath ? {
             'orchard-orthomosaic': {
               // Use PMTiles for orthomosaic if available
+              // For Blob URLs (absolute), use pmtiles:// + full URL; for relative paths, just pmtiles:// + path
               type: 'raster',
-              url: `pmtiles://${orchard.orthoPmtilesPath}`,
+              url: orchard.orthoPmtilesPath.startsWith('http')
+                ? `pmtiles://${orchard.orthoPmtilesPath}`
+                : `pmtiles://${orchard.orthoPmtilesPath}`,
               attribution: `${orchard.name} Orthomosaic`,
               tileSize: 256,
               minzoom: orchard.tileMinZoom,
@@ -882,7 +923,9 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
           ...(pmtilesValid && orchard.pmtilesPath ? {
             'orchard-vectors': {
               type: 'vector',
-              url: `pmtiles://${orchard.pmtilesPath}`, // Dynamic PMTiles path
+              url: orchard.pmtilesPath.startsWith('http')
+                ? `pmtiles://${orchard.pmtilesPath}`
+                : `pmtiles://${orchard.pmtilesPath}`,
               attribution: `${orchard.name} Geometry Data`,
               minzoom: 0,   // Request tiles from zoom 0
               maxzoom: 22,  // Up to max zoom
@@ -901,6 +944,7 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
 
     // Add layers after map is created
     map.current.on('load', () => {
+      console.log('🗺️ Map loaded, adding layers...');
       // Add basemap layer first
       if (map.current && !map.current.getLayer('osm-basemap')) {
         map.current.addLayer({
@@ -932,126 +976,7 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
         });
       }
 
-      // Add vector layers if PMTiles source exists and is valid
-      if (pmtilesValid && orchard.pmtilesPath && map.current) {
-        // Trees layer
-        if (!map.current.getLayer('orchard-trees')) {
-          map.current.addLayer({
-            id: 'orchard-trees',
-            type: 'circle',
-            source: 'orchard-vectors',
-            'source-layer': sourceLayerName,
-          paint: {
-              'circle-radius': [
-                'interpolate',
-                ['linear'],
-                ['zoom'],
-                10, 1,    // Very small at zoom 10
-                12, 2,    // Small dots at zoom 12
-                15, 3,    // Medium at zoom 15
-                18, 5,    // Larger at zoom 18
-                20, 8     // Large at zoom 20
-              ],
-              'circle-color': [
-                'case',
-                // Check for status first, then health
-                ['has', 'status'],
-                [
-                  'case',
-                  ['==', ['get', 'status'], 'healthy'], '#2ecc71',
-                  ['==', ['get', 'status'], 'stressed'], '#f39c12',
-                  ['==', ['get', 'status'], 'dead'], '#e74c3c',
-                  '#95a5a6' // default gray
-                ],
-                // Fallback to health property
-                ['has', 'health'],
-                [
-                  'case',
-                  ['==', ['get', 'health'], 'healthy'], '#2ecc71',
-                  ['==', ['get', 'health'], 'stressed'], '#f39c12',
-                  ['==', ['get', 'health'], 'dead'], '#e74c3c',
-                  '#95a5a6' // default gray
-                ],
-                '#27ae60' // default green if no status/health attribute
-              ],
-              'circle-stroke-color': '#1e5e3a',
-              'circle-stroke-width': [
-                'interpolate',
-                ['linear'],
-                ['zoom'],
-                15, 0.5,
-                20, 1
-              ],
-            'circle-opacity': 0.9
-          }
-          });
-        }
-
-        // Tree labels at high zoom with collision avoidance
-        if (!map.current.getLayer('orchard-tree-labels')) {
-          map.current.addLayer({
-          id: 'orchard-tree-labels',
-          type: 'symbol',
-          source: 'orchard-vectors',
-          'source-layer': sourceLayerName,
-          minzoom: 18,
-          layout: {
-              'text-field': ['get', 'name'],
-              'text-font': ['Noto Sans Regular', 'Arial Unicode MS Regular'],
-              'text-size': 11,
-              'text-offset': [0, 1.2],
-              'text-anchor': 'top',
-              'text-allow-overlap': false,
-              'text-ignore-placement': false,
-              'text-optional': true // Allow some labels to be hidden if crowded
-            },
-            paint: {
-              'text-color': '#ffffff',
-              'text-halo-color': '#000000',
-              'text-halo-width': 1.5,
-            'text-halo-blur': 0.5
-          }
-          });
-        }
-
-        // Selected tree label (always visible)
-        if (!map.current.getLayer('orchard-tree-labels-selected')) {
-          map.current.addLayer({
-          id: 'orchard-tree-labels-selected',
-          type: 'symbol',
-          source: 'orchard-vectors',
-          'source-layer': sourceLayerName,
-          minzoom: 18,
-          filter: ['==', ['get', 'tree_id'], ''], // Initially empty
-          layout: {
-              'text-field': ['get', 'name'],
-              'text-font': ['Noto Sans Regular', 'Arial Unicode MS Regular'],
-              'text-size': 12,
-              'text-offset': [0, 1.2],
-              'text-anchor': 'top',
-              'text-allow-overlap': true, // Always show selected tree label
-              'text-ignore-placement': true
-            },
-            paint: {
-              'text-color': '#ffff00', // Yellow for selected
-              'text-halo-color': '#000000',
-              'text-halo-width': 2,
-            'text-halo-blur': 0.5
-          }
-          });
-        }
-      }
-
-      if (pmtilesValid) {
-        // Change cursor on hover
-        map.current?.on('mouseenter', 'orchard-trees', () => {
-          if (map.current) map.current.getCanvas().style.cursor = 'pointer';
-        });
-
-        map.current?.on('mouseleave', 'orchard-trees', () => {
-          if (map.current) map.current.getCanvas().style.cursor = '';
-        });
-      }
+      // PMTiles vector tree layers removed - using database markers only
     });
 
     // Add navigation controls
@@ -1063,13 +988,9 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
       unit: 'metric'
     }), 'bottom-left');
 
-    // Add error handler for map errors
+    // Add error handler for map errors - log all errors for debugging
     map.current.on('error', (e) => {
-      // Silently handle PMTiles-related errors
-      if (!e.error?.message?.includes('Unimplemented type') &&
-          !e.error?.message?.includes('parse')) {
-        console.error('Map error:', e.error?.message || e);
-      }
+      console.error('Map error:', e.error?.message || e);
     });
 
     // Handle general map clicks for edit mode tree placement
@@ -1084,23 +1005,6 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
       // Use ref values to get current state (not closure-captured values)
       if (!isEditModeRef.current) {
         console.log('Not in edit mode, ignoring click');
-        return;
-      }
-
-      // Check if clicking on an existing tree layer (only if layer exists)
-      let features: any[] = [];
-      if (map.current && map.current.getLayer('orchard-trees')) {
-        features = map.current.queryRenderedFeatures(e.point, {
-          layers: ['orchard-trees']
-        });
-        console.log('Features at click point:', features);
-      } else {
-        console.log('orchard-trees layer does not exist, skipping feature check');
-      }
-
-      // If clicking on an existing tree, let the tree click handler deal with it
-      if (features && features.length > 0) {
-        console.log('Clicked on existing tree, skipping');
         return;
       }
 
@@ -1167,132 +1071,7 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
 
     console.log('✅ Map click handler for tree placement registered');
 
-    // Handle tree click events
-    map.current.on('click', 'orchard-trees', async (e) => {
-      try {
-        e.preventDefault?.(); // Prevent any default behavior
-
-        if (!e.features || !e.features[0]) {
-          return;
-        }
-        if (!map.current) {
-          return;
-        }
-
-        const feature = e.features[0];
-        const properties = feature.properties as TreeProperties;
-
-        // In edit mode, open edit form instead of popup - use ref value
-        if (isEditModeRef.current && properties.tree_id) {
-          const details = await fetchTreeDetailsRef.current?.(properties.tree_id);
-          // Only open edit form if we have details from database or properties has tree_id
-          if (details && details.tree_id) {
-            setEditingTree(details);
-            setIsEditingTree(true);
-            return;
-          } else if (!details) {
-            // Tree exists in PMTiles but not in database - can't edit
-            showToast('warning', 'This tree exists in the map file but not in the database. Cannot edit or delete.');
-            return;
-          }
-        }
-
-      // Close existing popup
-      if (popupRef.current) {
-        popupRef.current.remove();
-        popupRef.current = null;
-      }
-
-      // Get the exact click coordinates
-      const clickCoordinates: [number, number] = [e.lngLat.lng, e.lngLat.lat];
-
-      // Set selected tree ID and feature
-      setSelectedTreeId(properties.tree_id || properties.name || null);
-      setSelectedTreeFeature(feature);
-
-      // Force selected tree label to show
-      if (map.current && feature) {
-        // Temporarily allow overlap for selected tree (only if layer exists)
-        const layer = map.current.getLayer('orchard-tree-labels-selected');
-        if (layer) {
-          const filter: any = ['==', ['get', 'tree_id'], properties.tree_id || ''];
-          map.current.setFilter('orchard-tree-labels-selected', filter);
-        }
-      }
-
-      // Try to fetch detailed data from API (prepared for future)
-      const details = properties.tree_id ? await fetchTreeDetailsRef.current?.(properties.tree_id) : null;
-
-      // Create popup with all settings at once
-      const popup = new maplibregl.Popup({
-        closeButton: true,
-        closeOnClick: true,
-        className: 'orchard-popup no-animation', // Add no-animation class
-        maxWidth: '320px',
-        offset: [0, -10], // Offset to position above the circle
-        anchor: 'bottom'
-      })
-        .setLngLat(clickCoordinates)
-        .setDOMContent(createPopupContentRef.current?.(properties, details))
-        .addTo(map.current);
-
-      // Store reference
-      popupRef.current = popup;
-
-      // Handle popup close
-      popup.on('close', () => {
-        setSelectedTreeId(null);
-        setSelectedTreeFeature(null);
-        popupRef.current = null;
-        // Reset label overlap for selected tree
-        if (map.current && selectedTreeFeature) {
-          map.current.setLayoutProperty('orchard-tree-labels', 'text-allow-overlap', false);
-        }
-      });
-      } catch (error) {
-        console.error('Error in tree click handler:', error);
-      }
-    });
-
-    // Change cursor to pointer when hovering over trees
-    map.current.on('mouseenter', 'orchard-trees', (e) => {
-      if (map.current) {
-        map.current.getCanvas().style.cursor = 'pointer';
-
-        // Optional: Add hover effect by changing tree stroke
-        if (e.features && e.features[0] && e.features[0].properties?.tree_id) {
-          map.current.setPaintProperty('orchard-trees', 'circle-stroke-width', [
-            'case',
-            ['==', ['get', 'tree_id'], e.features[0].properties.tree_id],
-            2,
-            [
-              'interpolate',
-              ['linear'],
-              ['zoom'],
-              15, 0.5,
-              20, 1
-            ]
-          ]);
-        }
-      }
-    });
-
-    // Reset cursor and hover effect when leaving trees
-    map.current.on('mouseleave', 'orchard-trees', () => {
-      if (map.current) {
-        map.current.getCanvas().style.cursor = '';
-
-        // Reset hover effect
-        map.current.setPaintProperty('orchard-trees', 'circle-stroke-width', [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          15, 0.5,
-          20, 1
-        ]);
-      }
-    });
-
+    // PMTiles tree click and hover handlers removed - using database markers only
 
     }; // Close initializeMap function
 
@@ -1304,9 +1083,6 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
 
     // Cleanup on unmount
     return () => {
-      // Reset initialization flag
-      isInitializing.current = false;
-
       // Remove keyboard listener
       document.removeEventListener('keydown', handleKeyPress);
 
@@ -1481,6 +1257,18 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
   // Handle invalid orchard ID or loading state
   if (!orchardId) {
     return <div className="h-screen w-screen flex items-center justify-center">Loading...</div>;
+  }
+
+  // Show loading while fetching orchard config
+  if (orchardLoading) {
+    return (
+      <div className="h-screen w-screen flex items-center justify-center bg-gray-100">
+        <div className="bg-white rounded-lg p-6 shadow-2xl flex flex-col items-center gap-3">
+          <div className="w-12 h-12 border-4 border-green-600 border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-gray-700 font-medium">Loading orchard...</p>
+        </div>
+      </div>
+    );
   }
 
   if (!orchard) {
@@ -1729,10 +1517,6 @@ export default function OrchardPage({ params: paramsPromise }: PageProps) {
               if (popupRef.current) {
                 popupRef.current.remove();
                 popupRef.current = null;
-              }
-              // Clear selected tree label filter (only if layer exists)
-              if (map.current && map.current.getLayer('orchard-tree-labels-selected')) {
-                map.current.setFilter('orchard-tree-labels-selected', ['==', ['get', 'tree_id'], '']);
               }
             }}
             className="ml-2 text-gray-400 hover:text-gray-600 transition-colors"

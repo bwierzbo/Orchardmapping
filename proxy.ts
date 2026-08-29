@@ -1,14 +1,18 @@
 import { auth } from '@/auth';
-import { NextResponse } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 
-export default auth((req) => {
-  const { pathname } = req.nextUrl;
-  const isAuthenticated = !!req.auth;
+export async function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl;
 
-  // Protected routes
+  // Get session
+  const session = await auth();
+  const isAuthenticated = !!session;
+
+  // Protected routes (require authentication)
   const protectedPaths = [
     '/orchards/new',
-    '/api/orchards',
+    '/api/orchards/create',  // Only protect create, not config
+    '/api/users',
   ];
 
   // Check if the current path matches any protected path
@@ -16,18 +20,18 @@ export default auth((req) => {
 
   // Redirect to login if trying to access protected route while not authenticated
   if (isProtectedRoute && !isAuthenticated) {
-    const loginUrl = new URL('/login', req.url);
+    const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('callbackUrl', pathname);
     return NextResponse.redirect(loginUrl);
   }
 
   // Redirect to home if trying to access login while authenticated
   if (pathname === '/login' && isAuthenticated) {
-    return NextResponse.redirect(new URL('/', req.url));
+    return NextResponse.redirect(new URL('/', request.url));
   }
 
   return NextResponse.next();
-});
+}
 
 export const config = {
   matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],

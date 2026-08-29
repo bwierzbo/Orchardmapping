@@ -1,11 +1,11 @@
 import Link from 'next/link';
-import { getAllOrchards } from '../lib/orchards';
+import { getAllOrchardConfigs } from '../lib/db/orchards';
 import AddOrchardFAB from '@/components/AddOrchardFAB';
 import AddOrchardCard from '@/components/AddOrchardCard';
 import { getTreeCountsByOrchard } from '../lib/db/trees';
 
 export default async function Home() {
-  const orchards = getAllOrchards();
+  const orchards = await getAllOrchardConfigs();
 
   // Get actual tree counts from database
   const treeCounts = await getTreeCountsByOrchard();
