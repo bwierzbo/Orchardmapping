@@ -10,13 +10,13 @@ import { uploadPreviewImageToBlob } from '../lib/blob/upload';
 import { updateOrchard } from '../lib/db/orchards';
 
 async function main() {
-  const [id, file] = process.argv.slice(2);
+  const [id, file, filename = 'card.jpg'] = process.argv.slice(2);
   if (!id || !file) {
-    console.error('Usage: tsx scripts/set-preview.ts <orchard-id> <image-path>');
+    console.error('Usage: tsx scripts/set-preview.ts <orchard-id> <image-path> [filename]');
     process.exit(1);
   }
   const buffer = await fs.readFile(file);
-  const result = await uploadPreviewImageToBlob(id, buffer, 'card.jpg');
+  const result = await uploadPreviewImageToBlob(id, buffer, filename);
   console.log('uploaded:', result.url);
   const updated = await updateOrchard(id, { preview_image_url: result.url });
   if (!updated) {

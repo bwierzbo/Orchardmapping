@@ -253,7 +253,7 @@ export default function OrchardViewer({
       <button
         onClick={() => router.push('/')}
         aria-label="All orchards"
-        className="absolute top-4 left-4 z-10 bg-surface rounded-lg shadow-lg p-2.5 hover:bg-canopy-50"
+        className="absolute left-4 top-[max(1rem,env(safe-area-inset-top))] z-10 bg-surface rounded-lg shadow-lg p-2.5 hover:bg-canopy-50"
       >
         <svg aria-hidden className="w-5 h-5 text-ink" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
@@ -261,7 +261,7 @@ export default function OrchardViewer({
       </button>
 
       {/* Orchard header */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-surface/95 backdrop-blur-sm rounded-lg shadow-lg px-4 py-2 z-10 max-w-[calc(100vw-9rem)]">
+      <div className="absolute top-[max(1rem,env(safe-area-inset-top))] left-1/2 -translate-x-1/2 bg-surface/95 backdrop-blur-sm rounded-lg shadow-lg px-4 py-2 z-10 max-w-[calc(100vw-9rem)]">
         <div className="flex items-center gap-3">
           <div className="min-w-0">
             <h1 className="text-base sm:text-lg font-bold text-ink truncate">{orchard.name}</h1>
@@ -289,7 +289,7 @@ export default function OrchardViewer({
       )}
 
       {/* Bottom toolbar */}
-      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-10 flex gap-2">
+      <div className="absolute bottom-[max(2rem,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-10 flex gap-2">
         {canEdit && !editMode && (
           <BulkTreeImport orchardId={orchard.id} onImportComplete={refresh} />
         )}

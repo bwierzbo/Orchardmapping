@@ -22,7 +22,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   if (!orchard) return { title: 'Orchard Map' };
   const description = `Drone-mapped orthomosaic of ${orchard.name}${orchard.location ? ` in ${orchard.location}` : ''}, with a record for every tree.`;
   return {
-    title: `${orchard.name} — Orchard Map`,
+    title: orchard.name,
     description,
     openGraph: orchard.previewImage
       ? {
