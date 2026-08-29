@@ -1,8 +1,9 @@
 /**
- * CSV/Excel Parser Utilities for Tree Data Import
+ * CSV Parser Utilities for Tree Data Import
+ *
+ * CSV only: the xlsx package was removed for unpatched security advisories.
+ * Export a CSV from Excel/Sheets/QGIS instead.
  */
-
-import * as XLSX from 'xlsx';
 
 export interface TreeImportRow {
   row_id: string;
@@ -32,47 +33,16 @@ export async function parseTreeCSV(file: File): Promise<ParseResult> {
   const data: TreeImportRow[] = [];
 
   try {
-    let rows: any[] = [];
+    const rows: any[] = [];
     let headers: string[] = [];
 
-    // Detect file type and parse accordingly
     if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
-      // Parse Excel file
-      const arrayBuffer = await file.arrayBuffer();
-      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-      const sheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[sheetName];
-
-      // Convert to JSON with header row
-      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-
-      if (jsonData.length < 2) {
-        return {
-          success: false,
-          data: [],
-          errors: ['File must contain at least a header row and one data row'],
-          rowCount: 0
-        };
-      }
-
-      // First row is headers
-      headers = (jsonData[0] as any[]).map(h => String(h || '').trim().toLowerCase());
-
-      // Convert remaining rows to objects
-      for (let i = 1; i < jsonData.length; i++) {
-        const rowArray = jsonData[i] as any[];
-        if (!rowArray || rowArray.every(cell => cell === undefined || cell === null || cell === '')) {
-          continue; // Skip empty rows
-        }
-
-        const rowObj: any = {};
-        headers.forEach((header, index) => {
-          if (rowArray[index] !== undefined && rowArray[index] !== null && rowArray[index] !== '') {
-            rowObj[header] = String(rowArray[index]).trim();
-          }
-        });
-        rows.push(rowObj);
-      }
+      return {
+        success: false,
+        data: [],
+        errors: ['Excel files are not supported. Please export your sheet as CSV and upload that instead.'],
+        rowCount: 0
+      };
     } else {
       // Parse CSV file
       const text = await file.text();
