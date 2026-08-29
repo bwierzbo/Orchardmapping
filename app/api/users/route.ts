@@ -14,7 +14,7 @@ export async function GET() {
     }
 
     // Only admins can list users
-    if ((session.user as any).role !== 'admin') {
+    if (session.user.role !== 'admin') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Only admins can create users
-    if ((session.user as any).role !== 'admin') {
+    if (session.user.role !== 'admin') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

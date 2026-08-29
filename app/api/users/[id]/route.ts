@@ -26,7 +26,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     // Users can view their own profile, admins can view any
     const isOwnProfile = session.user.id === id;
-    const isAdmin = (session.user as any).role === 'admin';
+    const isAdmin = session.user.role === 'admin';
 
     if (!isOwnProfile && !isAdmin) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
@@ -71,7 +71,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     // Users can update their own profile (limited fields), admins can update any
     const isOwnProfile = session.user.id === id;
-    const isAdmin = (session.user as any).role === 'admin';
+    const isAdmin = session.user.role === 'admin';
 
     if (!isOwnProfile && !isAdmin) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
@@ -133,7 +133,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
 
     // Prevent admin from removing their own admin role
-    if (isOwnProfile && role && role !== 'admin' && (session.user as any).role === 'admin') {
+    if (isOwnProfile && role && role !== 'admin' && session.user.role === 'admin') {
       return NextResponse.json(
         { error: 'You cannot remove your own admin role' },
         { status: 400 }
@@ -175,7 +175,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     }
 
     // Only admins can delete users
-    if ((session.user as any).role !== 'admin') {
+    if (session.user.role !== 'admin') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
