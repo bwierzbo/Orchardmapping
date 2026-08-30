@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireSession, WRITER_ROLES } from '@/lib/api-auth';
+import { requireSession } from '@/lib/api-auth';
 import { validateTreeUpdate, formatValidationErrors, TreeRowData } from '@/lib/tree-validation';
 import { serializeTree } from '@/lib/serialize';
 import { handleApiError } from '@/lib/api-errors';
@@ -56,7 +56,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { response } = await requireSession(WRITER_ROLES);
+    const { response } = await requireSession();
     if (response) return response;
 
     const { id: tree_id } = await params;
@@ -129,7 +129,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { response } = await requireSession(WRITER_ROLES);
+    const { response } = await requireSession();
     if (response) return response;
 
     const { id: tree_id } = await params;

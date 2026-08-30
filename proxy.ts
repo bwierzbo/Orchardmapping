@@ -1,39 +1,23 @@
-import NextAuth from 'next-auth';
-import { NextResponse } from 'next/server';
-import { authConfig } from './auth.config';
+import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 
-const { auth } = NextAuth(authConfig);
+const isProtectedRoute = createRouteMatcher(['/orchards/new(.*)']);
 
 /**
- * Coarse page-level auth gate. API routes each enforce auth and roles in
- * their handlers; this proxy only covers the paths in the matcher below,
- * so tile/blob/static traffic never pays for a session decode.
+ * Clerk session middleware (Next 16 proxy). Pages in the matcher below
+ * redirect to sign-in; API routes enforce auth themselves via
+ * lib/api-auth so they return 401 JSON instead of a redirect.
  */
-export const proxy = auth((request) => {
-  const { pathname } = request.nextUrl;
-  const isAuthenticated = !!request.auth;
-
-  if (!isAuthenticated && pathname !== '/login') {
-    if (pathname.startsWith('/api/')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-    const loginUrl = new URL('/login', request.url);
-    loginUrl.searchParams.set('callbackUrl', pathname);
-    return NextResponse.redirect(loginUrl);
+export default clerkMiddleware(async (auth, req) => {
+  if (isProtectedRoute(req)) {
+    await auth.protect();
   }
-
-  if (pathname === '/login' && isAuthenticated) {
-    return NextResponse.redirect(new URL('/', request.url));
-  }
-
-  return NextResponse.next();
 });
 
 export const config = {
   matcher: [
-    '/orchards/new/:path*',
-    '/api/orchards/create',
-    '/api/users/:path*',
-    '/login',
+    // Skip Next.js internals and static files
+    '/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)',
+    // Always run for API routes
+    '/(api|trpc)(.*)',
   ],
 };

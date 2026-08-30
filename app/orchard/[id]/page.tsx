@@ -1,7 +1,7 @@
 import { cache } from 'react';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
-import { auth } from '@/auth';
+import { auth } from '@clerk/nextjs/server';
 import { getOrchardConfigById, getAllOrchardConfigs } from '@/lib/db/orchards';
 import { getTreesByOrchard } from '@/lib/db/trees';
 import { serializeTree } from '@/lib/serialize';
@@ -37,7 +37,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 export default async function OrchardPage({ params }: PageProps) {
   const { id } = await params;
 
-  const [orchard, allOrchards, trees, session] = await Promise.all([
+  const [orchard, allOrchards, trees, { userId }] = await Promise.all([
     getOrchard(id),
     getAllOrchardConfigs(),
     getTreesByOrchard(id),
@@ -52,7 +52,7 @@ export default async function OrchardPage({ params }: PageProps) {
       orchard={orchard}
       allOrchards={allOrchards}
       initialTrees={trees.map(serializeTree)}
-      canEdit={!!session?.user}
+      canEdit={!!userId}
     />
   );
 }

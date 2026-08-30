@@ -18,27 +18,26 @@ row with variety, health status, row/position, and history.
   `orchards/<id>/...`.
 - **Neon Postgres** (via `@vercel/postgres`) — orchard configuration
   (bounds, zooms, tile URLs) and tree records.
-- **Auth.js v5 (NextAuth)** — credentials login backed by a `users` table
-  (bcrypt). Roles: `admin` (user management), `operator` (edit data),
-  `viewer` (read-only). Maps are public; editing requires a login.
+- **Clerk** — hosted authentication (native Vercel Marketplace
+  integration). Maps are public; editing requires a login. The Clerk
+  instance is invite-only: manage collaborators (and revoke access
+  instantly) from the Clerk dashboard.
 
 ## Local development
 
 ```bash
 pnpm install
-cp .env.example .env.local     # fill in real values (see table below)
+vercel link && vercel env pull --yes .env.local   # or fill in .env.example by hand
 pnpm db:migrate                # apply lib/db/migrations/*.sql
-pnpm db:seed-admin             # create the first admin user
 pnpm dev
 ```
 
 | Variable | Purpose |
 | --- | --- |
 | `POSTGRES_URL` / `DATABASE_URL` | Neon Postgres connection string |
-| `AUTH_URL` | Base URL for auth callbacks (`http://localhost:3000` in dev) |
-| `AUTH_SECRET` | Session signing secret (`openssl rand -base64 32`) |
+| `CLERK_SECRET_KEY` / `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk keys (auto-provisioned by the Vercel integration) |
+| `NEXT_PUBLIC_CLERK_SIGN_IN_URL` | `/login` |
 | `BLOB_READ_WRITE_TOKEN` | Vercel Blob store token |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_NAME` | Only read by `pnpm db:seed-admin` |
 
 Checks: `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build`.
 
@@ -60,12 +59,11 @@ Checks: `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build`.
 Schema lives in `lib/db/migrations/` (applied by `pnpm db:migrate`, which
 tracks state in a `_migrations` table). Key tables: `orchards` (config +
 tile URLs), `trees` (one row per tree, `UNIQUE (orchard_id, row_id,
-position)`), `users`, `tree_health_logs`.
+position)`), `tree_health_logs`. (The legacy `users` table is unused
+since the move to Clerk.)
 
 ## Known limitations
 
-- Sessions are JWT-only (7-day expiry); deactivating a user does not
-  revoke an existing session immediately.
 - Bulk import is CSV-only (the `xlsx` package was dropped for unpatched
   security advisories) — export a CSV from Excel/Sheets/QGIS.
 - Preview deployments share the production database.

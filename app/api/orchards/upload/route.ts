@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { handleUpload, type HandleUploadBody } from '@vercel/blob/client';
-import { requireSession, WRITER_ROLES } from '@/lib/api-auth';
+import { requireSession } from '@/lib/api-auth';
 import { handleApiError } from '@/lib/api-errors';
 
 const MAX_PMTILES_BYTES = 1024 * 1024 * 1024; // 1 GB
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
       body,
       request,
       onBeforeGenerateToken: async (pathname) => {
-        const { response } = await requireSession(WRITER_ROLES);
+        const { response } = await requireSession();
         if (response) {
           throw new Error('Unauthorized');
         }

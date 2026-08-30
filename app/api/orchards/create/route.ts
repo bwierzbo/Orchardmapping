@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireSession, WRITER_ROLES } from '@/lib/api-auth';
+import { requireSession } from '@/lib/api-auth';
 import { handleApiError } from '@/lib/api-errors';
 import { orchardExists, insertOrchardFull } from '@/lib/db/orchards';
 import { deleteOrchardBlobs } from '@/lib/blob/upload';
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
   let orchardId: string | null = null;
 
   try {
-    const { response } = await requireSession(WRITER_ROLES);
+    const { response } = await requireSession();
     if (response) return response;
 
     const body = await request.json();

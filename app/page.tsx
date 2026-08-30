@@ -3,7 +3,7 @@ import Image from 'next/image';
 import { MapPin, Plus } from 'lucide-react';
 import { getAllOrchardConfigs } from '@/lib/db/orchards';
 import { getTreeCountsByOrchard } from '@/lib/db/trees';
-import { auth } from '@/auth';
+import { auth } from '@clerk/nextjs/server';
 import UserMenu from '@/components/UserMenu';
 import type { OrchardConfig } from '@/lib/types';
 
@@ -20,11 +20,12 @@ function surveyCaption(orchard: OrchardConfig, treeCount: number): string {
 }
 
 export default async function Home() {
-  const [orchards, treeCounts, session] = await Promise.all([
+  const [orchards, treeCounts, { userId }] = await Promise.all([
     getAllOrchardConfigs(),
     getTreeCountsByOrchard(),
     auth(),
   ]);
+  const signedIn = !!userId;
 
   const hero = orchards.find((o) => o.previewImage) ?? orchards[0];
   const totalTrees = Object.values(treeCounts).reduce((a, b) => a + b, 0);
@@ -100,7 +101,7 @@ export default async function Home() {
       <section className="max-w-6xl mx-auto px-5 py-10">
         <div className="flex items-baseline justify-between mb-5">
           <h2 className="text-xl font-semibold text-ink">Orchards</h2>
-          {session && (
+          {signedIn && (
             <Link
               href="/orchards/new"
               className="inline-flex items-center gap-1.5 text-sm font-medium text-canopy-600 hover:text-canopy-700"
@@ -114,11 +115,11 @@ export default async function Home() {
           <div className="border border-dashed border-line rounded-lg bg-surface p-10 text-center">
             <p className="text-ink font-medium">No orchards yet</p>
             <p className="text-sm text-bark mt-1">
-              {session
+              {signedIn
                 ? 'Add your first orchard to get a map on the wall.'
                 : 'Nothing has been mapped here yet — check back soon.'}
             </p>
-            {session && (
+            {signedIn && (
               <Link
                 href="/orchards/new"
                 className="inline-flex items-center gap-1.5 mt-4 px-4 py-2 bg-canopy-600 text-white dark:text-paper text-sm font-medium rounded-md hover:bg-canopy-700"

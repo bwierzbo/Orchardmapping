@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Fraunces, Archivo, IBM_Plex_Mono } from 'next/font/google';
 import './globals.css';
+import { ClerkProvider } from '@clerk/nextjs';
 import Providers from '@/components/Providers';
 import { Toaster } from 'sonner';
 
@@ -43,10 +44,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       className={`${fraunces.variable} ${archivo.variable} ${plexMono.variable}`}
     >
       <body className="font-sans antialiased">
-        <Providers>
-          {children}
-          <Toaster richColors position="top-center" />
-        </Providers>
+        <ClerkProvider>
+          <Providers>
+            {children}
+            <Toaster richColors position="top-center" />
+          </Providers>
+        </ClerkProvider>
       </body>
     </html>
   );

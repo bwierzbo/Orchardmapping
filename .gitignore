@@ -59,3 +59,4 @@ registry.jpeg
 
 # browser automation artifacts
 .playwright-mcp/
+.env*

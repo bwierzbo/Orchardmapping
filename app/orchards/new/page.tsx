@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useSession } from 'next-auth/react';
+import { useAuth } from '@clerk/nextjs';
 import { upload } from '@vercel/blob/client';
 import { PMTiles, FileSource } from 'pmtiles';
 import Link from 'next/link';
@@ -23,7 +23,7 @@ function tileTypeLabel(t: number): string {
 
 export default function NewOrchardPage() {
   const router = useRouter();
-  const { status } = useSession();
+  const { isLoaded, isSignedIn } = useAuth();
 
   const [name, setName] = useState('');
   const [location, setLocation] = useState('');
@@ -35,10 +35,10 @@ export default function NewOrchardPage() {
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {
-    if (status === 'unauthenticated') {
-      router.replace('/login?callbackUrl=/orchards/new');
+    if (isLoaded && !isSignedIn) {
+      router.replace('/login');
     }
-  }, [status, router]);
+  }, [isLoaded, isSignedIn, router]);
 
   const inspect = useCallback(async (f: File) => {
     setFile(f);
@@ -106,7 +106,7 @@ export default function NewOrchardPage() {
 
   const busy = phase !== 'idle';
 
-  if (status === 'loading' || status === 'unauthenticated') {
+  if (!isLoaded || !isSignedIn) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-paper">
         <Loader2 aria-hidden size={24} className="animate-spin text-bark" />

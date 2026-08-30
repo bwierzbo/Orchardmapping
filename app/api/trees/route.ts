@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireSession, WRITER_ROLES } from '@/lib/api-auth';
+import { requireSession } from '@/lib/api-auth';
 import { handleApiError } from '@/lib/api-errors';
 import {
   getTreesByOrchard,
@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const { response } = await requireSession(WRITER_ROLES);
+    const { response } = await requireSession();
     if (response) return response;
 
     // Parse request body
