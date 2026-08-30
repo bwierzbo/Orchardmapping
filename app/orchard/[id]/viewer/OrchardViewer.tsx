@@ -9,6 +9,7 @@ import { TREE_STATUSES } from '@/lib/types';
 import { buildMapStyle } from '@/lib/map-style';
 import { ensurePmtilesProtocol } from '@/lib/pmtiles-protocol';
 import { toast } from 'sonner';
+import { normalizeRowId } from '@/lib/row-id';
 import BulkTreeImport from '../components/BulkTreeImport';
 import { useTrees } from './useTrees';
 import { useTreeLayer } from './useTreeLayer';
@@ -59,9 +60,56 @@ export default function OrchardViewer({
 
   // Edit ("marking") mode
   const [editMode, setEditMode] = useState(false);
-  const [row, setRow] = useState('');
+  const [row, setRowState] = useState('');
   const [position, setPosition] = useState(1);
   const [autoIncrement, setAutoIncrement] = useState(true);
+  const [placeVariety, setPlaceVariety] = useState('');
+  const [placeStatus, setPlaceStatus] = useState<TreeStatus>('healthy');
+  const [placedCount, setPlacedCount] = useState(0);
+  const [lastPlacedId, setLastPlacedId] = useState<string | null>(null);
+
+  // Rows that already exist (normalized, numerically sorted first)
+  const existingRows = useMemo(() => {
+    const rows = new Set<string>();
+    for (const t of trees) if (t.row_id) rows.add(normalizeRowId(t.row_id));
+    return [...rows].sort((a, b) => {
+      const na = parseInt(a, 10);
+      const nb = parseInt(b, 10);
+      if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
+      return a.localeCompare(b);
+    });
+  }, [trees]);
+
+  // Next open position in a row = max existing position + 1
+  const nextPositionForRow = useCallback(
+    (rowId: string): number => {
+      const norm = normalizeRowId(rowId);
+      let max = 0;
+      for (const t of trees) {
+        if (t.row_id && normalizeRowId(t.row_id) === norm && t.position != null) {
+          max = Math.max(max, t.position);
+        }
+      }
+      return max + 1;
+    },
+    [trees]
+  );
+
+  // Changing the row jumps position to that row's next open slot
+  const setRow = useCallback(
+    (value: string) => {
+      setRowState(value);
+      if (value.trim()) setPosition(nextPositionForRow(value));
+    },
+    [nextPositionForRow]
+  );
+
+  const handleNextRow = useCallback(() => {
+    const current = parseInt(normalizeRowId(row), 10);
+    const next = Number.isNaN(current) ? '' : String(current + 1);
+    setRowState(next);
+    setPosition(next ? nextPositionForRow(next) : 1);
+  }, [row, nextPositionForRow]);
 
   // Status filter via legend chips
   const [activeStatuses, setActiveStatuses] = useState<Set<TreeStatus>>(
@@ -160,9 +208,15 @@ export default function OrchardViewer({
   });
 
   // ---- edit-mode placement clicks ----
-  const placementRef = useRef({ editMode, canEdit, row, position, autoIncrement });
+  const placementRef = useRef({
+    editMode, canEdit, row, position, autoIncrement,
+    placeVariety, placeStatus,
+  });
   useEffect(() => {
-    placementRef.current = { editMode, canEdit, row, position, autoIncrement };
+    placementRef.current = {
+      editMode, canEdit, row, position, autoIncrement,
+      placeVariety, placeStatus,
+    };
   });
   useEffect(() => {
     const m = mapObj;
@@ -183,11 +237,24 @@ export default function OrchardViewer({
         position: p.position,
         lat: e.lngLat.lat,
         lng: e.lngLat.lng,
-        status: 'healthy',
+        status: p.placeStatus,
+        variety: p.placeVariety.trim() || undefined,
       });
       if (tree) {
         if (p.autoIncrement) setPosition((prev) => prev + 1);
-        showToast('success', `Tree added at Row ${p.row}, Position ${p.position}`);
+        setPlacedCount((n) => n + 1);
+        setLastPlacedId(tree.tree_id);
+        toast.success(`Placed ${tree.tree_id}`, {
+          action: {
+            label: 'Undo',
+            onClick: () => {
+              remove(tree.tree_id);
+              setLastPlacedId((id) => (id === tree.tree_id ? null : id));
+              setPlacedCount((n) => Math.max(0, n - 1));
+              setPosition(p.position);
+            },
+          },
+        });
       }
     };
 
@@ -195,7 +262,7 @@ export default function OrchardViewer({
     return () => {
       m.off('click', onClick);
     };
-  }, [mapObj, create, showToast]);
+  }, [mapObj, create, remove, showToast]);
 
   // ---- keyboard: scoped to the viewer, single Escape owner ----
   const onKeyDown = useCallback(
@@ -227,6 +294,18 @@ export default function OrchardViewer({
     },
     [selectedTreeId, update, showToast]
   );
+
+  const handleUndoLast = useCallback(async () => {
+    if (!lastPlacedId) return;
+    const undone = byId.get(lastPlacedId);
+    const ok = await remove(lastPlacedId);
+    if (ok) {
+      setLastPlacedId(null);
+      setPlacedCount((n) => Math.max(0, n - 1));
+      // reopen the freed slot
+      if (undone?.position != null) setPosition(undone.position);
+    }
+  }, [lastPlacedId, byId, remove]);
 
   const handleDelete = useCallback(async () => {
     if (!selectedTreeId) return false;
@@ -291,7 +370,7 @@ export default function OrchardViewer({
       {/* Bottom toolbar */}
       <div className="absolute bottom-[max(2rem,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-10 flex gap-2">
         {canEdit && !editMode && (
-          <BulkTreeImport orchardId={orchard.id} onImportComplete={refresh} />
+          <BulkTreeImport orchardId={orchard.id} existingTrees={trees} onImportComplete={refresh} />
         )}
         {canEdit && (
           <button
@@ -314,9 +393,18 @@ export default function OrchardViewer({
           row={row}
           position={position}
           autoIncrement={autoIncrement}
+          variety={placeVariety}
+          status={placeStatus}
+          existingRows={existingRows}
+          placedCount={placedCount}
+          canUndo={lastPlacedId !== null}
           onRowChange={setRow}
           onPositionChange={setPosition}
           onAutoIncrementChange={setAutoIncrement}
+          onVarietyChange={setPlaceVariety}
+          onStatusChange={setPlaceStatus}
+          onNextRow={handleNextRow}
+          onUndoLast={handleUndoLast}
           onExit={() => setEditMode(false)}
         />
       )}

@@ -1,387 +1,354 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
-import { parseTreeCSV, TreeImportRow } from '@/lib/csv-parser';
+import { toast } from 'sonner';
+import {
+  Download,
+  FileUp,
+  Loader2,
+  MapPinOff,
+  TriangleAlert,
+  Upload,
+  X,
+} from 'lucide-react';
+import {
+  parseTreeCSV,
+  generateTemplateCSV,
+  downloadBlob,
+  type ParseResult,
+  type TreeImportRow,
+} from '@/lib/csv-parser';
+import { rowPositionKey } from '@/lib/row-id';
+import type { ClientTree } from '@/lib/types';
 
 interface BulkTreeImportProps {
   orchardId: string;
+  /** Current trees, used to preview which rows create vs update */
+  existingTrees: ClientTree[];
   onImportComplete?: () => void;
 }
 
-export default function BulkTreeImport({ orchardId, onImportComplete }: BulkTreeImportProps) {
+type Step = 'pick' | 'review' | 'importing';
+
+export default function BulkTreeImport({
+  orchardId,
+  existingTrees,
+  onImportComplete,
+}: BulkTreeImportProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [previewData, setPreviewData] = useState<TreeImportRow[]>([]);
-  const [parseErrors, setParseErrors] = useState<string[]>([]);
-  const [isImporting, setIsImporting] = useState(false);
-  const [importResult, setImportResult] = useState<{
-    success: boolean;
-    updated: number;
-    total: number;
-    errors: Array<{ row_id: string; position: number; error: string }>;
-  } | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [step, setStep] = useState<Step>('pick');
+  const [fileName, setFileName] = useState('');
+  const [parsed, setParsed] = useState<ParseResult | null>(null);
+  // true after hydration (portal target exists)
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
 
-  // Handle file selection
-  const handleFileSelect = useCallback(async (file: File) => {
-    setSelectedFile(file);
-    setImportResult(null);
-    setParseErrors([]);
-    setPreviewData([]);
+  const close = useCallback(() => {
+    setIsOpen(false);
+    setStep('pick');
+    setParsed(null);
+    setFileName('');
+  }, []);
 
-    // Parse the file
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && step !== 'importing') close();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [isOpen, step, close]);
+
+  const existingKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const t of existingTrees) {
+      if (t.row_id != null && t.position != null) {
+        keys.add(rowPositionKey(t.row_id, t.position));
+      }
+    }
+    return keys;
+  }, [existingTrees]);
+
+  const summary = useMemo(() => {
+    if (!parsed) return null;
+    let created = 0;
+    let updated = 0;
+    let noCoords = 0;
+    for (const row of parsed.data) {
+      const exists = existingKeys.has(rowPositionKey(row.row_id, row.position));
+      if (exists) updated++;
+      else {
+        created++;
+        if (row.lat == null || row.lng == null) noCoords++;
+      }
+    }
+    return { created, updated, noCoords };
+  }, [parsed, existingKeys]);
+
+  const handleFile = async (file: File) => {
+    setFileName(file.name);
     const result = await parseTreeCSV(file);
+    setParsed(result);
+    setStep('review');
+  };
 
-    if (result.success) {
-      setPreviewData(result.data);
-      setParseErrors(result.errors);
-    } else {
-      setParseErrors(result.errors);
-    }
-  }, []);
-
-  // Handle drag and drop
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  }, []);
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-  }, []);
-
-  const handleDrop = useCallback(async (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-
-    const file = e.dataTransfer.files[0];
-    if (file && file.name.endsWith('.csv')) {
-      await handleFileSelect(file);
-    } else {
-      setParseErrors(['Please select a valid CSV file']);
-    }
-  }, [handleFileSelect]);
-
-  // Handle file input change
-  const handleFileInputChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      await handleFileSelect(file);
-    }
-  }, [handleFileSelect]);
-
-  // Import data
-  const handleImport = useCallback(async () => {
-    if (!previewData.length) return;
-
-    setIsImporting(true);
-    setImportResult(null);
-
+  const runImport = async () => {
+    if (!parsed || parsed.data.length === 0) return;
+    setStep('importing');
     try {
       const response = await fetch('/api/trees/bulk-update', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          orchard_id: orchardId,
-          updates: previewData,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orchard_id: orchardId, updates: parsed.data }),
       });
-
       const result = await response.json();
-
-      setImportResult({
-        success: result.success,
-        updated: result.updated || 0,
-        total: result.total || 0,
-        errors: result.errors || [],
-      });
-
-      if (result.success && onImportComplete) {
-        onImportComplete();
+      if (!response.ok) {
+        const detail = Array.isArray(result.errors) ? ` — ${result.errors[0]}` : '';
+        throw new Error((result.error || 'Import failed') + detail);
       }
-    } catch (error: any) {
-      setImportResult({
-        success: false,
-        updated: 0,
-        total: previewData.length,
-        errors: [{ row_id: 'N/A', position: 0, error: error.message }],
-      });
-    } finally {
-      setIsImporting(false);
+      toast.success(
+        `Imported ${result.created + result.updated} trees (${result.created} new, ${result.updated} updated)`
+      );
+      onImportComplete?.();
+      close();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Import failed');
+      setStep('review');
     }
-  }, [previewData, orchardId, onImportComplete]);
+  };
 
-  // Reset and close
-  const handleClose = useCallback(() => {
-    setIsOpen(false);
-    setSelectedFile(null);
-    setPreviewData([]);
-    setParseErrors([]);
-    setImportResult(null);
-  }, []);
+  const rowStatus = (row: TreeImportRow) =>
+    existingKeys.has(rowPositionKey(row.row_id, row.position)) ? 'update' : 'new';
+
+  const dialog = isOpen ? (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+      <div
+        aria-hidden
+        className="absolute inset-0 bg-ink/50 backdrop-blur-[2px]"
+        onClick={step !== 'importing' ? close : undefined}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Import tree data"
+        className="relative bg-surface w-full sm:max-w-2xl max-h-[90vh] sm:max-h-[85vh] rounded-t-2xl sm:rounded-xl border border-line shadow-lg flex flex-col"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-line">
+          <div>
+            <h2 className="text-lg font-semibold text-ink">Import tree data</h2>
+            <p className="text-xs text-bark mt-0.5">
+              {step === 'pick' && 'CSV with row_id + position; add lat/lng to place trees on the map.'}
+              {step === 'review' && fileName}
+              {step === 'importing' && 'Importing…'}
+            </p>
+          </div>
+          <button
+            onClick={close}
+            disabled={step === 'importing'}
+            aria-label="Close import dialog"
+            className="p-2 -m-1 rounded-lg text-bark/70 hover:text-ink hover:bg-canopy-50 disabled:opacity-40"
+          >
+            <X aria-hidden size={20} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="overflow-y-auto flex-1 px-5 py-4">
+          {step === 'pick' && (
+            <>
+              <div
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragging(true);
+                }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragging(false);
+                  const f = e.dataTransfer.files?.[0];
+                  if (f) handleFile(f);
+                }}
+                className={`border-2 border-dashed rounded-lg p-10 text-center transition-colors duration-base ${
+                  dragging ? 'border-canopy-600 bg-canopy-50' : 'border-line'
+                }`}
+              >
+                <FileUp aria-hidden className="mx-auto text-canopy-600" size={30} />
+                <p className="mt-3 text-sm font-medium text-ink">
+                  Drag and drop your CSV here
+                </p>
+                <p className="text-xs text-bark mt-1">or</p>
+                <label className="inline-block mt-2 px-4 py-2 bg-canopy-600 text-white dark:text-paper text-sm font-medium rounded-md hover:bg-canopy-700 cursor-pointer">
+                  Choose file
+                  <input
+                    type="file"
+                    accept=".csv"
+                    className="sr-only"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleFile(f);
+                    }}
+                  />
+                </label>
+              </div>
+
+              <div className="mt-4 flex items-start justify-between gap-4">
+                <p className="text-xs text-bark">
+                  Columns: <span className="font-mono">row_id, position</span> (required) ·{' '}
+                  <span className="font-mono">lat, lng, variety, status, planted_date, age,
+                  height, last_pruned, last_harvest, yield_estimate, notes</span>.
+                  Rows matching an existing row/position update that tree; everything runs in
+                  one transaction.
+                </p>
+                <button
+                  onClick={() => downloadBlob(generateTemplateCSV(), 'tree-import-template.csv')}
+                  className="shrink-0 inline-flex items-center gap-1.5 text-xs font-medium text-canopy-600 hover:text-canopy-700"
+                >
+                  <Download aria-hidden size={14} /> Template
+                </button>
+              </div>
+            </>
+          )}
+
+          {(step === 'review' || step === 'importing') && parsed && (
+            <>
+              {/* Summary chips */}
+              <div className="flex flex-wrap gap-2 text-xs font-medium">
+                <span className="px-2.5 py-1 rounded-full bg-canopy-50 text-canopy-700">
+                  {summary?.created ?? 0} new
+                </span>
+                <span className="px-2.5 py-1 rounded-full bg-paper text-bark border border-line">
+                  {summary?.updated ?? 0} updates
+                </span>
+                {parsed.errors.length > 0 && (
+                  <span className="px-2.5 py-1 rounded-full bg-status-dead/10 text-status-dead">
+                    {parsed.errors.length} error{parsed.errors.length === 1 ? '' : 's'}
+                  </span>
+                )}
+                {(summary?.noCoords ?? 0) > 0 && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-status-stressed/10 text-status-stressed">
+                    <MapPinOff aria-hidden size={12} /> {summary?.noCoords} without coordinates
+                  </span>
+                )}
+              </div>
+
+              {parsed.warnings.map((w) => (
+                <p key={w} className="flex items-start gap-1.5 mt-3 text-xs text-status-stressed">
+                  <TriangleAlert aria-hidden size={14} className="shrink-0 mt-px" /> {w}
+                </p>
+              ))}
+
+              {parsed.errors.length > 0 && (
+                <div className="mt-3 border border-status-dead/30 bg-status-dead/5 rounded-md p-3 max-h-36 overflow-y-auto">
+                  <p className="text-xs font-semibold text-status-dead mb-1.5">
+                    Fix these rows and re-upload — nothing imports while errors remain:
+                  </p>
+                  <ul className="text-xs text-status-dead space-y-0.5">
+                    {parsed.errors.slice(0, 50).map((e, i) => (
+                      <li key={i}>{e}</li>
+                    ))}
+                    {parsed.errors.length > 50 && (
+                      <li>…and {parsed.errors.length - 50} more</li>
+                    )}
+                  </ul>
+                </div>
+              )}
+
+              {/* Preview table */}
+              {parsed.data.length > 0 && (
+                <div className="mt-4 border border-line rounded-md overflow-hidden">
+                  <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                    <table className="w-full text-xs">
+                      <thead className="bg-paper sticky top-0">
+                        <tr className="text-left text-bark">
+                          <th className="px-3 py-2 font-medium">Row</th>
+                          <th className="px-3 py-2 font-medium">Pos</th>
+                          <th className="px-3 py-2 font-medium">Variety</th>
+                          <th className="px-3 py-2 font-medium">Status</th>
+                          <th className="px-3 py-2 font-medium">Coords</th>
+                          <th className="px-3 py-2 font-medium">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-line text-ink">
+                        {parsed.data.map((row, i) => (
+                          <tr key={i}>
+                            <td className="px-3 py-1.5 font-mono">{row.row_id}</td>
+                            <td className="px-3 py-1.5 font-mono">{row.position}</td>
+                            <td className="px-3 py-1.5">{row.variety ?? '—'}</td>
+                            <td className="px-3 py-1.5">{row.status ?? '—'}</td>
+                            <td className="px-3 py-1.5">
+                              {row.lat != null ? (
+                                <span className="font-mono text-bark">
+                                  {row.lat.toFixed(5)}, {row.lng?.toFixed(5)}
+                                </span>
+                              ) : (
+                                <span className="text-status-stressed">none</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-1.5">
+                              {rowStatus(row) === 'new' ? (
+                                <span className="text-canopy-600 font-medium">create</span>
+                              ) : (
+                                <span className="text-bark">update</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        {(step === 'review' || step === 'importing') && (
+          <div className="flex items-center justify-between gap-3 px-5 py-4 border-t border-line">
+            <button
+              onClick={() => {
+                setParsed(null);
+                setFileName('');
+                setStep('pick');
+              }}
+              disabled={step === 'importing'}
+              className="text-sm text-bark hover:text-ink disabled:opacity-40"
+            >
+              ← Different file
+            </button>
+            <button
+              onClick={runImport}
+              disabled={step === 'importing' || !parsed || parsed.errors.length > 0 || parsed.data.length === 0}
+              className="px-5 py-2.5 bg-canopy-600 text-white dark:text-paper text-sm font-medium rounded-md hover:bg-canopy-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {step === 'importing' ? (
+                <Loader2 aria-hidden size={15} className="animate-spin" />
+              ) : (
+                <Upload aria-hidden size={15} />
+              )}
+              Import {parsed?.data.length ?? 0} trees
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  ) : null;
 
   return (
     <>
-      {/* Trigger Button */}
       <button
         onClick={() => setIsOpen(true)}
-        className="px-4 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+        className="px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-surface text-ink hover:bg-canopy-50 flex items-center gap-2"
       >
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-        </svg>
-        Import Tree Data
+        <Upload aria-hidden size={15} /> Import CSV
       </button>
-
-      {/* Modal */}
-      {isOpen && typeof document !== 'undefined' && createPortal(
-        <>
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40"
-          />
-
-          {/* Modal Content */}
-          <div className="fixed inset-0 flex items-center justify-center z-50 p-4" onClick={handleClose}>
-            <div className="bg-white rounded-xl shadow-2xl max-w-5xl w-full max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-              <div className="p-6">
-                {/* Header */}
-                <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-200">
-                  <div>
-                    <h2 className="text-2xl font-bold text-gray-900">Import Tree Data</h2>
-                    <p className="text-sm text-gray-500 mt-1">Upload a CSV file with tree information</p>
-                  </div>
-                  <button
-                    onClick={handleClose}
-                    className="text-gray-400 hover:text-gray-600 transition-colors"
-                  >
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-
-                {/* Instructions */}
-                <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <h3 className="font-semibold text-blue-900 mb-2">File Format Requirements:</h3>
-                  <div className="text-sm text-blue-800 space-y-1">
-                    <p><strong>Required columns (first two):</strong></p>
-                    <ul className="ml-4 list-disc">
-                      <li><code className="bg-blue-100 px-1 rounded">row_id</code> - Row identifier (e.g., &quot;R01&quot;, &quot;1&quot;, &quot;A&quot;)</li>
-                      <li><code className="bg-blue-100 px-1 rounded">position</code> - Position number in row (e.g., 1, 2, 3)</li>
-                    </ul>
-                    <p className="mt-2"><strong>Optional columns (any order):</strong></p>
-                    <ul className="ml-4 list-disc">
-                      <li><code className="bg-blue-100 px-1 rounded">variety</code> - Tree variety name</li>
-                      <li><code className="bg-blue-100 px-1 rounded">status</code> - healthy, stressed, dead, or unknown</li>
-                      <li><code className="bg-blue-100 px-1 rounded">planted_date</code> - YYYY-MM-DD format</li>
-                      <li><code className="bg-blue-100 px-1 rounded">age</code> - Age in years (number)</li>
-                      <li><code className="bg-blue-100 px-1 rounded">last_pruned</code> - YYYY-MM-DD format</li>
-                      <li><code className="bg-blue-100 px-1 rounded">last_harvest</code> - YYYY-MM-DD format</li>
-                      <li><code className="bg-blue-100 px-1 rounded">yield_estimate</code> - Harvest yield in kg (number)</li>
-                      <li><code className="bg-blue-100 px-1 rounded">notes</code> - Any notes or observations</li>
-                    </ul>
-                  </div>
-                  <a
-                    href="/templates/tree-data-template.csv"
-                    download="tree-data-template.csv"
-                    className="mt-3 inline-block px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 transition-colors"
-                  >
-                    Download Template CSV
-                  </a>
-                </div>
-
-                {/* File Upload Area */}
-                <div
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                  className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-                    isDragging
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-300 hover:border-gray-400'
-                  }`}
-                >
-                  {selectedFile ? (
-                    <div className="space-y-2">
-                      <svg className="w-12 h-12 mx-auto text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      <p className="font-medium text-gray-900">{selectedFile.name}</p>
-                      <p className="text-sm text-gray-500">
-                        {(selectedFile.size / 1024).toFixed(2)} KB
-                      </p>
-                      <button
-                        onClick={() => {
-                          setSelectedFile(null);
-                          setPreviewData([]);
-                          setParseErrors([]);
-                        }}
-                        className="text-sm text-blue-600 hover:text-blue-700 font-medium"
-                      >
-                        Change file
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <svg className="w-12 h-12 mx-auto text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                      </svg>
-                      <p className="text-gray-600">Drag and drop your CSV file here</p>
-                      <p className="text-sm text-gray-500">or</p>
-                      <label className="inline-block px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 cursor-pointer transition-colors">
-                        Browse Files
-                        <input
-                          type="file"
-                          accept=".csv"
-                          onChange={handleFileInputChange}
-                          className="hidden"
-                        />
-                      </label>
-                    </div>
-                  )}
-                </div>
-
-                {/* Parse Errors */}
-                {parseErrors.length > 0 && (
-                  <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-4">
-                    <h4 className="font-semibold text-red-900 mb-2">Errors Found:</h4>
-                    <ul className="text-sm text-red-800 space-y-1">
-                      {parseErrors.map((error, index) => (
-                        <li key={index}>• {error}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {/* Preview Table */}
-                {previewData.length > 0 && (
-                  <div className="mt-6">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="font-semibold text-gray-900">
-                        Preview ({previewData.length} row{previewData.length !== 1 ? 's' : ''})
-                      </h3>
-                      <p className="text-sm text-gray-600">
-                        Showing first {Math.min(5, previewData.length)} rows
-                      </p>
-                    </div>
-                    <div className="border border-gray-200 rounded-lg overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead className="bg-gray-50 border-b border-gray-200">
-                          <tr>
-                            <th className="px-3 py-2 text-left font-medium text-gray-700">Row ID</th>
-                            <th className="px-3 py-2 text-left font-medium text-gray-700">Position</th>
-                            <th className="px-3 py-2 text-left font-medium text-gray-700">Variety</th>
-                            <th className="px-3 py-2 text-left font-medium text-gray-700">Status</th>
-                            <th className="px-3 py-2 text-left font-medium text-gray-700">Planted</th>
-                            <th className="px-3 py-2 text-left font-medium text-gray-700">Age</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {previewData.slice(0, 5).map((row, index) => (
-                            <tr key={index} className="border-b border-gray-100 last:border-0">
-                              <td className="px-3 py-2 font-mono text-xs">{row.row_id}</td>
-                              <td className="px-3 py-2">{row.position}</td>
-                              <td className="px-3 py-2">{row.variety || '-'}</td>
-                              <td className="px-3 py-2">
-                                <span
-                                  className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
-                                    row.status === 'healthy'
-                                      ? 'bg-green-100 text-green-800'
-                                      : row.status === 'stressed'
-                                      ? 'bg-yellow-100 text-yellow-800'
-                                      : row.status === 'dead'
-                                      ? 'bg-red-100 text-red-800'
-                                      : 'bg-gray-100 text-gray-800'
-                                  }`}
-                                >
-                                  {row.status || 'unknown'}
-                                </span>
-                              </td>
-                              <td className="px-3 py-2 text-xs">{row.planted_date || '-'}</td>
-                              <td className="px-3 py-2">{row.age !== undefined ? `${row.age}y` : '-'}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
-                {/* Import Result */}
-                {importResult && (
-                  <div className={`mt-4 rounded-lg p-4 ${
-                    importResult.success && importResult.errors.length === 0
-                      ? 'bg-green-50 border border-green-200'
-                      : 'bg-yellow-50 border border-yellow-200'
-                  }`}>
-                    <h4 className={`font-semibold mb-2 ${
-                      importResult.success && importResult.errors.length === 0
-                        ? 'text-green-900'
-                        : 'text-yellow-900'
-                    }`}>
-                      Import Complete
-                    </h4>
-                    <p className={`text-sm ${
-                      importResult.success && importResult.errors.length === 0
-                        ? 'text-green-800'
-                        : 'text-yellow-800'
-                    }`}>
-                      Updated {importResult.updated} of {importResult.total} trees
-                    </p>
-                    {importResult.errors.length > 0 && (
-                      <div className="mt-3">
-                        <p className="text-sm font-medium text-yellow-900 mb-1">Errors:</p>
-                        <ul className="text-sm text-yellow-800 space-y-1 max-h-40 overflow-y-auto">
-                          {importResult.errors.map((error, index) => (
-                            <li key={index}>
-                              • Row {error.row_id}, Position {error.position}: {error.error}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Action Buttons */}
-                <div className="mt-6 flex gap-3">
-                  <button
-                    onClick={handleImport}
-                    disabled={previewData.length === 0 || isImporting}
-                    className="flex-1 px-4 py-3 bg-green-600 text-white font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  >
-                    {isImporting ? (
-                      <>
-                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        Importing...
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                        </svg>
-                        Import Data
-                      </>
-                    )}
-                  </button>
-                  <button
-                    onClick={handleClose}
-                    className="px-4 py-3 bg-gray-200 text-gray-700 font-medium rounded-lg hover:bg-gray-300 transition-colors"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </>,
-        document.body
-      )}
+      {mounted && dialog && createPortal(dialog, document.body)}
     </>
   );
 }

@@ -5,6 +5,10 @@
 export interface TreeRowData {
   row_id: string;
   position: number;
+  lat?: number;
+  lng?: number;
+  name?: string;
+  block_id?: string;
   variety?: string;
   status?: string;
   planted_date?: string;
@@ -117,6 +121,18 @@ export function validateTreeRow(
       message: 'Invalid date format. Use YYYY-MM-DD',
       row: rowNumber
     });
+  }
+
+  // Coordinate validations
+  if (rowData.lat !== undefined && rowData.lat !== null) {
+    if (typeof rowData.lat !== 'number' || rowData.lat < -90 || rowData.lat > 90) {
+      errors.push({ field: 'lat', message: 'Latitude must be between -90 and 90', row: rowNumber });
+    }
+  }
+  if (rowData.lng !== undefined && rowData.lng !== null) {
+    if (typeof rowData.lng !== 'number' || rowData.lng < -180 || rowData.lng > 180) {
+      errors.push({ field: 'lng', message: 'Longitude must be between -180 and 180', row: rowNumber });
+    }
   }
 
   // Numeric validations
