@@ -56,3 +56,6 @@ registry.jpeg
 
 # AI assistant workspace
 .claude/
+
+# browser automation artifacts
+.playwright-mcp/
