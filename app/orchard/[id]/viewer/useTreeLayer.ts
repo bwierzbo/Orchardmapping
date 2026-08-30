@@ -240,6 +240,10 @@ export function useTreeLayer(
       map.off('mousemove', onMapMouseMove);
       map.off('mouseup', endDrag);
       dragMarker?.remove();
+      // On unmount the map-lifecycle cleanup (declared earlier) has
+      // already run map.remove(), destroying map.style — touching
+      // layers then throws. Removing the whole map removed them anyway.
+      if (!map.style) return;
       if (map.getLayer(CLUSTER_COUNT)) map.removeLayer(CLUSTER_COUNT);
       if (map.getLayer(CLUSTERS)) map.removeLayer(CLUSTERS);
       if (map.getLayer(CIRCLES)) map.removeLayer(CIRCLES);
