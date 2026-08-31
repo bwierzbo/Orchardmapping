@@ -7,9 +7,17 @@ import type { OrchardConfig } from '@/lib/types';
 interface OrchardSwitcherProps {
   orchards: OrchardConfig[];
   currentId: string;
+  /** Destination page for a picked orchard (serializable across RSC boundary). */
+  target?: 'map' | 'dashboard';
 }
 
-export default function OrchardSwitcher({ orchards, currentId }: OrchardSwitcherProps) {
+export default function OrchardSwitcher({
+  orchards,
+  currentId,
+  target = 'map',
+}: OrchardSwitcherProps) {
+  const hrefFor = (id: string) =>
+    target === 'dashboard' ? `/orchard/${id}/dashboard` : `/orchard/${id}`;
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -55,7 +63,7 @@ export default function OrchardSwitcher({ orchards, currentId }: OrchardSwitcher
                 aria-selected={o.id === currentId}
                 onClick={() => {
                   setOpen(false);
-                  if (o.id !== currentId) router.push(`/orchard/${o.id}`);
+                  if (o.id !== currentId) router.push(hrefFor(o.id));
                 }}
                 className={`w-full text-left px-4 py-2.5 text-sm hover:bg-canopy-50 ${
                   o.id === currentId ? 'font-semibold text-canopy-700' : 'text-ink'

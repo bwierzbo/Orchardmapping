@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import { MapPin, Plus } from 'lucide-react';
+import { BarChart3, MapPin, Plus } from 'lucide-react';
 import { getAllOrchardConfigs } from '@/lib/db/orchards';
 import { getTreeCountsByOrchard } from '@/lib/db/trees';
 import { auth } from '@clerk/nextjs/server';
@@ -133,11 +133,11 @@ export default async function Home() {
             {orchards.map((orchard) => {
               const count = treeCounts[orchard.id] ?? 0;
               return (
-                <Link
+                <div
                   key={orchard.id}
-                  href={`/orchard/${orchard.id}`}
                   className="group bg-surface border border-line rounded-lg overflow-hidden shadow-xs hover:border-canopy-600 transition-colors duration-base"
                 >
+                  <Link href={`/orchard/${orchard.id}`} className="block">
                   <div className="relative aspect-[3/2] bg-canopy-50 overflow-hidden">
                     {orchard.previewImage ? (
                       <Image
@@ -153,22 +153,27 @@ export default async function Home() {
                       </div>
                     )}
                   </div>
-                  <div className="p-5">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <h3 className="font-display text-lg font-semibold text-ink">
-                          {orchard.name}
-                        </h3>
-                        <p className="flex items-center gap-1 text-sm text-bark mt-0.5">
-                          <MapPin aria-hidden size={14} /> {orchard.location}
-                        </p>
-                      </div>
+                    <div className="px-5 pt-5">
+                      <h3 className="font-display text-lg font-semibold text-ink">
+                        {orchard.name}
+                      </h3>
+                      <p className="flex items-center gap-1 text-sm text-bark mt-0.5">
+                        <MapPin aria-hidden size={14} /> {orchard.location}
+                      </p>
                     </div>
-                    <p className="mt-3 pt-3 border-t border-line font-mono text-[11px] uppercase tracking-widest text-bark">
+                  </Link>
+                  <div className="px-5 pb-5 mt-3 pt-3 border-t border-line flex items-center justify-between gap-3">
+                    <p className="font-mono text-[11px] uppercase tracking-widest text-bark truncate">
                       {surveyCaption(orchard, count)}
                     </p>
+                    <Link
+                      href={`/orchard/${orchard.id}/dashboard`}
+                      className="shrink-0 inline-flex items-center gap-1 text-sm font-medium text-canopy-600 hover:text-canopy-700"
+                    >
+                      <BarChart3 aria-hidden size={14} /> Dashboard
+                    </Link>
                   </div>
-                </Link>
+                </div>
               );
             })}
           </div>

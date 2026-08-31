@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { BarChart3 } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { OrchardConfig, ClientTree, TreeStatus } from '@/lib/types';
@@ -340,6 +341,15 @@ export default function OrchardViewer({
         <svg aria-hidden className="w-5 h-5 text-ink" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
         </svg>
+      </button>
+
+      {/* Dashboard button */}
+      <button
+        onClick={() => router.push(`/orchard/${orchard.id}/dashboard`)}
+        aria-label="Orchard dashboard"
+        className="absolute left-4 top-[calc(max(1rem,env(safe-area-inset-top))+3.25rem)] z-10 bg-surface rounded-lg shadow-lg p-2.5 hover:bg-canopy-50"
+      >
+        <BarChart3 aria-hidden size={20} className="text-ink" />
       </button>
 
       {/* Orchard header */}
