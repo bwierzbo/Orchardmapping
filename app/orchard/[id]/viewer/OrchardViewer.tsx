@@ -320,7 +320,10 @@ export default function OrchardViewer({
   }, [selectedTreeId, remove, clear]);
 
   return (
-    <div className="h-dvh w-full relative" onKeyDown={onKeyDown}>
+    <div
+      className="h-dvh w-full relative overflow-hidden [touch-action:pan-x_pan-y] [overscroll-behavior:none]"
+      onKeyDown={onKeyDown}
+    >
       <div
         ref={mapContainer}
         className={`h-full w-full bg-line ${
