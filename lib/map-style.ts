@@ -11,11 +11,21 @@ export function pmtilesSourceUrl(path: string, origin: string): string {
   return `pmtiles://${absolute}`;
 }
 
+const BOUNDARY_SOURCE = 'orchard-boundary';
+export const BOUNDARY_FILL_LAYER = 'orchard-boundary-fill';
+export const BOUNDARY_LINE_LAYER = 'orchard-boundary-line';
+
 /**
  * Build the map style for an orchard: the orthomosaic raster (PMTiles or
- * legacy {z}/{x}/{y} API path) over a plain background. No external
- * basemap — tile usage policies and wasted downloads killed the old OSM
- * layer; deep links open at orchard zoom where imagery fills the view.
+ * legacy {z}/{x}/{y} API path) over a plain background, with the planted
+ * boundary drawn on top. No external basemap — tile usage policies and
+ * wasted downloads killed the old OSM layer; deep links open at orchard
+ * zoom where imagery fills the view.
+ *
+ * An orchard with a boundary but no orthomosaic is the pre-flight case:
+ * the block is filled so it reads as a shape against the background and
+ * trees can be placed inside it. Once imagery exists the fill would only
+ * hide it, so only the outline survives.
  */
 export function buildMapStyle(orchard: OrchardConfig, origin: string): StyleSpecification {
   const style: StyleSpecification = {
@@ -63,6 +73,37 @@ export function buildMapStyle(orchard: OrchardConfig, origin: string): StyleSpec
       type: 'raster',
       source: 'orchard-ortho',
       paint: { 'raster-opacity': 1 },
+    });
+  }
+
+  if (orchard.boundary) {
+    const hasOrtho = Boolean(orchard.orthoPmtilesPath || orchard.orthoPath);
+    style.sources[BOUNDARY_SOURCE] = {
+      type: 'geojson',
+      data: {
+        type: 'Feature',
+        properties: {},
+        geometry: orchard.boundary,
+      },
+    };
+    if (!hasOrtho) {
+      style.layers.push({
+        id: BOUNDARY_FILL_LAYER,
+        type: 'fill',
+        source: BOUNDARY_SOURCE,
+        paint: { 'fill-color': '#7f9a6d', 'fill-opacity': 0.35 },
+      });
+    }
+    style.layers.push({
+      id: BOUNDARY_LINE_LAYER,
+      type: 'line',
+      source: BOUNDARY_SOURCE,
+      layout: { 'line-join': 'round' },
+      paint: {
+        'line-color': '#3f5540',
+        'line-width': 2,
+        'line-opacity': hasOrtho ? 0.9 : 0.7,
+      },
     });
   }
 
