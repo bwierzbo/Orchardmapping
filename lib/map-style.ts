@@ -14,6 +14,8 @@ export function pmtilesSourceUrl(path: string, origin: string): string {
 const BOUNDARY_SOURCE = 'orchard-boundary';
 export const BOUNDARY_FILL_LAYER = 'orchard-boundary-fill';
 export const BOUNDARY_LINE_LAYER = 'orchard-boundary-line';
+const SATELLITE_SOURCE = 'satellite-basemap';
+export const SATELLITE_LAYER = 'satellite-basemap';
 
 /**
  * Build the map style for an orchard: the orthomosaic raster (PMTiles or
@@ -76,8 +78,32 @@ export function buildMapStyle(orchard: OrchardConfig, origin: string): StyleSpec
     });
   }
 
+  const hasOrthoImagery = Boolean(orchard.orthoPmtilesPath || orchard.orthoPath);
+
+  // Pre-flight orchards have no orthomosaic of their own. Put satellite
+  // imagery underneath so the traced block can be checked against the
+  // real ground (Esri World Imagery — the source these traces come from).
+  if (!hasOrthoImagery && orchard.boundary) {
+    style.sources[SATELLITE_SOURCE] = {
+      type: 'raster',
+      tiles: [
+        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      ],
+      tileSize: 256,
+      maxzoom: 19,
+      attribution:
+        'Imagery &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community',
+    };
+    style.layers.push({
+      id: SATELLITE_LAYER,
+      type: 'raster',
+      source: SATELLITE_SOURCE,
+      paint: { 'raster-opacity': 1 },
+    });
+  }
+
   if (orchard.boundary) {
-    const hasOrtho = Boolean(orchard.orthoPmtilesPath || orchard.orthoPath);
+    const hasOrtho = hasOrthoImagery;
     style.sources[BOUNDARY_SOURCE] = {
       type: 'geojson',
       data: {
@@ -86,12 +112,15 @@ export function buildMapStyle(orchard: OrchardConfig, origin: string): StyleSpec
         geometry: orchard.boundary,
       },
     };
+    // Over an orthomosaic a fill would only hide it, so there is none.
+    // Pre-flight orchards now have satellite imagery underneath too, so the
+    // fill is faint — the block reads as highlighted, not covered.
     if (!hasOrtho) {
       style.layers.push({
         id: BOUNDARY_FILL_LAYER,
         type: 'fill',
         source: BOUNDARY_SOURCE,
-        paint: { 'fill-color': '#7f9a6d', 'fill-opacity': 0.35 },
+        paint: { 'fill-color': '#7f9a6d', 'fill-opacity': 0.12 },
       });
     }
     style.layers.push({
@@ -100,9 +129,9 @@ export function buildMapStyle(orchard: OrchardConfig, origin: string): StyleSpec
       source: BOUNDARY_SOURCE,
       layout: { 'line-join': 'round' },
       paint: {
-        'line-color': '#3f5540',
-        'line-width': 2,
-        'line-opacity': hasOrtho ? 0.9 : 0.7,
+        'line-color': '#D9481C',
+        'line-width': 3,
+        'line-opacity': 0.95,
       },
     });
   }
