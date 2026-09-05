@@ -28,6 +28,24 @@ describe('parseBoundary', () => {
     expect(parseBoundary({ type: 'Feature', properties: {}, geometry: SQUARE })).toEqual(SQUARE);
   });
 
+  it('rewinds a clockwise outer ring to counter-clockwise (RFC 7946)', () => {
+    // Same square traced the other way round — MapLibre reads a CW outer
+    // ring as a hole and renders nothing, so it must be normalized.
+    const clockwise = {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [-123.2, 48.1],
+          [-123.2, 48.2],
+          [-123.1, 48.2],
+          [-123.1, 48.1],
+          [-123.2, 48.1],
+        ],
+      ],
+    };
+    expect(parseBoundary(clockwise)).toEqual(SQUARE);
+  });
+
   it('closes an open ring', () => {
     const open = {
       type: 'Polygon',

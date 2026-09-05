@@ -135,8 +135,12 @@ export default function OrchardViewer({
     if (!mapContainer.current) return;
     ensurePmtilesProtocol();
 
-    // Camera precedence: ?tree= (handled after load) > #map= > orchard defaults
+    // Camera precedence: ?tree= (handled after load) > #map= > orchard defaults.
+    // Boundary-only orchards get a viewport-aware fit below — the stored
+    // default zoom was computed blind to screen size, and on a phone the
+    // block fills the screen edge to edge (reads as a blank page).
     const hashCamera = parseMapHash(window.location.hash);
+    const boundaryOnly = !!orchard.boundary && !orchard.orthoPmtilesPath && !orchard.orthoPath;
     const m = new maplibregl.Map({
       container: mapContainer.current,
       style: buildMapStyle(orchard, window.location.origin),
@@ -160,6 +164,16 @@ export default function OrchardViewer({
 
     if (process.env.NODE_ENV === 'development') {
       m.on('error', (e) => console.error('Map error:', e.error?.message || e));
+    }
+
+    if (!hashCamera && boundaryOnly) {
+      m.fitBounds(
+        [
+          [orchard.bounds.minLng, orchard.bounds.minLat],
+          [orchard.bounds.maxLng, orchard.bounds.maxLat],
+        ],
+        { padding: 48, animate: false }
+      );
     }
 
     m.on('load', () => setMapObj(m));

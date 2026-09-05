@@ -39,6 +39,15 @@ function isFinitePosition(value: unknown): value is LngLat {
  * Rings are closed if the source left them open, and positions are
  * truncated to [lng, lat] (elevation, if present, is dropped).
  */
+/** Signed-area test (shoelace); true when the ring winds clockwise. */
+function isClockwise(ring: LngLat[]): boolean {
+  let sum = 0;
+  for (let i = 0; i < ring.length - 1; i++) {
+    sum += (ring[i + 1][0] - ring[i][0]) * (ring[i + 1][1] + ring[i][1]);
+  }
+  return sum > 0;
+}
+
 export function parseBoundary(value: unknown): OrchardBoundary | undefined {
   if (!value || typeof value !== 'object') return undefined;
 
@@ -60,6 +69,11 @@ export function parseBoundary(value: unknown): OrchardBoundary | undefined {
     const last = positions[positions.length - 1];
     if (first[0] !== last[0] || first[1] !== last[1]) positions.push([first[0], first[1]]);
     if (positions.length < 4) return undefined;
+    // Enforce RFC 7946 winding: exterior ring CCW, holes CW. A clockwise
+    // outer ring is read as a hole by MapLibre and renders nothing, so
+    // normalize regardless of how the source (or DB) ordered it.
+    const wantCcw = rings.length === 0;
+    if (isClockwise(positions) === wantCcw) positions.reverse();
     rings.push(positions);
   }
 
