@@ -9,6 +9,20 @@ export interface OrchardBounds {
   maxLat: number;
 }
 
+/** [lng, lat] — GeoJSON axis order */
+export type LngLat = [number, number];
+
+/**
+ * An orchard's planted footprint as a GeoJSON Polygon geometry: an outer
+ * ring first, optional holes after. Rings are closed (last position
+ * repeats the first). Traced from aerial imagery for orchards that have
+ * not been flown yet; see lib/orchard-boundary.ts.
+ */
+export interface OrchardBoundary {
+  type: 'Polygon';
+  coordinates: LngLat[][];
+}
+
 export interface OrchardConfig {
   id: string;
   name: string;
@@ -28,6 +42,8 @@ export interface OrchardConfig {
   /** URL to vector-data PMTiles (unused by the viewer; trees come from the DB) */
   pmtilesPath: string;
   previewImage?: string;
+  /** Planted footprint traced from imagery; drawn when present */
+  boundary?: OrchardBoundary;
   stats?: {
     trees?: number;
     blocks?: number;

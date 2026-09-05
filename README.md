@@ -54,12 +54,31 @@ Checks: `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build`.
    `public/templates/tree-data-template.csv` and `docs/` for the QGIS
    workflow that generates tree positions).
 
+### Before the flight: boundary-only orchards
+
+An orchard can exist before it has been flown. Trace the planted block
+from aerial imagery into a GeoJSON Feature whose `properties` carry
+`id`, `name` and `location` (see `data/orchards/finn-hall.geojson`), then:
+
+```bash
+npx tsx scripts/create-orchard-from-boundary.ts data/orchards/<file>.geojson --dry-run
+npx tsx scripts/create-orchard-from-boundary.ts data/orchards/<file>.geojson
+```
+
+Centre, bounds and default zoom are fitted to the geometry. The viewer
+draws the block as a filled outline, so trees can be placed against a
+real shape instead of a blank background. Adding an orthomosaic later is
+an ordinary update — the boundary stays and drops back to just an
+outline over the imagery. Re-run with `--update` to replace the boundary
+of an orchard that already exists.
+
 ## Database
 
 Schema lives in `lib/db/migrations/` (applied by `pnpm db:migrate`, which
-tracks state in a `_migrations` table). Key tables: `orchards` (config +
-tile URLs), `trees` (one row per tree, `UNIQUE (orchard_id, row_id,
-position)`), `tree_health_logs`. (The legacy `users` table is unused
+tracks state in a `_migrations` table). Key tables: `orchards` (config,
+tile URLs, and an optional `boundary_geojson` footprint), `trees` (one
+row per tree, `UNIQUE (orchard_id, row_id, position)`),
+`tree_health_logs`. (The legacy `users` table is unused
 since the move to Clerk.)
 
 ## Known limitations

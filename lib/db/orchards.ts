@@ -1,7 +1,8 @@
 import { sql } from '@vercel/postgres';
-import { OrchardConfig } from '../types';
+import { OrchardBoundary, OrchardConfig } from '../types';
 import { buildUpdateSet } from './sql-helpers';
 import { toNum } from './decode';
+import { parseBoundary } from '../orchard-boundary';
 
 /**
  * Columns a caller may change through updateOrchard. The primary key and
@@ -26,6 +27,7 @@ export const ORCHARD_UPDATABLE_COLUMNS = [
   'vector_pmtiles_url',
   'preview_image_url',
   'ortho_api_path',
+  'boundary_geojson',
 ] as const;
 
 /**
@@ -56,6 +58,8 @@ export interface Orchard {
   preview_image_url?: string;
   // Legacy: API tile path
   ortho_api_path?: string;
+  // Planted footprint traced from imagery (JSONB GeoJSON Polygon)
+  boundary_geojson?: unknown;
   // Timestamps
   created_at?: Date;
   updated_at?: Date;
@@ -95,6 +99,7 @@ export interface OrchardFullInsertData {
   vector_pmtiles_url?: string;
   preview_image_url?: string;
   ortho_api_path?: string;
+  boundary?: OrchardBoundary;
 }
 
 /**
@@ -123,6 +128,7 @@ export function dbRowToOrchardConfig(row: Orchard): OrchardConfig {
     orthoPmtilesPath: row.ortho_pmtiles_url || '',
     pmtilesPath: row.vector_pmtiles_url || '',
     previewImage: row.preview_image_url,
+    boundary: parseBoundary(row.boundary_geojson),
   };
 }
 
@@ -319,7 +325,8 @@ export async function insertOrchardFull(data: OrchardFullInsertData): Promise<Or
         center_lat, center_lng,
         bounds_min_lng, bounds_min_lat, bounds_max_lng, bounds_max_lat,
         default_zoom, min_zoom, max_zoom, tile_min_zoom, tile_max_zoom,
-        ortho_pmtiles_url, vector_pmtiles_url, preview_image_url, ortho_api_path
+        ortho_pmtiles_url, vector_pmtiles_url, preview_image_url, ortho_api_path,
+        boundary_geojson
       ) VALUES (
         ${data.id}, ${data.name}, ${data.location}, ${data.description || null},
         ${data.center_lat}, ${data.center_lng},
@@ -328,7 +335,8 @@ export async function insertOrchardFull(data: OrchardFullInsertData): Promise<Or
         ${data.default_zoom || 18}, ${data.min_zoom || 5}, ${data.max_zoom || 21.5},
         ${data.tile_min_zoom || 5}, ${data.tile_max_zoom || 23},
         ${data.ortho_pmtiles_url || null}, ${data.vector_pmtiles_url || null},
-        ${data.preview_image_url || null}, ${data.ortho_api_path || null}
+        ${data.preview_image_url || null}, ${data.ortho_api_path || null},
+        ${data.boundary ? JSON.stringify(data.boundary) : null}
       )
       RETURNING *
     `;

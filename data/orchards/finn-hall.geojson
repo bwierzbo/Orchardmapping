@@ -1,0 +1,21 @@
+{
+  "type": "Feature",
+  "properties": {
+    "id": "finn-hall",
+    "name": "Finn Hall",
+    "location": "1027 Finn Hall Road, Agnew, WA 98362",
+    "description": "Planted block traced from aerial imagery, pending a drone survey. Roughly 78 m x 155 m (~3 acres) on the north side of Finn Hall Road."
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [-123.253753, 48.112688],
+        [-123.252708, 48.112688],
+        [-123.252699, 48.114081],
+        [-123.253753, 48.114081],
+        [-123.253753, 48.112688]
+      ]
+    ]
+  }
+}
