@@ -50,6 +50,9 @@ export default function TreeDetailPanel({
       last_harvest: tree.last_harvest ?? '',
       yield_estimate: tree.yield_estimate ?? undefined,
       notes: tree.notes ?? '',
+      rootstock: tree.rootstock ?? '',
+      source: tree.source ?? '',
+      acquired_date: tree.acquired_date ?? '',
     });
     setEditing(true);
   };
@@ -61,6 +64,7 @@ export default function TreeDetailPanel({
       planted_date: form.planted_date || undefined,
       last_pruned: form.last_pruned || undefined,
       last_harvest: form.last_harvest || undefined,
+      acquired_date: form.acquired_date || undefined,
     };
     const ok = await onSave(patch);
     if (ok) setEditing(false);
@@ -136,6 +140,9 @@ export default function TreeDetailPanel({
       <div className="overflow-y-auto px-5 py-3 flex-1">
         {!editing ? (
           <>
+            {field('Rootstock', tree.rootstock)}
+            {field('Source', tree.source)}
+            {field('Acquired', formatYMD(tree.acquired_date))}
             {field('Planted', formatYMD(tree.planted_date))}
             {field('Block', tree.block_id)}
             {field('Age', tree.age != null ? `${tree.age} yr` : null)}
@@ -167,6 +174,11 @@ export default function TreeDetailPanel({
                 ))}
               </select>
             </label>
+            <div className="grid grid-cols-2 gap-3">
+              {input('Rootstock', 'rootstock')}
+              {input('Source (nursery)', 'source')}
+            </div>
+            {input('Acquired', 'acquired_date', 'date')}
             {input('Planted', 'planted_date', 'date')}
             <div className="grid grid-cols-2 gap-3">
               {input('Age (years)', 'age', 'number')}

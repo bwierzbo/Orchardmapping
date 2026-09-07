@@ -23,6 +23,9 @@ export const TREE_UPDATABLE_COLUMNS = [
   'last_harvest',
   'yield_estimate',
   'notes',
+  'rootstock',
+  'source',
+  'acquired_date',
 ] as const;
 
 /**
@@ -48,6 +51,9 @@ export interface Tree {
   last_harvest?: Date | string;
   yield_estimate?: number;
   notes?: string;
+  rootstock?: string;
+  source?: string;
+  acquired_date?: Date | string;
   created_at?: Date;
   updated_at?: Date;
 }
@@ -302,6 +308,9 @@ const BULK_UPSERT_FIELDS = [
   'last_harvest',
   'yield_estimate',
   'notes',
+  'rootstock',
+  'source',
+  'acquired_date',
 ] as const;
 
 export interface BulkUpsertRow {
@@ -320,6 +329,9 @@ export interface BulkUpsertRow {
   last_harvest?: Date | string;
   yield_estimate?: number;
   notes?: string;
+  rootstock?: string;
+  source?: string;
+  acquired_date?: Date | string;
 }
 
 export interface BulkUpsertResult {

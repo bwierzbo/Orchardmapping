@@ -48,6 +48,9 @@ export interface TreeCreateInput {
   last_harvest?: string;
   yield_estimate?: number;
   notes?: string;
+  rootstock?: string;
+  source?: string;
+  acquired_date?: string;
 }
 
 export type TreeUpdateInput = Partial<Omit<TreeCreateInput, 'orchard_id'>>;
