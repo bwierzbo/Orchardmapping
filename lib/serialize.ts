@@ -26,6 +26,9 @@ export function serializeTree(tree: Tree): ClientTree {
     last_harvest: toYMD(tree.last_harvest),
     yield_estimate: tree.yield_estimate ?? null,
     notes: tree.notes ?? null,
+    rootstock: tree.rootstock ?? null,
+    source: tree.source ?? null,
+    acquired_date: toYMD(tree.acquired_date),
     created_at: tree.created_at ? new Date(tree.created_at).toISOString() : null,
     updated_at: tree.updated_at ? new Date(tree.updated_at).toISOString() : null,
   };

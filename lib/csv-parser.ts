@@ -24,6 +24,9 @@ export interface TreeImportRow {
   last_harvest?: string;
   yield_estimate?: number;
   notes?: string;
+  rootstock?: string;
+  source?: string;
+  acquired_date?: string;
 }
 
 export interface ParseResult {
@@ -68,6 +71,13 @@ const HEADER_ALIASES: Record<string, keyof TreeImportRow> = {
   yield_estimate: 'yield_estimate',
   yield: 'yield_estimate',
   notes: 'notes',
+  rootstock: 'rootstock',
+  source: 'source',
+  nursery: 'source',
+  'purchased from': 'source',
+  acquired_date: 'acquired_date',
+  acquired: 'acquired_date',
+  'purchase date': 'acquired_date',
   note: 'notes',
   comments: 'notes',
 };
@@ -198,6 +208,9 @@ export async function parseTreeCSV(file: File): Promise<ParseResult> {
     tree.planted_date = dateField(raw.planted_date, 'planted_date', lineNo);
     tree.last_pruned = dateField(raw.last_pruned, 'last_pruned', lineNo);
     tree.last_harvest = dateField(raw.last_harvest, 'last_harvest', lineNo);
+    tree.acquired_date = dateField(raw.acquired_date, 'acquired_date', lineNo);
+    if (raw.rootstock?.trim()) tree.rootstock = raw.rootstock.trim();
+    if (raw.source?.trim()) tree.source = raw.source.trim();
     tree.age = numberField(raw.age, 'age', lineNo, { min: 0 });
     tree.height = numberField(raw.height, 'height', lineNo, { min: 0 });
     tree.yield_estimate = numberField(raw.yield_estimate, 'yield_estimate', lineNo, { min: 0 });

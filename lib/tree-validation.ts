@@ -18,6 +18,9 @@ export interface TreeRowData {
   last_harvest?: string;
   yield_estimate?: number;
   notes?: string;
+  rootstock?: string;
+  source?: string;
+  acquired_date?: string;
 }
 
 export interface ValidationError {
@@ -102,6 +105,14 @@ export function validateTreeRow(
   if (rowData.planted_date && !isValidDate(rowData.planted_date)) {
     errors.push({
       field: 'planted_date',
+      message: 'Invalid date format. Use YYYY-MM-DD',
+      row: rowNumber
+    });
+  }
+
+  if (rowData.acquired_date && !isValidDate(rowData.acquired_date)) {
+    errors.push({
+      field: 'acquired_date',
       message: 'Invalid date format. Use YYYY-MM-DD',
       row: rowNumber
     });
@@ -300,6 +311,9 @@ export function sanitizeTreeRow(rowData: Record<string, string>): TreeRowData {
     last_pruned: rowData.last_pruned?.trim() || undefined,
     last_harvest: rowData.last_harvest?.trim() || undefined,
     yield_estimate: rowData.yield_estimate ? parseFloat(rowData.yield_estimate) : undefined,
-    notes: rowData.notes?.trim() || undefined
+    notes: rowData.notes?.trim() || undefined,
+    rootstock: rowData.rootstock?.trim() || undefined,
+    source: rowData.source?.trim() || undefined,
+    acquired_date: rowData.acquired_date?.trim() || undefined
   };
 }

@@ -83,6 +83,9 @@ export interface ClientTree {
   last_harvest?: string | null;
   yield_estimate?: number | null;
   notes?: string | null;
+  rootstock?: string | null;
+  source?: string | null;
+  acquired_date?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
 }
