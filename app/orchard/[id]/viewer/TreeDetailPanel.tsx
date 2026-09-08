@@ -6,6 +6,17 @@ import { TREE_STATUSES } from '@/lib/types';
 import { formatYMD } from '@/lib/dates';
 import StatusBadge, { STATUS_LABEL } from '@/components/StatusBadge';
 import type { TreeUpdateInput } from '@/lib/api/trees';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface TreeDetailPanelProps {
   tree: ClientTree;
@@ -85,9 +96,9 @@ export default function TreeDetailPanel({
     key: keyof TreeUpdateInput,
     type: 'text' | 'date' | 'number' = 'text'
   ) => (
-    <label className="block">
-      <span className="text-xs font-medium text-bark">{label}</span>
-      <input
+    <div className="space-y-1">
+      <Label className="text-xs text-bark">{label}</Label>
+      <Input
         type={type}
         value={(form[key] as string | number | undefined) ?? ''}
         onChange={(e) =>
@@ -101,9 +112,8 @@ export default function TreeDetailPanel({
                 : e.target.value,
           }))
         }
-        className="mt-1 w-full text-sm px-2.5 py-1.5 border border-line rounded-md focus:outline-none focus:ring-2 focus:ring-canopy-600"
       />
-    </label>
+    </div>
   );
 
   return (
@@ -160,20 +170,24 @@ export default function TreeDetailPanel({
         ) : (
           <div className="space-y-3">
             {input('Variety', 'variety')}
-            <label className="block">
-              <span className="text-xs font-medium text-bark">Status</span>
-              <select
+            <div className="space-y-1">
+              <Label className="text-xs text-bark">Status</Label>
+              <Select
                 value={(form.status as string) ?? tree.status}
-                onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
-                className="mt-1 w-full text-sm px-2.5 py-1.5 border border-line rounded-md focus:outline-none focus:ring-2 focus:ring-canopy-600 bg-surface"
+                onValueChange={(v) => setForm((f) => ({ ...f, status: v }))}
               >
-                {TREE_STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {STATUS_LABEL[s]}
-                  </option>
-                ))}
-              </select>
-            </label>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TREE_STATUSES.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {STATUS_LABEL[s]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               {input('Rootstock', 'rootstock')}
               {input('Source (nursery)', 'source')}
@@ -187,15 +201,14 @@ export default function TreeDetailPanel({
             {input('Last pruned', 'last_pruned', 'date')}
             {input('Last harvest', 'last_harvest', 'date')}
             {input('Yield estimate (kg)', 'yield_estimate', 'number')}
-            <label className="block">
-              <span className="text-xs font-medium text-bark">Notes</span>
-              <textarea
+            <div className="space-y-1">
+              <Label className="text-xs text-bark">Notes</Label>
+              <Textarea
                 value={(form.notes as string) ?? ''}
                 onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
                 rows={3}
-                className="mt-1 w-full text-sm px-2.5 py-1.5 border border-line rounded-md focus:outline-none focus:ring-2 focus:ring-canopy-600"
               />
-            </label>
+            </div>
           </div>
         )}
       </div>
@@ -210,56 +223,37 @@ export default function TreeDetailPanel({
             >
               {tree.tree_id}
             </button>
-            {canEdit && (
-              <button
-                onClick={startEdit}
-                className="px-4 py-2 bg-canopy-600 text-white text-sm font-medium rounded-lg hover:bg-canopy-700"
-              >
-                Edit tree
-              </button>
-            )}
+            {canEdit && <Button onClick={startEdit}>Edit tree</Button>}
           </div>
         ) : confirmingDelete ? (
           <div className="flex items-center justify-between gap-2">
-            <span className="text-sm text-status-dead">Delete this tree?</span>
+            <span className="text-sm text-destructive">Delete this tree?</span>
             <div className="flex gap-2">
-              <button
-                onClick={() => setConfirmingDelete(false)}
-                className="px-3 py-1.5 text-sm rounded-lg bg-paper hover:bg-line"
-              >
+              <Button variant="secondary" size="sm" onClick={() => setConfirmingDelete(false)}>
                 Cancel
-              </button>
-              <button
-                onClick={onDelete}
-                disabled={saving}
-                className="px-3 py-1.5 text-sm rounded-lg bg-status-dead text-white hover:bg-status-dead/90 disabled:opacity-50"
-              >
+              </Button>
+              <Button variant="destructive" size="sm" onClick={onDelete} disabled={saving}>
                 Delete
-              </button>
+              </Button>
             </div>
           </div>
         ) : (
           <div className="flex items-center justify-between gap-2">
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-destructive hover:text-destructive"
               onClick={() => setConfirmingDelete(true)}
-              className="text-sm text-status-dead hover:text-status-dead"
             >
               Delete…
-            </button>
+            </Button>
             <div className="flex gap-2">
-              <button
-                onClick={() => setEditing(false)}
-                className="px-3 py-2 text-sm rounded-lg bg-paper hover:bg-line"
-              >
+              <Button variant="secondary" onClick={() => setEditing(false)}>
                 Cancel
-              </button>
-              <button
-                onClick={submit}
-                disabled={saving}
-                className="px-4 py-2 bg-canopy-600 text-white text-sm font-medium rounded-lg hover:bg-canopy-700 disabled:opacity-50"
-              >
+              </Button>
+              <Button onClick={submit} disabled={saving}>
                 {saving ? 'Saving…' : 'Save changes'}
-              </button>
+              </Button>
             </div>
           </div>
         )}
