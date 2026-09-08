@@ -4,7 +4,7 @@ import { useUser, useClerk } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import { useSyncExternalStore } from 'react';
 import { useTheme } from 'next-themes';
-import { ChevronDown, LogOut, Moon, Plus, Sun, Upload } from 'lucide-react';
+import { ChevronDown, LogOut, Moon, Plus, Settings, Sun, Upload } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import {
@@ -93,6 +93,11 @@ export default function UserMenu() {
           <DropdownMenuItem asChild>
             <Link href="/">
               <Upload aria-hidden size={16} /> All orchards
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link href="/settings">
+              <Settings aria-hidden size={16} /> Settings
             </Link>
           </DropdownMenuItem>
           <DropdownMenuSeparator />

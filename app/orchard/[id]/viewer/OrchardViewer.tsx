@@ -17,6 +17,11 @@ import { useTreeLayer } from './useTreeLayer';
 import { useTreeSelection, useMapUrlState, parseMapHash } from './useUrlState';
 import TreeDetailPanel from './TreeDetailPanel';
 import WalkMode from './WalkMode';
+import {
+  DEFAULT_WALK_SETTINGS,
+  normalizeWalkSettings,
+  type WalkSettings,
+} from '@/lib/settings';
 import EditModePanel from './EditModePanel';
 import MapLegend from './MapLegend';
 import OrchardSwitcher from './OrchardSwitcher';
@@ -60,8 +65,15 @@ export default function OrchardViewer({
   const selectedTree = selectedTreeId ? (byId.get(selectedTreeId) ?? null) : null;
   const [saving, setSaving] = useState(false);
 
-  // Walk (survey) mode — one-tap-per-tree status recording
+  // Walk (survey) mode — one-tap-per-tree recording, pass-based decks
   const [walkMode, setWalkMode] = useState(false);
+  const [walkSettings, setWalkSettings] = useState<WalkSettings>(DEFAULT_WALK_SETTINGS);
+  useEffect(() => {
+    fetch('/api/settings')
+      .then((r) => r.json())
+      .then((b) => b?.walk && setWalkSettings(normalizeWalkSettings(b.walk)))
+      .catch(() => {}); // defaults are fine offline
+  }, []);
   const [walkStartId, setWalkStartId] = useState<string | null>(null);
   const startWalk = useCallback(() => {
     setWalkStartId(selectedTreeId);
@@ -452,6 +464,7 @@ export default function OrchardViewer({
       {walkMode && (
         <WalkMode
           trees={trees}
+          settings={walkSettings}
           startTreeId={walkStartId}
           onSetStatus={walkSetStatus}
           onFocusTree={focusWalkTree}
