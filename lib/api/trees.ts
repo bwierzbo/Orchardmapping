@@ -108,7 +108,12 @@ export async function fetchTreeEvents(treeId: string): Promise<ClientTreeEvent[]
 
 export async function createTreeEvent(
   treeId: string,
-  input: { event_type: string; event_date?: string; detail?: string }
+  input: {
+    event_type: string;
+    event_date?: string;
+    detail?: string;
+    changes?: Record<string, unknown>;
+  }
 ): Promise<ClientTreeEvent[]> {
   const response = await fetch(`/api/trees/${encodeURIComponent(treeId)}/events`, {
     method: 'POST',

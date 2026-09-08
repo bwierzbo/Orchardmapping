@@ -31,3 +31,27 @@ export function serpentineOrder(trees: ClientTree[]): ClientTree[] {
   });
   return ordered;
 }
+
+/**
+ * Sampled walk path: within the serpentine order, keep only the first
+ * `sampleSize` trees of each contiguous variety run (a stretch of the
+ * same variety along the walk). Used by bloom/fruit passes when the
+ * survey scope is "variety_sample" — a uniform block is checked at its
+ * leading trees rather than all of them.
+ */
+export function varietySamplePath(trees: ClientTree[], sampleSize: number): ClientTree[] {
+  const path = serpentineOrder(trees);
+  const sampled: ClientTree[] = [];
+  let runVariety: string | null = null;
+  let runCount = 0;
+  for (const t of path) {
+    const v = t.variety ?? '';
+    if (v !== runVariety) {
+      runVariety = v;
+      runCount = 0;
+    }
+    runCount++;
+    if (runCount <= sampleSize) sampled.push(t);
+  }
+  return sampled;
+}

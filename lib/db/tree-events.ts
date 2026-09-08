@@ -17,6 +17,9 @@ export const MANUAL_EVENT_TYPES = [
   'observation',
   'harvest',
   'note',
+  // Walk-survey passes (structured payload in `changes`)
+  'bloom',
+  'fruit_check',
 ] as const;
 
 export type TreeEventType =

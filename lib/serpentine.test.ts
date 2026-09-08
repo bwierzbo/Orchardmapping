@@ -41,3 +41,23 @@ describe('serpentineOrder', () => {
     expect(serpentineOrder([unaddressed, tree('1', 1)])).toHaveLength(1);
   });
 });
+
+describe('varietySamplePath', () => {
+  it('keeps the first N of each contiguous variety run', async () => {
+    const { varietySamplePath } = await import('./serpentine');
+    const mk = (row: string, position: number, variety: string) =>
+      ({ ...tree(row, position), variety }) as ClientTree;
+    const trees = [
+      mk('1', 1, 'Cox'), mk('1', 2, 'Cox'), mk('1', 3, 'Cox'),
+      mk('1', 4, 'Crab'), mk('1', 5, 'Crab'),
+      mk('2', 1, 'Spy'), mk('2', 2, 'Spy'), mk('2', 3, 'Spy'),
+    ];
+    const order = varietySamplePath(trees, 2).map((t) => `${t.tree_id}`);
+    // Row 1 forward: Cox x2, Crab x2; row 2 reversed: Spy run starts at P3
+    expect(order).toEqual([
+      't-R1-P1', 't-R1-P2',
+      't-R1-P4', 't-R1-P5',
+      't-R2-P3', 't-R2-P2',
+    ]);
+  });
+});

@@ -70,12 +70,19 @@ export async function POST(
       );
     }
 
+    // Structured payload for survey events (bloom stage, fruit load/metrics)
+    const changes =
+      body.changes && typeof body.changes === 'object' && !Array.isArray(body.changes)
+        ? (body.changes as Record<string, unknown>)
+        : undefined;
+
     await insertTreeEvent({
       tree_id,
       orchard_id: tree.orchard_id,
       event_type: eventType as TreeEventType,
       event_date: eventDate,
       detail: typeof body.detail === 'string' && body.detail.trim() ? body.detail.trim() : undefined,
+      changes,
       created_by: userId,
     });
 
