@@ -16,6 +16,7 @@ import { useTrees } from './useTrees';
 import { useTreeLayer } from './useTreeLayer';
 import { useTreeSelection, useMapUrlState, parseMapHash } from './useUrlState';
 import TreeDetailPanel from './TreeDetailPanel';
+import WalkMode from './WalkMode';
 import EditModePanel from './EditModePanel';
 import MapLegend from './MapLegend';
 import OrchardSwitcher from './OrchardSwitcher';
@@ -58,6 +59,32 @@ export default function OrchardViewer({
   const { selectedTreeId, select, clear } = useTreeSelection();
   const selectedTree = selectedTreeId ? (byId.get(selectedTreeId) ?? null) : null;
   const [saving, setSaving] = useState(false);
+
+  // Walk (survey) mode — one-tap-per-tree status recording
+  const [walkMode, setWalkMode] = useState(false);
+  const [walkStartId, setWalkStartId] = useState<string | null>(null);
+  const startWalk = useCallback(() => {
+    setWalkStartId(selectedTreeId);
+    clear();
+    setWalkMode(true);
+  }, [selectedTreeId, clear]);
+  const focusWalkTree = useCallback(
+    (tree: ClientTree) => {
+      select(tree.tree_id);
+      if (mapObj && tree.lat != null && tree.lng != null) {
+        mapObj.easeTo({
+          center: [tree.lng, tree.lat],
+          zoom: Math.max(mapObj.getZoom(), 19),
+          duration: 350,
+        });
+      }
+    },
+    [select, mapObj]
+  );
+  const walkSetStatus = useCallback(
+    (treeId: string, status: TreeStatus) => update(treeId, { status }),
+    [update]
+  );
 
   // Edit ("marking") mode
   const [editMode, setEditMode] = useState(false);
@@ -399,7 +426,15 @@ export default function OrchardViewer({
         {canEdit && !editMode && (
           <BulkTreeImport orchardId={orchard.id} existingTrees={trees} onImportComplete={refresh} />
         )}
-        {canEdit && (
+        {canEdit && !editMode && !walkMode && trees.length > 0 && (
+          <button
+            onClick={startWalk}
+            className="px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-canopy-600 text-white hover:bg-canopy-700"
+          >
+            Walk Survey
+          </button>
+        )}
+        {canEdit && !walkMode && (
           <button
             onClick={() => setEditMode((v) => !v)}
             className={`px-4 py-3 rounded-lg shadow-lg text-sm font-medium ${
@@ -412,6 +447,20 @@ export default function OrchardViewer({
           </button>
         )}
       </div>
+
+      {/* Walk (survey) mode sheet */}
+      {walkMode && (
+        <WalkMode
+          trees={trees}
+          startTreeId={walkStartId}
+          onSetStatus={walkSetStatus}
+          onFocusTree={focusWalkTree}
+          onExit={() => {
+            setWalkMode(false);
+            clear();
+          }}
+        />
+      )}
 
       {/* Edit-mode placement panel */}
       {editMode && canEdit && (
@@ -436,8 +485,8 @@ export default function OrchardViewer({
         />
       )}
 
-      {/* Tree details */}
-      {selectedTree && (
+      {/* Tree details (suppressed during a walk — the sheet owns the screen) */}
+      {selectedTree && !walkMode && (
         <TreeDetailPanel
           key={selectedTree.tree_id}
           tree={selectedTree}
