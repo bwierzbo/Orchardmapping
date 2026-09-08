@@ -87,3 +87,34 @@ export async function deleteTree(treeId: string): Promise<void> {
   });
   await parseResponse(response);
 }
+
+// ── Tree events (history log) ────────────────────────────────────────────
+
+export interface ClientTreeEvent {
+  id: number;
+  tree_id: string;
+  event_type: string;
+  event_date: string | null;
+  detail: string | null;
+  changes: Record<string, { from: unknown; to: unknown }> | null;
+  created_at: string | null;
+}
+
+export async function fetchTreeEvents(treeId: string): Promise<ClientTreeEvent[]> {
+  const response = await fetch(`/api/trees/${encodeURIComponent(treeId)}/events`);
+  const body = await parseResponse<{ events: ClientTreeEvent[] }>(response);
+  return body.events;
+}
+
+export async function createTreeEvent(
+  treeId: string,
+  input: { event_type: string; event_date?: string; detail?: string }
+): Promise<ClientTreeEvent[]> {
+  const response = await fetch(`/api/trees/${encodeURIComponent(treeId)}/events`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const body = await parseResponse<{ events: ClientTreeEvent[] }>(response);
+  return body.events;
+}

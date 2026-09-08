@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import type { ClientTree, TreeStatus } from '@/lib/types';
+import { useState } from 'react';
+import type { ClientTree } from '@/lib/types';
 import { TREE_STATUSES } from '@/lib/types';
 import { formatYMD } from '@/lib/dates';
 import StatusBadge, { STATUS_LABEL } from '@/components/StatusBadge';
+import TreeHistory from './TreeHistory';
 import type { TreeUpdateInput } from '@/lib/api/trees';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -43,12 +44,8 @@ export default function TreeDetailPanel({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [form, setForm] = useState<TreeUpdateInput>({});
 
-  // Reset edit state when a different tree is selected
-  useEffect(() => {
-    setEditing(false);
-    setConfirmingDelete(false);
-    setForm({});
-  }, [tree.tree_id]);
+  // Selecting a different tree remounts the panel (key={tree_id} at the
+  // call site), so edit state resets without a setState-in-effect.
 
   const startEdit = () => {
     setForm({
@@ -166,6 +163,7 @@ export default function TreeDetailPanel({
                 <p className="text-sm text-ink mt-0.5 whitespace-pre-wrap">{tree.notes}</p>
               </div>
             ) : null}
+            <TreeHistory key={tree.tree_id} treeId={tree.tree_id} canEdit={canEdit} />
           </>
         ) : (
           <div className="space-y-3">
