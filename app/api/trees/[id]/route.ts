@@ -8,6 +8,7 @@ import {
   updateTree,
   deleteTree
 } from '@/lib/db/trees';
+import { insertTreeEvent, diffTreeChanges } from '@/lib/db/tree-events';
 
 /**
  * GET /api/trees/[id]
@@ -56,7 +57,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { response } = await requireSession();
+    const { userId, response } = await requireSession();
     if (response) return response;
 
     const { id: tree_id } = await params;
@@ -99,6 +100,9 @@ export async function PUT(
       );
     }
 
+    // Snapshot before the write so the event can carry a field diff
+    const before = await getTreeById(tree_id);
+
     // Update tree
     const updatedTree = await updateTree(tree_id, updateData);
 
@@ -107,6 +111,32 @@ export async function PUT(
         { error: 'Tree not found' },
         { status: 404 }
       );
+    }
+
+    // Audit trail (best-effort; a failed audit write never fails the update)
+    if (before) {
+      const changes = diffTreeChanges(
+        before as unknown as Record<string, unknown>,
+        updateData
+      );
+      if (Object.keys(changes).length > 0) {
+        const eventType =
+          'status' in changes && Object.keys(changes).length === 1
+            ? 'status_change'
+            : 'lat' in changes || 'lng' in changes
+              ? 'moved'
+              : 'updated';
+        await insertTreeEvent(
+          {
+            tree_id,
+            orchard_id: updatedTree.orchard_id,
+            event_type: eventType,
+            changes,
+            created_by: userId,
+          },
+          { bestEffort: true }
+        );
+      }
     }
 
     return NextResponse.json({
@@ -129,7 +159,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { response } = await requireSession();
+    const { userId, response } = await requireSession();
     if (response) return response;
 
     const { id: tree_id } = await params;
@@ -141,6 +171,9 @@ export async function DELETE(
       );
     }
 
+    // Snapshot before deletion — the event preserves the final state
+    const before = await getTreeById(tree_id);
+
     // Delete tree
     const deleted = await deleteTree(tree_id);
 
@@ -148,6 +181,20 @@ export async function DELETE(
       return NextResponse.json(
         { error: 'Tree not found or already deleted' },
         { status: 404 }
+      );
+    }
+
+    if (before) {
+      await insertTreeEvent(
+        {
+          tree_id,
+          orchard_id: before.orchard_id,
+          event_type: 'deleted',
+          detail: `${before.variety ?? 'Unknown variety'} at R${before.row_id ?? '?'}·P${before.position ?? '?'}`,
+          changes: { snapshot: serializeTree(before) },
+          created_by: userId,
+        },
+        { bestEffort: true }
       );
     }
 

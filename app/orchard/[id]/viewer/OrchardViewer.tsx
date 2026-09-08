@@ -439,6 +439,7 @@ export default function OrchardViewer({
       {/* Tree details */}
       {selectedTree && (
         <TreeDetailPanel
+          key={selectedTree.tree_id}
           tree={selectedTree}
           canEdit={canEdit}
           saving={saving}

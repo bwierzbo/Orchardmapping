@@ -9,6 +9,7 @@ import {
 } from '@/lib/db/trees';
 import { validateTreeRow, formatValidationErrors, TreeRowData } from '@/lib/tree-validation';
 import { serializeTree } from '@/lib/serialize';
+import { insertTreeEvent } from '@/lib/db/tree-events';
 
 /**
  * GET /api/trees?orchard_id=washington
@@ -47,7 +48,7 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const { response } = await requireSession();
+    const { userId, response } = await requireSession();
     if (response) return response;
 
     // Parse request body
@@ -137,6 +138,17 @@ export async function POST(request: NextRequest) {
 
     // Insert tree
     const tree = await insertTree(treeData);
+
+    await insertTreeEvent(
+      {
+        tree_id: tree.tree_id,
+        orchard_id: tree.orchard_id,
+        event_type: 'created',
+        detail: `${tree.variety ?? 'Unknown variety'} at R${tree.row_id ?? '?'}·P${tree.position ?? '?'}`,
+        created_by: userId,
+      },
+      { bestEffort: true }
+    );
 
     return NextResponse.json({
       success: true,
