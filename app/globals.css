@@ -18,6 +18,30 @@
   --flag-600: 217 72 28;     /* #D9481C */
   --flag-700: 184 58 20;
   --line: 226 229 223;
+
+  /* shadcn/ui semantic tokens, mapped onto Conifer & Flag (RGB triplets
+     to match the rgb(var()/<alpha>) convention above). Components from
+     components/ui consume these; bespoke UI keeps using the C&F names. */
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: var(--surface);
+  --card-foreground: var(--ink);
+  --popover: var(--surface);
+  --popover-foreground: var(--ink);
+  --primary: var(--canopy-600);
+  --primary-foreground: 255 255 255;
+  --secondary: var(--canopy-100);
+  --secondary-foreground: var(--ink);
+  --muted: var(--canopy-50);
+  --muted-foreground: var(--bark);
+  --accent: var(--canopy-100);
+  --accent-foreground: var(--ink);
+  --destructive: 192 57 43; /* status-dead */
+  --destructive-foreground: 255 255 255;
+  --border: var(--line);
+  --input: var(--line);
+  --ring: var(--canopy-600);
+  --radius: 10px;
 }
 
 .dark {
@@ -34,6 +58,12 @@
   --flag-600: 240 100 56;
   --flag-700: 248 128 90;
   --line: 45 56 49;
+
+  /* Dark overrides for the shadcn mappings that don't track a C&F var:
+     primary is a light green on dark, so its foreground flips to night. */
+  --primary-foreground: 16 23 19;
+  --destructive: 235 90 70;
+  --destructive-foreground: 16 23 19;
 }
 
 html,
