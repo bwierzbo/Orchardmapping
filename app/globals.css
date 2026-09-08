@@ -92,6 +92,42 @@ body {
   outline-offset: 2px;
 }
 
+/* Tree hover tooltip — quick identify without a click */
+.tree-tip .maplibregl-popup-content {
+  background: rgb(var(--surface));
+  color: rgb(var(--ink));
+  border: 1px solid rgb(var(--line));
+  border-radius: 10px;
+  padding: 8px 10px;
+  box-shadow: 0 4px 16px rgb(20 33 26 / 0.18);
+  pointer-events: none; /* never intercept the cursor from the map */
+}
+.tree-tip .maplibregl-popup-tip {
+  border-top-color: rgb(var(--surface));
+  border-bottom-color: rgb(var(--surface));
+}
+.tree-tip-title {
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1.2;
+}
+.tree-tip-meta {
+  @apply font-mono;
+  font-size: 11px;
+  color: rgb(var(--bark));
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.tree-tip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-left: 3px;
+}
+
 /* Survey caption — the signature: thin rule + mono metadata line */
 .survey-caption {
   @apply font-mono text-xs uppercase tracking-widest text-bark;
