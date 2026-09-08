@@ -2,6 +2,18 @@ import { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import type { ClientTree, TreeStatus } from '@/lib/types';
 import { treesToFeatureCollection, STATUS_COLORS } from '@/lib/trees-geojson';
+import { STATUS_LABEL } from '@/components/StatusBadge';
+
+/** Build the hover-tooltip HTML for a tree feature (values are our own data). */
+function treeTipHtml(p: { tree_id: string; variety: string; row_id: string; position: number; status: string }) {
+  const status = (p.status in STATUS_LABEL ? p.status : 'unknown') as TreeStatus;
+  const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
+  return `
+    <div class="tree-tip-title">${esc(p.variety || 'Unknown variety')}</div>
+    <div class="tree-tip-meta">R${esc(p.row_id)} · P${p.position}
+      <span class="tree-tip-dot" style="background:${STATUS_COLORS[status]}"></span>${STATUS_LABEL[status]}
+    </div>`;
+}
 
 const SOURCE_ID = 'trees';
 const CIRCLES = 'trees-circles';
@@ -128,6 +140,18 @@ export function useTreeLayer(
       }
     };
 
+    // Hover tooltip — quick identification without a click. Pointer devices
+    // only: on touch there is no hover, tap goes straight to the panel.
+    const hoverCapable =
+      typeof window !== 'undefined' && window.matchMedia('(hover: hover)').matches;
+    const tip = new maplibregl.Popup({
+      closeButton: false,
+      closeOnClick: false,
+      className: 'tree-tip',
+      offset: 14,
+      maxWidth: '240px',
+    });
+
     const onMouseMove = (
       e: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }
     ) => {
@@ -135,10 +159,17 @@ export function useTreeLayer(
       if (!f) return;
       map.getCanvas().style.cursor = 'pointer';
       if (typeof f.id === 'number' && f.id !== hoveredIdRef.current) setHover(f.id);
+      if (hoverCapable) {
+        tip
+          .setLngLat((f.geometry as GeoJSON.Point).coordinates as [number, number])
+          .setHTML(treeTipHtml(f.properties as Parameters<typeof treeTipHtml>[0]))
+          .addTo(map);
+      }
     };
     const onMouseLeave = () => {
       map.getCanvas().style.cursor = '';
       setHover(null);
+      tip.remove();
     };
 
     const onCircleClick = (
@@ -189,6 +220,7 @@ export function useTreeLayer(
         const dy = e.point.y - dragStartPoint.y;
         if (Math.hypot(dx, dy) < 3) return;
         dragging = true;
+        tip.remove(); // tooltip in the way of a drag
         if (dragFeatureId !== null) {
           map.setFeatureState({ source: SOURCE_ID, id: dragFeatureId }, { dragging: true });
         }
@@ -239,6 +271,7 @@ export function useTreeLayer(
       map.off('mousedown', CIRCLES, onCircleMouseDown);
       map.off('mousemove', onMapMouseMove);
       map.off('mouseup', endDrag);
+      tip.remove();
       dragMarker?.remove();
       // On unmount the map-lifecycle cleanup (declared earlier) has
       // already run map.remove(), destroying map.style — touching
