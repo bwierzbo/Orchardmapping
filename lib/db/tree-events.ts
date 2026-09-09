@@ -87,7 +87,7 @@ export async function listTreeEvents(
   const { rows } = await sql`
     SELECT id, tree_id, orchard_id, event_type, event_date, detail, changes, created_by, created_at
     FROM tree_events
-    WHERE tree_id = ${tree_id}
+    WHERE tree_id = ${tree_id} AND undone_at IS NULL
     ORDER BY created_at DESC
     LIMIT ${limit}
   `;
