@@ -151,6 +151,21 @@ export default function SettingsPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
+                <div className="pb-2 mb-1 border-b border-line space-y-2">
+                  <p className="text-xs font-medium text-bark">Sugar unit</p>
+                  {radio(
+                    'Brix (°Bx)',
+                    walk.sugarUnit === 'brix',
+                    () => setWalk({ ...walk, sugarUnit: 'brix' }),
+                    'Refractometer reading, stored as-is'
+                  )}
+                  {radio(
+                    'Specific gravity (SG)',
+                    walk.sugarUnit === 'sg',
+                    () => setWalk({ ...walk, sugarUnit: 'sg' }),
+                    'Enter SG (e.g. 1.050); stored as both SG and converted °Bx'
+                  )}
+                </div>
                 {FRUIT_METRIC_CATALOG.map((m) => (
                   <label key={m.key} className="flex items-center gap-2.5 cursor-pointer">
                     <input

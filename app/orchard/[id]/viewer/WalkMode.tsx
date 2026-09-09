@@ -6,6 +6,7 @@ import { STATUS_COLORS } from '@/lib/trees-geojson';
 import { STATUS_LABEL } from '@/components/StatusBadge';
 import { createTreeEvent } from '@/lib/api/trees';
 import { serpentineOrder, varietySamplePath } from '@/lib/serpentine';
+import { sgToBrix } from '@/lib/sugar';
 import {
   bloomStagesFor,
   FRUIT_METRIC_CATALOG,
@@ -193,7 +194,15 @@ export default function WalkMode({
       for (const m of FRUIT_METRIC_CATALOG) {
         const raw = metrics[m.key];
         if (raw !== undefined && raw !== '' && !Number.isNaN(Number(raw))) {
-          payload[m.key] = Number(raw);
+          const value = Number(raw);
+          // Sugar is stored canonically as °Bx; when the user works in SG,
+          // keep the entered SG alongside the converted Brix.
+          if (m.key === 'brix' && settings.sugarUnit === 'sg') {
+            payload.brix = Math.round(sgToBrix(value) * 10) / 10;
+            payload.sg = value;
+          } else {
+            payload[m.key] = value;
+          }
         }
       }
       await createTreeEvent(current.tree_id, {
@@ -322,21 +331,25 @@ export default function WalkMode({
           <p className="text-[11px] text-bark -mt-1">Crop load: 1 = none · 5 = heavy</p>
           {fruitLoad !== null && enabledMetrics.length > 0 && (
             <div className="grid grid-cols-2 gap-2">
-              {enabledMetrics.map((m) => (
-                <label key={m.key} className="block">
-                  <span className="text-[11px] font-medium text-bark">
-                    {m.label} ({m.unit})
-                  </span>
-                  <Input
-                    type="number"
-                    step={m.step}
-                    inputMode="decimal"
-                    value={metrics[m.key] ?? ''}
-                    onChange={(e) => setMetrics((prev) => ({ ...prev, [m.key]: e.target.value }))}
-                    className="h-10 mt-0.5"
-                  />
-                </label>
-              ))}
+              {enabledMetrics.map((m) => {
+                const asSg = m.key === 'brix' && settings.sugarUnit === 'sg';
+                return (
+                  <label key={m.key} className="block">
+                    <span className="text-[11px] font-medium text-bark">
+                      {asSg ? 'Specific gravity (SG)' : `${m.label} (${m.unit})`}
+                    </span>
+                    <Input
+                      type="number"
+                      step={asSg ? 0.001 : m.step}
+                      inputMode="decimal"
+                      placeholder={asSg ? '1.050' : undefined}
+                      value={metrics[m.key] ?? ''}
+                      onChange={(e) => setMetrics((prev) => ({ ...prev, [m.key]: e.target.value }))}
+                      className="h-10 mt-0.5"
+                    />
+                  </label>
+                );
+              })}
             </div>
           )}
           {fruitLoad !== null && (

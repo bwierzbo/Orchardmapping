@@ -49,6 +49,8 @@ export interface WalkSettings {
   sampleSize: number;
   /** Which fruit measurements the fruit pass asks for. */
   fruitMetrics: FruitMetricKey[];
+  /** How sugar content is entered/displayed: refractometer °Bx or SG. */
+  sugarUnit: 'brix' | 'sg';
 }
 
 export const DEFAULT_WALK_SETTINGS: WalkSettings = {
@@ -56,6 +58,7 @@ export const DEFAULT_WALK_SETTINGS: WalkSettings = {
   surveyScope: 'per_tree',
   sampleSize: 3,
   fruitMetrics: ['brix', 'size_mm'],
+  sugarUnit: 'brix',
 };
 
 export function bloomStagesFor(settings: WalkSettings): readonly string[] {
@@ -77,5 +80,6 @@ export function normalizeWalkSettings(stored: unknown): WalkSettings {
     fruitMetrics: Array.isArray(s.fruitMetrics)
       ? (s.fruitMetrics.filter((m): m is FruitMetricKey => validMetrics.has(m as FruitMetricKey)))
       : DEFAULT_WALK_SETTINGS.fruitMetrics,
+    sugarUnit: s.sugarUnit === 'sg' ? 'sg' : DEFAULT_WALK_SETTINGS.sugarUnit,
   };
 }
