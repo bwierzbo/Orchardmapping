@@ -17,6 +17,7 @@ import { useTreeLayer } from './useTreeLayer';
 import { useTreeSelection, useMapUrlState, parseMapHash } from './useUrlState';
 import TreeDetailPanel from './TreeDetailPanel';
 import WalkMode from './WalkMode';
+import GroupActionDialog from '@/components/GroupActionDialog';
 import {
   DEFAULT_WALK_SETTINGS,
   normalizeWalkSettings,
@@ -64,6 +65,9 @@ export default function OrchardViewer({
   const { selectedTreeId, select, clear } = useTreeSelection();
   const selectedTree = selectedTreeId ? (byId.get(selectedTreeId) ?? null) : null;
   const [saving, setSaving] = useState(false);
+
+  // Group actions (bulk event/field changes with undo)
+  const [groupActionOpen, setGroupActionOpen] = useState(false);
 
   // Walk (survey) mode — one-tap-per-tree recording, pass-based decks
   const [walkMode, setWalkMode] = useState(false);
@@ -439,12 +443,20 @@ export default function OrchardViewer({
           <BulkTreeImport orchardId={orchard.id} existingTrees={trees} onImportComplete={refresh} />
         )}
         {canEdit && !editMode && !walkMode && trees.length > 0 && (
-          <button
-            onClick={startWalk}
-            className="px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-canopy-600 text-white hover:bg-canopy-700"
-          >
-            Walk Survey
-          </button>
+          <>
+            <button
+              onClick={startWalk}
+              className="px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-canopy-600 text-white hover:bg-canopy-700"
+            >
+              Walk Survey
+            </button>
+            <button
+              onClick={() => setGroupActionOpen(true)}
+              className="px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-surface text-ink hover:bg-canopy-50"
+            >
+              Group Action
+            </button>
+          </>
         )}
         {canEdit && !walkMode && (
           <button
@@ -459,6 +471,17 @@ export default function OrchardViewer({
           </button>
         )}
       </div>
+
+      {/* Group action dialog */}
+      {groupActionOpen && (
+        <GroupActionDialog
+          open={groupActionOpen}
+          onOpenChange={setGroupActionOpen}
+          orchardId={orchard.id}
+          trees={trees}
+          onApplied={refresh}
+        />
+      )}
 
       {/* Walk (survey) mode sheet */}
       {walkMode && (
