@@ -127,7 +127,19 @@ export default function TreeDetailPanel({
             R{tree.row_id ?? '—'} · P{tree.position ?? '—'}
           </p>
           <h2 className="text-lg font-semibold text-ink">
-            {tree.variety || tree.name || 'Tree'}
+            {tree.variety ? (
+              <a
+                href={`/varieties/${encodeURIComponent(tree.variety)}`}
+                target="_blank"
+                rel="noreferrer"
+                className="hover:text-canopy-700 hover:underline"
+                title="Open in Variety Library"
+              >
+                {tree.variety}
+              </a>
+            ) : (
+              tree.name || 'Tree'
+            )}
           </h2>
           <div className="mt-1">
             <StatusBadge status={tree.status} />
