@@ -61,18 +61,23 @@ export default function OrchardGrid({
     return <p className="text-sm text-bark">No trees have row and position assignments yet.</p>;
   }
 
+  // Rows are planted north–south: render each as a vertical strip, row 1
+  // leftmost — the grid faces the same way you face the block. Position 1
+  // is at the top of each strip; a shared height keeps columns aligned.
+  const globalMaxPosition = Math.max(...rows.map((r) => r.maxPosition));
+
   return (
     <div>
       <div className="overflow-x-auto pb-1">
-        <div className="space-y-1.5 min-w-fit">
+        <div className="flex gap-1.5 min-w-fit">
           {rows.map((row) => {
             const byPosition = new Map(row.trees.map((t) => [t.position, t]));
             return (
-              <div key={row.rowId} className="flex items-center gap-1.5">
-                <span className="w-9 shrink-0 font-mono text-xs text-bark text-right pr-1">
+              <div key={row.rowId} className="flex flex-col items-center gap-1.5">
+                <span className="font-mono text-[10px] text-bark leading-none pb-0.5">
                   R{row.rowId.padStart(2, '0')}
                 </span>
-                {Array.from({ length: row.maxPosition }, (_, i) => {
+                {Array.from({ length: globalMaxPosition }, (_, i) => {
                   const position = i + 1;
                   const tree = byPosition.get(position);
                   if (!tree) {
