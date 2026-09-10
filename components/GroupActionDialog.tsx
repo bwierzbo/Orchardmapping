@@ -87,7 +87,17 @@ export default function GroupActionDialog({
   onApplied: () => void;
 }) {
   const [filter, setFilter] = useState<GroupFilter>({});
-  const [kind, setKind] = useState<'log_event' | 'set_field'>('log_event');
+  const [kind, setKind] = useState<'log_event' | 'set_field' | 'harvest'>('log_event');
+  // harvest fields
+  const todayYMD = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  const [harvestDate, setHarvestDate] = useState(todayYMD());
+  const [weightLbs, setWeightLbs] = useState('');
+  const [sugar, setSugar] = useState('');
+  const [ph, setPh] = useState('');
+  const [sugarUnit, setSugarUnit] = useState<'brix' | 'sg'>('brix');
   const [eventType, setEventType] = useState('spray');
   const [detail, setDetail] = useState('');
   const [field, setField] = useState('status');
@@ -124,7 +134,13 @@ export default function GroupActionDialog({
   // Callers mount this with key/conditional render per open, so state
   // starts fresh; the effect only fetches (async setState is fine).
   useEffect(() => {
-    if (open) loadRecent();
+    if (open) {
+      loadRecent();
+      fetch('/api/settings')
+        .then((r) => r.json())
+        .then((b) => b?.walk?.sugarUnit === 'sg' && setSugarUnit('sg'))
+        .catch(() => {});
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -139,12 +155,21 @@ export default function GroupActionDialog({
 
   const needsConfirm = kind === 'set_field' && matched.length > CONFIRM_THRESHOLD;
   const confirmOk = !needsConfirm || confirmText === String(matched.length);
+  const harvestOk =
+    kind !== 'harvest' || (Number(weightLbs) > 0 && /^\d{4}-\d{2}-\d{2}$/.test(harvestDate));
 
   const apply = async () => {
-    if (busy || matched.length === 0 || !confirmOk) return;
+    if (busy || matched.length === 0 || !confirmOk || !harvestOk) return;
     setBusy(true);
     setMessage(null);
     try {
+      const sugarNum = Number(sugar);
+      const sugarFields =
+        sugar !== '' && Number.isFinite(sugarNum)
+          ? sugarUnit === 'sg'
+            ? { sg: sugarNum }
+            : { brix: sugarNum }
+          : {};
       const res = await fetch('/api/group-actions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -154,7 +179,16 @@ export default function GroupActionDialog({
           action:
             kind === 'log_event'
               ? { kind, event_type: eventType, detail: detail || undefined }
-              : { kind, field, value: value || null },
+              : kind === 'harvest'
+                ? {
+                    kind,
+                    harvest_date: harvestDate,
+                    weight_lbs: Number(weightLbs),
+                    ...sugarFields,
+                    ph: ph !== '' && Number.isFinite(Number(ph)) ? Number(ph) : undefined,
+                    detail: detail || undefined,
+                  }
+                : { kind, field, value: value || null },
         }),
       });
       const body = await res.json();
@@ -195,9 +229,11 @@ export default function GroupActionDialog({
   };
 
   const describeAction = (a: RecentAction) =>
-    a.action_kind === 'log_event'
-      ? `${EVENT_OPTIONS.find((o) => o.value === a.event_type)?.label ?? a.event_type}${a.detail ? ` — ${a.detail}` : ''}`
-      : `${FIELD_OPTIONS.find((o) => o.value === a.field)?.label ?? a.field} → ${a.value ?? '(cleared)'}`;
+    a.action_kind === 'harvest'
+      ? `Harvested${a.detail ? ` — ${a.detail}` : ''}`
+      : a.action_kind === 'log_event'
+        ? `${EVENT_OPTIONS.find((o) => o.value === a.event_type)?.label ?? a.event_type}${a.detail ? ` — ${a.detail}` : ''}`
+        : `${FIELD_OPTIONS.find((o) => o.value === a.field)?.label ?? a.field} → ${a.value ?? '(cleared)'}`;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -271,12 +307,80 @@ export default function GroupActionDialog({
               Log event
             </button>
             <button
+              className={`flex-1 py-2 text-sm font-medium border-l border-line ${kind === 'harvest' ? 'bg-canopy-600 text-white' : 'bg-paper text-ink'}`}
+              onClick={() => setKind('harvest')}
+            >
+              Harvest
+            </button>
+            <button
               className={`flex-1 py-2 text-sm font-medium border-l border-line ${kind === 'set_field' ? 'bg-canopy-600 text-white' : 'bg-paper text-ink'}`}
               onClick={() => setKind('set_field')}
             >
               Set field
             </button>
           </div>
+
+          {kind === 'harvest' && (
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-xs text-bark">Harvest date</Label>
+                  <Input
+                    type="date"
+                    value={harvestDate}
+                    onChange={(e) => setHarvestDate(e.target.value)}
+                    className="h-10 mt-0.5"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs text-bark">Weight (lbs) *</Label>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    placeholder="e.g. 850"
+                    value={weightLbs}
+                    onChange={(e) => setWeightLbs(e.target.value)}
+                    className="h-10 mt-0.5"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-xs text-bark">
+                    {sugarUnit === 'sg' ? 'Juice SG' : 'Juice Brix (°Bx)'}
+                  </Label>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    step={sugarUnit === 'sg' ? 0.001 : 0.1}
+                    placeholder={sugarUnit === 'sg' ? '1.050' : '12.5'}
+                    value={sugar}
+                    onChange={(e) => setSugar(e.target.value)}
+                    className="h-10 mt-0.5"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs text-bark">Juice pH</Label>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    step={0.01}
+                    placeholder="3.4"
+                    value={ph}
+                    onChange={(e) => setPh(e.target.value)}
+                    className="h-10 mt-0.5"
+                  />
+                </div>
+              </div>
+              <Input
+                placeholder="Notes (e.g. destination, bins)"
+                value={detail}
+                onChange={(e) => setDetail(e.target.value)}
+                className="h-10"
+              />
+            </div>
+          )}
 
           {kind === 'log_event' ? (
             <div className="grid grid-cols-2 gap-2">
@@ -345,9 +449,13 @@ export default function GroupActionDialog({
           <Button
             className="w-full h-11"
             onClick={apply}
-            disabled={busy || matched.length === 0 || !confirmOk}
+            disabled={busy || matched.length === 0 || !confirmOk || !harvestOk}
           >
-            {busy ? 'Working…' : `Apply to ${matched.length} trees`}
+            {busy
+              ? 'Working…'
+              : kind === 'harvest'
+                ? `Record harvest from ${matched.length} trees`
+                : `Apply to ${matched.length} trees`}
           </Button>
         </div>
 
