@@ -15,6 +15,7 @@ import {
 import { ArrowLeft, ChevronRight, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import PhotoButton from '@/components/PhotoButton';
 
 export type WalkPass = 'health' | 'bloom' | 'fruit';
 
@@ -232,6 +233,24 @@ export default function WalkMode({
     }
   };
 
+  // Photo taken mid-walk: records an observation event carrying the
+  // image (with the note text if one is typed). Does not auto-advance —
+  // a photo usually precedes a status tap on the same tree.
+  const savePhoto = async (url: string) => {
+    try {
+      await createTreeEvent(current.tree_id, {
+        event_type: 'observation',
+        detail: note.trim() || undefined,
+        photo_url: url,
+      });
+      setRecorded((n) => n + 1);
+      setNote('');
+      setNoteOpen(false);
+    } catch {
+      /* upload succeeded but event failed — photo remains in Blob */
+    }
+  };
+
   const enabledMetrics = FRUIT_METRIC_CATALOG.filter((m) =>
     settings.fruitMetrics.includes(m.key)
   );
@@ -377,6 +396,11 @@ export default function WalkMode({
         </div>
       ) : (
         <div className="flex gap-2 px-4 pb-4">
+          <PhotoButton
+            treeId={current.tree_id}
+            onUploaded={savePhoto}
+            className="h-11 px-3.5"
+          />
           {stressOpen ? (
             <Button
               variant="secondary"

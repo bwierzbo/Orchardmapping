@@ -97,6 +97,7 @@ export interface ClientTreeEvent {
   event_date: string | null;
   detail: string | null;
   changes: Record<string, { from: unknown; to: unknown }> | null;
+  photo_url: string | null;
   created_at: string | null;
 }
 
@@ -113,6 +114,7 @@ export async function createTreeEvent(
     event_date?: string;
     detail?: string;
     changes?: Record<string, unknown>;
+    photo_url?: string;
   }
 ): Promise<ClientTreeEvent[]> {
   const response = await fetch(`/api/trees/${encodeURIComponent(treeId)}/events`, {

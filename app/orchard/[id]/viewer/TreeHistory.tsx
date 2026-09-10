@@ -8,6 +8,7 @@ import {
 } from '@/lib/api/trees';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import PhotoButton from '@/components/PhotoButton';
 import {
   Select,
   SelectContent,
@@ -66,6 +67,7 @@ export default function TreeHistory({
   const [eventType, setEventType] = useState('pruning');
   const [eventDate, setEventDate] = useState(todayYMD());
   const [detail, setDetail] = useState('');
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
 
   // The panel mounts this with key={treeId}, so state resets per tree —
   // the effect only fetches (no synchronous setState).
@@ -86,10 +88,12 @@ export default function TreeHistory({
         event_type: eventType,
         event_date: eventDate,
         detail: detail || undefined,
+        photo_url: photoUrl ?? undefined,
       });
       setEvents(updated);
       setLogging(false);
       setDetail('');
+      setPhotoUrl(null);
       setEventDate(todayYMD());
     } catch {
       // parseResponse surfaces the message via ApiError; keep the form open
@@ -137,6 +141,18 @@ export default function TreeHistory({
             value={detail}
             onChange={(e) => setDetail(e.target.value)}
           />
+          <div className="flex items-center gap-2">
+            <PhotoButton
+              treeId={treeId}
+              onUploaded={setPhotoUrl}
+              className="h-8 px-2.5"
+              label={photoUrl ? 'Retake' : 'Photo'}
+            />
+            {photoUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={photoUrl} alt="Attached" className="h-8 w-8 rounded object-cover border border-line" />
+            )}
+          </div>
           <div className="flex justify-end gap-2">
             <Button variant="secondary" size="sm" onClick={() => setLogging(false)}>
               Cancel
@@ -164,6 +180,16 @@ export default function TreeHistory({
               {!e.detail && changesSummary(e.changes) ? (
                 <span className="text-bark"> — {changesSummary(e.changes)}</span>
               ) : null}
+              {e.photo_url && (
+                <a href={e.photo_url} target="_blank" rel="noreferrer" className="block mt-1">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={e.photo_url}
+                    alt="Event photo"
+                    className="h-14 w-14 rounded-md object-cover border border-line hover:opacity-90"
+                  />
+                </a>
+              )}
             </li>
           ))}
         </ul>

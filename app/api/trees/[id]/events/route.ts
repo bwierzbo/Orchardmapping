@@ -76,6 +76,24 @@ export async function POST(
         ? (body.changes as Record<string, unknown>)
         : undefined;
 
+    // Photo must be one of ours (uploaded through /api/photos/upload)
+    let photoUrl: string | undefined;
+    if (typeof body.photo_url === 'string' && body.photo_url) {
+      try {
+        const u = new URL(body.photo_url);
+        if (
+          u.protocol !== 'https:' ||
+          !u.hostname.endsWith('.public.blob.vercel-storage.com') ||
+          !u.pathname.startsWith('/photos/')
+        ) {
+          return NextResponse.json({ error: 'Invalid photo_url' }, { status: 400 });
+        }
+        photoUrl = body.photo_url;
+      } catch {
+        return NextResponse.json({ error: 'Invalid photo_url' }, { status: 400 });
+      }
+    }
+
     await insertTreeEvent({
       tree_id,
       orchard_id: tree.orchard_id,
@@ -83,6 +101,7 @@ export async function POST(
       event_date: eventDate,
       detail: typeof body.detail === 'string' && body.detail.trim() ? body.detail.trim() : undefined,
       changes,
+      photo_url: photoUrl,
       created_by: userId,
     });
 
