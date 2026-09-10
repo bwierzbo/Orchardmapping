@@ -1,6 +1,21 @@
 import { z } from 'zod';
 import { router, publicProcedure, protectedProcedure } from './init';
-import { getTreesByOrchard, getTreeById } from '@/lib/db/trees';
+import {
+  getTreesByOrchard,
+  getTreeById,
+  insertTree,
+  updateTree,
+  deleteTree,
+  checkDuplicateRowPosition,
+  TreeInsertData,
+} from '@/lib/db/trees';
+import { diffTreeChanges } from '@/lib/db/tree-events';
+import {
+  validateTreeRow,
+  validateTreeUpdate,
+  formatValidationErrors,
+  TreeRowData,
+} from '@/lib/tree-validation';
 import { getAllOrchardConfigs, getOrchardConfigById } from '@/lib/db/orchards';
 import {
   insertTreeEvent,
@@ -55,6 +70,149 @@ export const appRouter = router({
           event_date: toYMD(e.event_date),
           created_at: e.created_at ? new Date(e.created_at).toISOString() : null,
         }));
+      }),
+    create: protectedProcedure
+      .input(
+        z.object({
+          orchard_id: z.string().min(1),
+          row_id: z.string().min(1),
+          position: z.number().min(1),
+          lat: z.number().optional(),
+          lng: z.number().optional(),
+          variety: z.string().optional(),
+          status: z.string().optional(),
+          planted_date: z.string().optional(),
+          age: z.number().optional(),
+          height: z.number().optional(),
+          last_pruned: z.string().optional(),
+          last_harvest: z.string().optional(),
+          yield_estimate: z.number().optional(),
+          notes: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        // Same shared validators as REST POST /api/trees — one rule set
+        const validation = validateTreeRow(input as TreeRowData);
+        if (!validation.isValid) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: formatValidationErrors(validation.errors).join('; '),
+          });
+        }
+        const duplicate = await checkDuplicateRowPosition(
+          input.orchard_id,
+          input.row_id,
+          input.position
+        );
+        if (duplicate) {
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: `A tree already exists at row ${input.row_id}, position ${input.position}`,
+          });
+        }
+        const treeData: TreeInsertData = {
+          ...input,
+          // YYYY-MM-DD strings go to Postgres verbatim (never new Date())
+          planted_date: input.planted_date || undefined,
+          last_pruned: input.last_pruned || undefined,
+          last_harvest: input.last_harvest || undefined,
+        };
+        const tree = await insertTree(treeData);
+        await insertTreeEvent(
+          {
+            tree_id: tree.tree_id,
+            orchard_id: tree.orchard_id,
+            event_type: 'created',
+            detail: `${tree.variety ?? 'Unknown variety'} at R${tree.row_id ?? '?'}·P${tree.position ?? '?'}`,
+            created_by: ctx.userId,
+          },
+          { bestEffort: true }
+        );
+        return serializeTree(tree);
+      }),
+    update: protectedProcedure
+      .input(
+        z.object({
+          treeId: z.string().min(1),
+          patch: z.record(z.string(), z.unknown()),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        // Same flow as REST PUT /api/trees/[id]: strip protected fields,
+        // shared validators, then the whitelisted updateTree
+        const {
+          id: _id,
+          tree_id: _treeId,
+          orchard_id: _orchardId,
+          row_id: _rowId,
+          position: _position,
+          created_at: _createdAt,
+          updated_at: _updatedAt,
+          ...patch
+        } = input.patch;
+        const validation = validateTreeUpdate(patch as Partial<TreeRowData>);
+        if (!validation.isValid) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: formatValidationErrors(validation.errors).join('; '),
+          });
+        }
+        if (Object.keys(patch).length === 0) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'No valid fields to update' });
+        }
+        const before = await getTreeById(input.treeId);
+        const updated = await updateTree(input.treeId, patch);
+        if (!updated) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Tree not found' });
+        }
+        if (before) {
+          const changes = diffTreeChanges(
+            before as unknown as Record<string, unknown>,
+            patch
+          );
+          if (Object.keys(changes).length > 0) {
+            const eventType =
+              'status' in changes && Object.keys(changes).length === 1
+                ? 'status_change'
+                : 'lat' in changes || 'lng' in changes
+                  ? 'moved'
+                  : 'updated';
+            await insertTreeEvent(
+              {
+                tree_id: input.treeId,
+                orchard_id: updated.orchard_id,
+                event_type: eventType,
+                changes,
+                created_by: ctx.userId,
+              },
+              { bestEffort: true }
+            );
+          }
+        }
+        return serializeTree(updated);
+      }),
+    delete: protectedProcedure
+      .input(z.object({ treeId: z.string().min(1) }))
+      .mutation(async ({ input, ctx }) => {
+        const before = await getTreeById(input.treeId);
+        const deleted = await deleteTree(input.treeId);
+        if (!deleted) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Tree not found or already deleted' });
+        }
+        if (before) {
+          await insertTreeEvent(
+            {
+              tree_id: input.treeId,
+              orchard_id: before.orchard_id,
+              event_type: 'deleted',
+              detail: `${before.variety ?? 'Unknown variety'} at R${before.row_id ?? '?'}·P${before.position ?? '?'}`,
+              changes: { snapshot: serializeTree(before) },
+              created_by: ctx.userId,
+            },
+            { bestEffort: true }
+          );
+        }
+        return { success: true };
       }),
     logEvent: protectedProcedure
       .input(

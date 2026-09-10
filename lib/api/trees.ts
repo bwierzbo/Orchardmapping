@@ -1,10 +1,13 @@
+import { TRPCClientError } from '@trpc/client';
 import type { ClientTree } from '../types';
+import { trpc } from '../trpc/client';
 
 /**
- * Typed client for the tree API routes.
+ * Typed client for the tree API.
  *
- * Every mutation goes through here so the `{ success, tree }` response
- * envelope is unwrapped in exactly one place.
+ * Tree CRUD rides the tRPC router (end-to-end types, CiderPilot-style);
+ * event endpoints stay on REST because photo-URL validation lives there.
+ * Both surfaces throw ApiError so callers (useTrees) see one error shape.
  */
 
 export class ApiError extends Error {
@@ -16,6 +19,16 @@ export class ApiError extends Error {
     super(message);
     this.name = 'ApiError';
   }
+}
+
+/** Normalize tRPC client failures into the ApiError callers expect. */
+function toApiError(error: unknown): never {
+  if (error instanceof TRPCClientError) {
+    const status =
+      typeof error.data?.httpStatus === 'number' ? error.data.httpStatus : 500;
+    throw new ApiError(error.message, status);
+  }
+  throw error;
 }
 
 async function parseResponse<T>(response: Response): Promise<T> {
@@ -56,36 +69,40 @@ export interface TreeCreateInput {
 export type TreeUpdateInput = Partial<Omit<TreeCreateInput, 'orchard_id'>>;
 
 export async function fetchTrees(orchardId: string): Promise<ClientTree[]> {
-  const response = await fetch(`/api/trees?orchard_id=${encodeURIComponent(orchardId)}`);
-  const body = await parseResponse<{ trees: ClientTree[] }>(response);
-  return body.trees;
+  try {
+    return (await trpc.tree.list.query({ orchardId })) as ClientTree[];
+  } catch (error) {
+    toApiError(error);
+  }
 }
 
 export async function createTree(input: TreeCreateInput): Promise<ClientTree> {
-  const response = await fetch('/api/trees', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  });
-  const body = await parseResponse<{ tree: ClientTree }>(response);
-  return body.tree;
+  try {
+    return (await trpc.tree.create.mutate(input)) as ClientTree;
+  } catch (error) {
+    toApiError(error);
+  }
 }
 
 export async function updateTree(treeId: string, patch: TreeUpdateInput): Promise<ClientTree> {
-  const response = await fetch(`/api/trees/${encodeURIComponent(treeId)}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(patch),
-  });
-  const body = await parseResponse<{ tree: ClientTree }>(response);
-  return body.tree;
+  // superjson preserves undefined (unlike JSON.stringify) — drop those keys
+  // so an untouched field never becomes an explicit SET col = NULL
+  const cleaned = Object.fromEntries(
+    Object.entries(patch).filter(([, v]) => v !== undefined)
+  );
+  try {
+    return (await trpc.tree.update.mutate({ treeId, patch: cleaned })) as ClientTree;
+  } catch (error) {
+    toApiError(error);
+  }
 }
 
 export async function deleteTree(treeId: string): Promise<void> {
-  const response = await fetch(`/api/trees/${encodeURIComponent(treeId)}`, {
-    method: 'DELETE',
-  });
-  await parseResponse(response);
+  try {
+    await trpc.tree.delete.mutate({ treeId });
+  } catch (error) {
+    toApiError(error);
+  }
 }
 
 // ── Tree events (history log) ────────────────────────────────────────────
