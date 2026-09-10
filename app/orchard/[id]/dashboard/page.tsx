@@ -1,4 +1,4 @@
-import { cache } from 'react';
+import { cache, Suspense } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
@@ -11,6 +11,7 @@ import { STATUS_LABEL } from '@/components/StatusBadge';
 import StatusBadge from '@/components/StatusBadge';
 import OrchardSwitcher from '../viewer/OrchardSwitcher';
 import OrchardGrid from './OrchardGrid';
+import SeasonCard from './SeasonCard';
 import TreeTable from './TreeTable';
 import {
   SegmentedStatusBar,
@@ -131,6 +132,17 @@ export default async function DashboardPage({ params }: PageProps) {
 
       <div className="max-w-6xl mx-auto px-5 py-8 space-y-6">
         <p className="survey-caption">{caption}</p>
+
+        <Suspense
+          fallback={
+            <section className="bg-surface border border-line rounded-lg shadow-xs p-5">
+              <p className="survey-caption">Season · Weather</p>
+              <p className="text-sm text-bark mt-2">Loading chill &amp; heat accumulation…</p>
+            </section>
+          }
+        >
+          <SeasonCard orchardId={orchard.id} lat={lat} lng={lng} />
+        </Suspense>
 
         {stats.total === 0 ? (
           <div className="border border-dashed border-line rounded-lg bg-surface p-10 text-center">
