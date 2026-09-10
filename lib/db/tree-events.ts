@@ -34,6 +34,7 @@ export interface TreeEvent {
   event_date: Date | string;
   detail: string | null;
   changes: Record<string, unknown> | null;
+  photo_url: string | null;
   created_by: string | null;
   created_at: Date | string;
 }
@@ -45,6 +46,7 @@ export interface TreeEventInsert {
   event_date?: string;
   detail?: string;
   changes?: Record<string, unknown>;
+  photo_url?: string;
   created_by?: string;
 }
 
@@ -59,7 +61,7 @@ export async function insertTreeEvent(
 ): Promise<void> {
   try {
     await sql`
-      INSERT INTO tree_events (tree_id, orchard_id, event_type, event_date, detail, changes, created_by)
+      INSERT INTO tree_events (tree_id, orchard_id, event_type, event_date, detail, changes, photo_url, created_by)
       VALUES (
         ${event.tree_id},
         ${event.orchard_id},
@@ -67,6 +69,7 @@ export async function insertTreeEvent(
         ${event.event_date ?? null},
         ${event.detail ?? null},
         ${event.changes ? JSON.stringify(event.changes) : null},
+        ${event.photo_url ?? null},
         ${event.created_by ?? null}
       )
     `;
@@ -85,7 +88,7 @@ export async function listTreeEvents(
   limit = 20
 ): Promise<TreeEvent[]> {
   const { rows } = await sql`
-    SELECT id, tree_id, orchard_id, event_type, event_date, detail, changes, created_by, created_at
+    SELECT id, tree_id, orchard_id, event_type, event_date, detail, changes, photo_url, created_by, created_at
     FROM tree_events
     WHERE tree_id = ${tree_id} AND undone_at IS NULL
     ORDER BY created_at DESC
