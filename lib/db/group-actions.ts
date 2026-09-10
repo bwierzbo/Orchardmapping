@@ -16,7 +16,16 @@ export type GroupActionInput =
       eventDate?: string;
       detail?: string;
     }
-  | { kind: 'set_field'; field: string; value: string | null };
+  | { kind: 'set_field'; field: string; value: string | null }
+  | {
+      kind: 'harvest';
+      harvestDate: string;
+      weightLbs: number;
+      brix?: number;
+      sg?: number;
+      ph?: number;
+      detail?: string;
+    };
 
 export interface GroupActionRecord {
   id: number;
@@ -79,9 +88,13 @@ export async function applyGroupAction(
         orchardId,
         action.kind,
         JSON.stringify(scope),
-        action.kind === 'log_event' ? action.eventType : null,
-        action.kind === 'log_event' ? (action.eventDate ?? null) : null,
-        action.kind === 'log_event' ? (action.detail ?? null) : null,
+        action.kind === 'log_event' ? action.eventType : action.kind === 'harvest' ? 'harvest' : null,
+        action.kind === 'log_event'
+          ? (action.eventDate ?? null)
+          : action.kind === 'harvest'
+            ? action.harvestDate
+            : null,
+        action.kind !== 'set_field' ? (action.detail ?? null) : null,
         action.kind === 'set_field' ? action.field : null,
         action.kind === 'set_field' ? action.value : null,
         targets.length,
@@ -90,7 +103,40 @@ export async function applyGroupAction(
     );
     const groupId: number = rows[0].id;
 
-    if (action.kind === 'log_event') {
+    if (action.kind === 'harvest') {
+      await client.query(
+        `INSERT INTO harvests (orchard_id, group_action_id, harvest_date, weight_lbs, brix, sg, ph, notes, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [
+          orchardId,
+          groupId,
+          action.harvestDate,
+          action.weightLbs,
+          action.brix ?? null,
+          action.sg ?? null,
+          action.ph ?? null,
+          action.detail ?? null,
+          userId,
+        ]
+      );
+      // Fan a harvest event to each picked tree
+      const detail = `${action.weightLbs} lbs total${action.brix ? ` · ${action.brix}°Bx` : ''}${action.detail ? ` — ${action.detail}` : ''}`;
+      const CHUNK = 200;
+      for (let i = 0; i < targets.length; i += CHUNK) {
+        const chunk = targets.slice(i, i + CHUNK);
+        const values: unknown[] = [];
+        const tuples = chunk.map((t, j) => {
+          const base = j * 6;
+          values.push(t.tree_id, orchardId, action.harvestDate, detail, userId, groupId);
+          return `($${base + 1},$${base + 2},'harvest',$${base + 3}::date,$${base + 4},$${base + 5},$${base + 6})`;
+        });
+        await client.query(
+          `INSERT INTO tree_events (tree_id, orchard_id, event_type, event_date, detail, created_by, group_action_id)
+           VALUES ${tuples.join(',')}`,
+          values
+        );
+      }
+    } else if (action.kind === 'log_event') {
       // Chunked multi-row insert of identical events
       const CHUNK = 200;
       for (let i = 0; i < targets.length; i += CHUNK) {
@@ -169,12 +215,15 @@ export async function undoGroupAction(
   let reverted = 0;
   let skipped = 0;
 
-  if (group.action_kind === 'log_event') {
+  if (group.action_kind === 'log_event' || group.action_kind === 'harvest') {
     const res = await sql`
       UPDATE tree_events SET undone_at = NOW()
       WHERE group_action_id = ${groupId} AND undone_at IS NULL
     `;
     reverted = res.rowCount ?? 0;
+    if (group.action_kind === 'harvest') {
+      await sql`UPDATE harvests SET undone_at = NOW() WHERE group_action_id = ${groupId}`;
+    }
   } else {
     const { rows: events } = await sql`
       SELECT id, tree_id, changes FROM tree_events

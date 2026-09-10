@@ -71,6 +71,31 @@ export async function POST(request: NextRequest) {
             ? body.action.detail.trim()
             : undefined,
       };
+    } else if (body.action?.kind === 'harvest') {
+      const harvestDate = String(body.action.harvest_date ?? '');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(harvestDate)) {
+        return NextResponse.json({ error: 'harvest_date must be YYYY-MM-DD' }, { status: 400 });
+      }
+      const weightLbs = Number(body.action.weight_lbs);
+      if (!Number.isFinite(weightLbs) || weightLbs <= 0) {
+        return NextResponse.json({ error: 'weight_lbs must be a positive number' }, { status: 400 });
+      }
+      const num = (v: unknown) => {
+        const n = Number(v);
+        return Number.isFinite(n) && v !== '' && v !== null && v !== undefined ? n : undefined;
+      };
+      action = {
+        kind: 'harvest',
+        harvestDate,
+        weightLbs,
+        brix: num(body.action.brix),
+        sg: num(body.action.sg),
+        ph: num(body.action.ph),
+        detail:
+          typeof body.action.detail === 'string' && body.action.detail.trim()
+            ? body.action.detail.trim()
+            : undefined,
+      };
     } else if (body.action?.kind === 'set_field') {
       const field = String(body.action.field ?? '');
       if (!(GROUP_SETTABLE_FIELDS as readonly string[]).includes(field)) {
@@ -86,7 +111,7 @@ export async function POST(request: NextRequest) {
       action = { kind: 'set_field', field, value };
     } else {
       return NextResponse.json(
-        { error: 'action.kind must be log_event or set_field' },
+        { error: 'action.kind must be log_event, set_field, or harvest' },
         { status: 400 }
       );
     }
