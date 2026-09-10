@@ -49,7 +49,7 @@ const CONFIRM_THRESHOLD = 50;
 
 interface RecentAction {
   id: number;
-  action_kind: 'log_event' | 'set_field';
+  action_kind: 'log_event' | 'set_field' | 'harvest';
   scope: { summary: string };
   event_type: string | null;
   field: string | null;

@@ -30,7 +30,7 @@ export type GroupActionInput =
 export interface GroupActionRecord {
   id: number;
   orchard_id: string;
-  action_kind: 'log_event' | 'set_field';
+  action_kind: 'log_event' | 'set_field' | 'harvest';
   scope: { filter: GroupFilter; summary: string };
   event_type: string | null;
   event_date: Date | string | null;
