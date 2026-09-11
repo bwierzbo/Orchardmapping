@@ -11,6 +11,7 @@ import { buildMapStyle } from '@/lib/map-style';
 import { ensurePmtilesProtocol } from '@/lib/pmtiles-protocol';
 import { toast } from 'sonner';
 import { normalizeRowId } from '@/lib/row-id';
+import { comparePositions, nextPosition } from '@/lib/position';
 import BulkTreeImport from '../components/BulkTreeImport';
 import { useTrees } from './useTrees';
 import { useTreeLayer } from './useTreeLayer';
@@ -105,7 +106,7 @@ export default function OrchardViewer({
   // Edit ("marking") mode
   const [editMode, setEditMode] = useState(false);
   const [row, setRowState] = useState('');
-  const [position, setPosition] = useState(1);
+  const [position, setPosition] = useState('1');
   const [autoIncrement, setAutoIncrement] = useState(true);
   const [placeVariety, setPlaceVariety] = useState('');
   const [placeStatus, setPlaceStatus] = useState<TreeStatus>('healthy');
@@ -124,17 +125,20 @@ export default function OrchardViewer({
     });
   }, [trees]);
 
-  // Next open position in a row = max existing position + 1
+  // Next open position in a row: advance the row's highest label
+  // ("12"→"13", "2N"→"3N"); "1" for an empty row, or the highest label
+  // itself when it has no number to advance.
   const nextPositionForRow = useCallback(
-    (rowId: string): number => {
+    (rowId: string): string => {
       const norm = normalizeRowId(rowId);
-      let max = 0;
+      let max: string | null = null;
       for (const t of trees) {
-        if (t.row_id && normalizeRowId(t.row_id) === norm && t.position != null) {
-          max = Math.max(max, t.position);
+        if (t.row_id && normalizeRowId(t.row_id) === norm && t.position) {
+          if (max === null || comparePositions(t.position, max) > 0) max = t.position;
         }
       }
-      return max + 1;
+      if (max === null) return '1';
+      return nextPosition(max) ?? max;
     },
     [trees]
   );
@@ -152,7 +156,7 @@ export default function OrchardViewer({
     const current = parseInt(normalizeRowId(row), 10);
     const next = Number.isNaN(current) ? '' : String(current + 1);
     setRowState(next);
-    setPosition(next ? nextPositionForRow(next) : 1);
+    setPosition(next ? nextPositionForRow(next) : '1');
   }, [row, nextPositionForRow]);
 
   // Status filter via legend chips
@@ -286,8 +290,8 @@ export default function OrchardViewer({
       // Clicking an existing tree/cluster selects it instead of placing
       const layers = ['trees-circles', 'trees-clusters'].filter((l) => m.getLayer(l));
       if (layers.length && m.queryRenderedFeatures(e.point, { layers }).length > 0) return;
-      if (!p.row || !p.position) {
-        showToast('warning', 'Enter a row and position before placing a tree');
+      if (!p.row.trim() || !p.position.trim()) {
+        showToast('warning', 'Enter a row/block and position before placing a tree');
         return;
       }
       const tree = await create({
@@ -299,7 +303,7 @@ export default function OrchardViewer({
         variety: p.placeVariety.trim() || undefined,
       });
       if (tree) {
-        if (p.autoIncrement) setPosition((prev) => prev + 1);
+        if (p.autoIncrement) setPosition((prev) => nextPosition(prev) ?? prev);
         setPlacedCount((n) => n + 1);
         setLastPlacedId(tree.tree_id);
         toast.success(`Placed ${tree.tree_id}`, {

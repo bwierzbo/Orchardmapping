@@ -11,6 +11,7 @@ export interface GroupFilter {
   varieties?: string[];
   statuses?: string[];
   blocks?: string[];
+  fruitTypes?: string[];
 }
 
 export function matchesFilter(tree: ClientTree, filter: GroupFilter): boolean {
@@ -27,6 +28,9 @@ export function matchesFilter(tree: ClientTree, filter: GroupFilter): boolean {
   if (filter.blocks?.length) {
     if (!tree.block_id || !filter.blocks.includes(tree.block_id)) return false;
   }
+  if (filter.fruitTypes?.length) {
+    if (!tree.fruit_type || !filter.fruitTypes.includes(tree.fruit_type)) return false;
+  }
   return true;
 }
 
@@ -41,5 +45,6 @@ export function describeFilter(filter: GroupFilter): string {
   if (filter.varieties?.length) parts.push(filter.varieties.join(', '));
   if (filter.statuses?.length) parts.push(`status: ${filter.statuses.join('/')}`);
   if (filter.blocks?.length) parts.push(`blocks ${filter.blocks.join(', ')}`);
+  if (filter.fruitTypes?.length) parts.push(filter.fruitTypes.join(', '));
   return parts.length ? parts.join(' · ') : 'whole orchard';
 }

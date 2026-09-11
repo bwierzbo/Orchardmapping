@@ -76,10 +76,11 @@ export const appRouter = router({
         z.object({
           orchard_id: z.string().min(1),
           row_id: z.string().min(1),
-          position: z.number().min(1),
+          position: z.union([z.string(), z.number()]).transform((v) => String(v).trim()),
           lat: z.number().optional(),
           lng: z.number().optional(),
           variety: z.string().optional(),
+          fruit_type: z.string().optional(),
           status: z.string().optional(),
           planted_date: z.string().optional(),
           age: z.number().optional(),

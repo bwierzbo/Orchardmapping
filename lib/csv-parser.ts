@@ -1,8 +1,10 @@
 /**
- * CSV Parser Utilities for Tree Data Import
+ * Tree-data import parsing (CSV and XLSX).
  *
- * CSV only: the xlsx package was removed for unpatched security advisories.
- * Export a CSV from Excel/Sheets/QGIS instead.
+ * CSV is parsed in-house. XLSX is parsed via exceljs, dynamically
+ * imported only when an .xlsx file is actually chosen (the original
+ * `xlsx`/SheetJS package was removed for unpatched security advisories
+ * — do not reintroduce it). Legacy binary .xls is not supported.
  *
  * Headers are matched case-insensitively through an alias table, so
  * "Latitude", "lat" and "y" all land on `lat`.
@@ -10,11 +12,13 @@
 
 export interface TreeImportRow {
   row_id: string;
-  position: number;
+  /** Free-form alphanumeric label: "5", "1N", "A3", … */
+  position: string;
   lat?: number;
   lng?: number;
   name?: string;
   variety?: string;
+  fruit_type?: string;
   status?: 'healthy' | 'stressed' | 'dead' | 'unknown';
   planted_date?: string;
   block_id?: string;
@@ -42,6 +46,8 @@ const HEADER_ALIASES: Record<string, keyof TreeImportRow> = {
   row_id: 'row_id',
   row: 'row_id',
   'row id': 'row_id',
+  'row/block': 'row_id',
+  'row / block': 'row_id',
   position: 'position',
   pos: 'position',
   lat: 'lat',
@@ -55,6 +61,11 @@ const HEADER_ALIASES: Record<string, keyof TreeImportRow> = {
   name: 'name',
   variety: 'variety',
   cultivar: 'variety',
+  fruit_type: 'fruit_type',
+  fruit: 'fruit_type',
+  'fruit type': 'fruit_type',
+  species: 'fruit_type',
+  crop: 'fruit_type',
   status: 'status',
   health: 'status',
   planted_date: 'planted_date',
@@ -84,14 +95,12 @@ const HEADER_ALIASES: Record<string, keyof TreeImportRow> = {
 
 const VALID_STATUSES = ['healthy', 'stressed', 'dead', 'unknown'] as const;
 
+const POSITION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 ._\-\/]*$/;
+
 /**
- * Parse a tree CSV file into import rows.
+ * Parse a tree CSV or XLSX file into import rows.
  */
 export async function parseTreeCSV(file: File): Promise<ParseResult> {
-  const errors: string[] = [];
-  const warnings: string[] = [];
-  const data: TreeImportRow[] = [];
-
   const fail = (msg: string): ParseResult => ({
     success: false,
     data: [],
@@ -100,32 +109,90 @@ export async function parseTreeCSV(file: File): Promise<ParseResult> {
     rowCount: 0,
   });
 
-  if (/\.(xlsx|xls)$/i.test(file.name)) {
-    return fail('Excel files are not supported. Please export your sheet as CSV and upload that instead.');
+  if (/\.xls$/i.test(file.name)) {
+    return fail(
+      'Legacy .xls files are not supported. Save as .xlsx (or export a CSV) and upload that instead.'
+    );
   }
 
-  let text: string;
-  try {
-    text = await file.text();
-  } catch {
-    return fail('Could not read the file.');
+  let rows: string[][];
+  if (/\.xlsx$/i.test(file.name)) {
+    try {
+      rows = await readXlsxRows(file);
+    } catch {
+      return fail('Could not read the Excel file. Save as CSV and try again if this persists.');
+    }
+  } else {
+    let text: string;
+    try {
+      text = await file.text();
+    } catch {
+      return fail('Could not read the file.');
+    }
+    // Strip BOM, normalize line endings
+    text = text.replace(/^﻿/, '').replace(/\r\n?/g, '\n');
+    rows = text
+      .split('\n')
+      .filter((line) => line.trim())
+      .map(parseCSVLine);
   }
 
-  // Strip BOM, normalize line endings
-  text = text.replace(/^﻿/, '').replace(/\r\n?/g, '\n');
-  const lines = text.split('\n').filter((line) => line.trim());
-  if (lines.length < 2) {
+  if (rows.length < 2) {
     return fail('File must contain a header row and at least one data row.');
   }
+  return parseRows(rows);
+}
+
+/** First worksheet of an .xlsx file as trimmed string cells. */
+async function readXlsxRows(file: File): Promise<string[][]> {
+  const ExcelJS = (await import('exceljs')).default ?? (await import('exceljs'));
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await file.arrayBuffer());
+  const sheet = workbook.worksheets[0];
+  if (!sheet) throw new Error('Workbook has no worksheets');
+  const out: string[][] = [];
+  sheet.eachRow({ includeEmpty: false }, (row) => {
+    const cells: string[] = [];
+    const values = row.values as unknown[];
+    // exceljs row.values is 1-indexed (index 0 unused)
+    for (let c = 1; c < values.length; c++) {
+      cells.push(cellText(values[c]));
+    }
+    if (cells.some((v) => v !== '')) out.push(cells);
+  });
+  return out;
+}
+
+/** Render an exceljs cell value (rich text, dates, formulas) as text. */
+function cellText(v: unknown): string {
+  if (v == null) return '';
+  if (v instanceof Date) {
+    // Dates come back as JS Dates at UTC midnight — render calendar day
+    return v.toISOString().slice(0, 10);
+  }
+  if (typeof v === 'object') {
+    const o = v as { richText?: Array<{ text: string }>; result?: unknown; text?: string };
+    if (Array.isArray(o.richText)) return o.richText.map((r) => r.text).join('').trim();
+    if (o.result !== undefined) return cellText(o.result);
+    if (typeof o.text === 'string') return o.text.trim();
+    return '';
+  }
+  return String(v).trim();
+}
+
+function parseRows(rows: string[][]): ParseResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  const data: TreeImportRow[] = [];
 
   // Map headers through the alias table
-  const rawHeaders = parseCSVLine(lines[0]).map((h) => h.trim().toLowerCase());
+  const rawHeaders = rows[0].map((h) => h.trim().toLowerCase());
   const headers: (keyof TreeImportRow | null)[] = rawHeaders.map((h) => HEADER_ALIASES[h] ?? null);
   const unknown = rawHeaders.filter((h, i) => h && headers[i] === null);
   if (unknown.length > 0) {
     warnings.push(`Ignored unrecognized column(s): ${unknown.join(', ')}`);
   }
-  if (!headers.includes('row_id')) errors.push('Missing required column: row_id (or "row")');
+  if (!headers.includes('row_id')) errors.push('Missing required column: row_id (or "row", "row/block")');
   if (!headers.includes('position')) errors.push('Missing required column: position (or "pos")');
   if (errors.length > 0) {
     return { success: false, data: [], errors, warnings, rowCount: 0 };
@@ -162,22 +229,28 @@ export async function parseTreeCSV(file: File): Promise<ParseResult> {
     return raw;
   };
 
-  for (let i = 1; i < lines.length; i++) {
+  for (let i = 1; i < rows.length; i++) {
     const lineNo = i + 1;
-    const values = parseCSVLine(lines[i]);
+    const values = rows[i];
     const raw: Partial<Record<keyof TreeImportRow, string>> = {};
     headers.forEach((field, idx) => {
       if (field && values[idx] !== undefined) raw[field] = values[idx].trim();
     });
 
     const row_id = raw.row_id?.toString() ?? '';
-    const position = parseInt(raw.position ?? '', 10);
+    const position = raw.position?.toString().trim() ?? '';
     if (!row_id) {
       errors.push(`Row ${lineNo}: missing row_id`);
       continue;
     }
-    if (!position || position < 1) {
-      errors.push(`Row ${lineNo}: position must be a positive number`);
+    if (!position) {
+      errors.push(`Row ${lineNo}: missing position`);
+      continue;
+    }
+    if (position.length > 20 || !POSITION_PATTERN.test(position)) {
+      errors.push(
+        `Row ${lineNo}: invalid position "${position}" (letters, numbers, spaces, . _ - /, up to 20 chars)`
+      );
       continue;
     }
 
@@ -193,6 +266,7 @@ export async function parseTreeCSV(file: File): Promise<ParseResult> {
 
     if (raw.name) tree.name = raw.name;
     if (raw.variety) tree.variety = raw.variety;
+    if (raw.fruit_type) tree.fruit_type = raw.fruit_type.toLowerCase();
     if (raw.block_id) tree.block_id = raw.block_id;
     if (raw.notes) tree.notes = raw.notes;
 
@@ -288,7 +362,7 @@ export function generateTemplateCSV(): Blob {
   const sampleRows = [
     ['1', '1', '48.11412', '-123.26440', 'Fuji', 'healthy', '2020-03-15', '4', '2024-01-10', '2023-10-15', '45.5', 'Strong growth this year'],
     ['1', '2', '48.11412', '-123.26432', 'Gala', 'stressed', '2020-03-15', '4', '2024-01-10', '2023-10-12', '32.0', 'Possible pest damage'],
-    ['2', '1', '48.11405', '-123.26440', 'Honeycrisp', 'healthy', '2019-04-20', '5', '2024-01-08', '2023-10-20', '52.3', 'Excellent fruit quality'],
+    ['Espalier', '1N', '48.11405', '-123.26440', 'Honeycrisp', 'healthy', '2019-04-20', '5', '2024-01-08', '2023-10-20', '52.3', 'Rows and positions can be any label'],
   ];
 
   const csvContent = [

@@ -2,6 +2,7 @@ import type { ClientTree, TreeStatus } from './types';
 import { TREE_STATUSES } from './types';
 import { dateToYMD } from './dates';
 import { normalizeRowId } from './row-id';
+import { comparePositions } from './position';
 
 export interface VarietyStat {
   /** null = variety not recorded */
@@ -12,7 +13,7 @@ export interface VarietyStat {
 
 export interface RowTree {
   tree_id: string;
-  position: number;
+  position: string;
   status: TreeStatus;
   variety: string | null;
   hasCoords: boolean;
@@ -20,7 +21,10 @@ export interface RowTree {
 
 export interface RowSummary {
   rowId: string;
+  /** Highest purely-numeric position, 0 when none (drives the grid layout). */
   maxPosition: number;
+  /** True when every position in the row is a plain number. */
+  allNumeric: boolean;
   trees: RowTree[];
 }
 
@@ -67,7 +71,7 @@ export interface OrchardStats {
   notes: {
     tree_id: string;
     row_id: string | null;
-    position: number | null;
+    position: string | null;
     variety: string | null;
     status: TreeStatus;
     notes: string;
@@ -152,7 +156,7 @@ export function computeOrchardStats(trees: ClientTree[], now: Date = new Date())
   const rowMap = new Map<string, RowTree[]>();
   let unplacedCount = 0;
   for (const t of trees) {
-    if (!t.row_id || t.position == null) {
+    if (!t.row_id || t.position == null || t.position === '') {
       unplacedCount++;
       continue;
     }
@@ -169,10 +173,14 @@ export function computeOrchardStats(trees: ClientTree[], now: Date = new Date())
   const rows: RowSummary[] = [...rowMap.entries()]
     .sort(([a], [b]) => compareRows(a, b))
     .map(([rowId, rowTrees]) => {
-      rowTrees.sort((a, b) => a.position - b.position);
+      rowTrees.sort((a, b) => comparePositions(a.position, b.position));
+      const allNumeric = rowTrees.every((t) => /^\d+$/.test(t.position));
       return {
         rowId,
-        maxPosition: rowTrees.reduce((m, t) => Math.max(m, t.position), 0),
+        maxPosition: allNumeric
+          ? rowTrees.reduce((m, t) => Math.max(m, parseInt(t.position, 10)), 0)
+          : 0,
+        allNumeric,
         trees: rowTrees,
       };
     });
@@ -284,7 +292,7 @@ export function computeOrchardStats(trees: ClientTree[], now: Date = new Date())
         normalizeRowId(b.row_id ?? '')
       );
       if (rowCmp !== 0) return rowCmp;
-      return (a.position ?? 0) - (b.position ?? 0);
+      return comparePositions(a.position ?? '', b.position ?? '');
     });
 
   return {

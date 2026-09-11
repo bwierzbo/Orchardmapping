@@ -192,15 +192,22 @@ export function useTreeLayer(
       map.easeTo({ center: (f.geometry as GeoJSON.Point).coordinates as [number, number], zoom });
     };
 
-    // --- drag controller (edit mode): ghost the circle, one temp marker ---
+    // --- drag controller (edit mode): ghost the circle, one temp marker.
+    // Works for mouse AND touch — a touch-drag on a dot moves the tree
+    // (grab threshold is larger on touch so a jittery tap still selects).
     let dragTreeId: string | null = null;
     let dragFeatureId: number | null = null;
     let dragMarker: maplibregl.Marker | null = null;
     let dragStartPoint: { x: number; y: number } | null = null;
+    let dragThreshold = 3;
     let dragging = false;
+    let lastLngLat: maplibregl.LngLat | null = null;
 
-    const onCircleMouseDown = (
-      e: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }
+    const beginDrag = (
+      e: (maplibregl.MapMouseEvent | maplibregl.MapTouchEvent) & {
+        features?: maplibregl.MapGeoJSONFeature[];
+      },
+      threshold: number
     ) => {
       const { editMode: em, canEdit: ce } = stateRef.current;
       if (!em || !ce) return;
@@ -210,15 +217,32 @@ export function useTreeLayer(
       dragTreeId = String(f.properties.tree_id);
       dragFeatureId = f.id;
       dragStartPoint = { x: e.point.x, y: e.point.y };
+      dragThreshold = threshold;
       dragging = false;
+      lastLngLat = null;
     };
 
-    const onMapMouseMove = (e: maplibregl.MapMouseEvent) => {
+    const onCircleMouseDown = (
+      e: maplibregl.MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] }
+    ) => beginDrag(e, 3);
+
+    const onCircleTouchStart = (
+      e: maplibregl.MapTouchEvent & { features?: maplibregl.MapGeoJSONFeature[] }
+    ) => {
+      if (e.points.length !== 1) return; // pinch = map gesture, not a drag
+      beginDrag(e, 8);
+    };
+
+    const onPointerMove = (e: maplibregl.MapMouseEvent | maplibregl.MapTouchEvent) => {
       if (dragTreeId === null || dragStartPoint === null) return;
+      if ('points' in e && e.points.length > 1) {
+        cancelDrag(); // second finger landed — treat as pinch, restore dot
+        return;
+      }
       if (!dragging) {
         const dx = e.point.x - dragStartPoint.x;
         const dy = e.point.y - dragStartPoint.y;
-        if (Math.hypot(dx, dy) < 3) return;
+        if (Math.hypot(dx, dy) < dragThreshold) return;
         dragging = true;
         tip.remove(); // tooltip in the way of a drag
         if (dragFeatureId !== null) {
@@ -233,26 +257,35 @@ export function useTreeLayer(
       } else {
         dragMarker?.setLngLat(e.lngLat);
       }
+      lastLngLat = e.lngLat;
     };
 
-    const endDrag = (e: maplibregl.MapMouseEvent) => {
-      if (dragTreeId === null) return;
-      const treeId = dragTreeId;
+    const resetDragState = () => {
       const featureId = dragFeatureId;
-      const didDrag = dragging;
       dragTreeId = null;
       dragFeatureId = null;
       dragStartPoint = null;
       dragging = false;
       dragMarker?.remove();
       dragMarker = null;
+      lastLngLat = null;
       if (featureId !== null) {
         map.setFeatureState({ source: SOURCE_ID, id: featureId }, { dragging: false });
       }
-      if (didDrag) {
-        stateRef.current.onMove(treeId, e.lngLat.lng, e.lngLat.lat);
+    };
+
+    const cancelDrag = () => resetDragState();
+
+    const endDrag = (e: maplibregl.MapMouseEvent | maplibregl.MapTouchEvent) => {
+      if (dragTreeId === null) return;
+      const treeId = dragTreeId;
+      const didDrag = dragging;
+      const dropAt = lastLngLat ?? e.lngLat;
+      resetDragState();
+      if (didDrag && dropAt) {
+        stateRef.current.onMove(treeId, dropAt.lng, dropAt.lat);
       }
-      // A non-drag mousedown+up on a circle falls through to onCircleClick
+      // A non-drag press+release on a circle falls through to onCircleClick
     };
 
     map.on('mousemove', CIRCLES, onMouseMove);
@@ -260,8 +293,12 @@ export function useTreeLayer(
     map.on('click', CIRCLES, onCircleClick);
     map.on('click', CLUSTERS, onClusterClick);
     map.on('mousedown', CIRCLES, onCircleMouseDown);
-    map.on('mousemove', onMapMouseMove);
+    map.on('mousemove', onPointerMove);
     map.on('mouseup', endDrag);
+    map.on('touchstart', CIRCLES, onCircleTouchStart);
+    map.on('touchmove', onPointerMove);
+    map.on('touchend', endDrag);
+    map.on('touchcancel', cancelDrag);
 
     return () => {
       map.off('mousemove', CIRCLES, onMouseMove);
@@ -269,8 +306,12 @@ export function useTreeLayer(
       map.off('click', CIRCLES, onCircleClick);
       map.off('click', CLUSTERS, onClusterClick);
       map.off('mousedown', CIRCLES, onCircleMouseDown);
-      map.off('mousemove', onMapMouseMove);
+      map.off('mousemove', onPointerMove);
       map.off('mouseup', endDrag);
+      map.off('touchstart', CIRCLES, onCircleTouchStart);
+      map.off('touchmove', onPointerMove);
+      map.off('touchend', endDrag);
+      map.off('touchcancel', cancelDrag);
       tip.remove();
       dragMarker?.remove();
       // On unmount the map-lifecycle cleanup (declared earlier) has

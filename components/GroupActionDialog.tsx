@@ -122,6 +122,11 @@ export default function GroupActionDialog({
     for (const t of trees) if (t.block_id) set.add(t.block_id);
     return [...set].sort();
   }, [trees]);
+  const fruitTypes = useMemo(() => {
+    const set = new Set<string>();
+    for (const t of trees) if (t.fruit_type) set.add(t.fruit_type);
+    return [...set].sort();
+  }, [trees]);
 
   const matched = useMemo(() => filterTrees(trees, filter), [trees, filter]);
 
@@ -285,6 +290,22 @@ export default function GroupActionDialog({
                   {blocks.map((b) => (
                     <button key={b} className={chip(!!filter.blocks?.includes(b))} onClick={() => toggle('blocks', b)}>
                       {b}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {fruitTypes.length > 1 && (
+              <div>
+                <Label className="text-xs text-bark">Fruit</Label>
+                <div className="flex flex-wrap gap-1.5 mt-1">
+                  {fruitTypes.map((ft) => (
+                    <button
+                      key={ft}
+                      className={chip(!!filter.fruitTypes?.includes(ft))}
+                      onClick={() => toggle('fruitTypes', ft)}
+                    >
+                      {ft}
                     </button>
                   ))}
                 </div>

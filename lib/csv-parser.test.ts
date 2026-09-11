@@ -12,7 +12,7 @@ describe('parseTreeCSV', () => {
     );
     expect(result.success).toBe(true);
     expect(result.rowCount).toBe(2);
-    expect(result.data[0]).toMatchObject({ row_id: '1', position: 1, variety: 'Fuji' });
+    expect(result.data[0]).toMatchObject({ row_id: '1', position: '1', variety: 'Fuji' });
   });
 
   it('skips empty lines', async () => {
@@ -20,10 +20,16 @@ describe('parseTreeCSV', () => {
     expect(result.rowCount).toBe(2);
   });
 
-  it('rejects Excel files with a helpful message', async () => {
-    const result = await parseTreeCSV(csvFile('irrelevant', 'trees.xlsx'));
+  it('rejects legacy .xls with a helpful message', async () => {
+    const result = await parseTreeCSV(csvFile('irrelevant', 'trees.xls'));
     expect(result.success).toBe(false);
-    expect(result.errors[0]).toMatch(/CSV/);
+    expect(result.errors[0]).toMatch(/\.xlsx/);
+  });
+
+  it('reports unreadable .xlsx content instead of throwing', async () => {
+    const result = await parseTreeCSV(csvFile('not actually a workbook', 'trees.xlsx'));
+    expect(result.success).toBe(false);
+    expect(result.errors[0]).toMatch(/Excel/);
   });
 
   it('reports rows with missing required fields', async () => {

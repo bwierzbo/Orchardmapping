@@ -143,7 +143,7 @@ export default function BulkTreeImport({
           <div>
             <h2 className="text-lg font-semibold text-ink">Import tree data</h2>
             <p className="text-xs text-bark mt-0.5">
-              {step === 'pick' && 'CSV with row_id + position; add lat/lng to place trees on the map.'}
+              {step === 'pick' && 'CSV or Excel (.xlsx) with row_id + position; add lat/lng to place trees on the map.'}
               {step === 'review' && fileName}
               {step === 'importing' && 'Importing…'}
             </p>
@@ -180,14 +180,14 @@ export default function BulkTreeImport({
               >
                 <FileUp aria-hidden className="mx-auto text-canopy-600" size={30} />
                 <p className="mt-3 text-sm font-medium text-ink">
-                  Drag and drop your CSV here
+                  Drag and drop your CSV or .xlsx here
                 </p>
                 <p className="text-xs text-bark mt-1">or</p>
                 <label className="inline-block mt-2 px-4 py-2 bg-canopy-600 text-white dark:text-paper text-sm font-medium rounded-md hover:bg-canopy-700 cursor-pointer">
                   Choose file
                   <input
                     type="file"
-                    accept=".csv"
+                    accept=".csv,.xlsx"
                     className="sr-only"
                     onChange={(e) => {
                       const f = e.target.files?.[0];
@@ -199,9 +199,10 @@ export default function BulkTreeImport({
 
               <div className="mt-4 flex items-start justify-between gap-4">
                 <p className="text-xs text-bark">
-                  Columns: <span className="font-mono">row_id, position</span> (required) ·{' '}
-                  <span className="font-mono">lat, lng, variety, status, planted_date, age,
-                  height, last_pruned, last_harvest, yield_estimate, notes</span>.
+                  Columns: <span className="font-mono">row_id, position</span> (required — any
+                  alphanumeric labels, e.g. &quot;Espalier&quot; / &quot;1N&quot;) ·{' '}
+                  <span className="font-mono">lat, lng, variety, fruit_type, status, planted_date,
+                  age, height, last_pruned, last_harvest, yield_estimate, notes</span>.
                   Rows matching an existing row/position update that tree; everything runs in
                   one transaction.
                 </p>

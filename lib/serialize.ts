@@ -13,6 +13,7 @@ export function serializeTree(tree: Tree): ClientTree {
     orchard_id: tree.orchard_id,
     name: tree.name ?? null,
     variety: tree.variety ?? null,
+    fruit_type: tree.fruit_type ?? null,
     status: asTreeStatus(tree.status),
     planted_date: toYMD(tree.planted_date),
     block_id: tree.block_id ?? null,

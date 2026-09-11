@@ -4,12 +4,14 @@
 
 export interface TreeRowData {
   row_id: string;
-  position: number;
+  /** Free-form alphanumeric label: "5", "1N", "A3", … */
+  position: string | number;
   lat?: number;
   lng?: number;
   name?: string;
   block_id?: string;
   variety?: string;
+  fruit_type?: string;
   status?: string;
   planted_date?: string;
   age?: number;
@@ -75,16 +77,21 @@ export function validateTreeRow(
     });
   }
 
-  if (rowData.position === undefined || rowData.position === null) {
+  const positionStr =
+    rowData.position === undefined || rowData.position === null
+      ? ''
+      : String(rowData.position).trim();
+  if (positionStr === '') {
     errors.push({
       field: 'position',
       message: 'Position is required',
       row: rowNumber
     });
-  } else if (typeof rowData.position !== 'number' || rowData.position < 1) {
+  } else if (positionStr.length > 20 || !/^[A-Za-z0-9][A-Za-z0-9 ._\-\/]*$/.test(positionStr)) {
     errors.push({
       field: 'position',
-      message: 'Position must be a positive number',
+      message:
+        'Position must be alphanumeric (letters, numbers, spaces, . _ - /), up to 20 characters',
       row: rowNumber
     });
   }
@@ -188,7 +195,7 @@ export function validateTreeRow(
  * validateTreeRow, minus the row_id/position requirement.
  */
 export function validateTreeUpdate(fields: Partial<TreeRowData>): ValidationResult {
-  const probe = validateTreeRow({ ...fields, row_id: fields.row_id ?? '_', position: fields.position ?? 1 });
+  const probe = validateTreeRow({ ...fields, row_id: fields.row_id ?? '_', position: fields.position ?? '1' });
   // Drop errors for the placeholder identity fields unless the caller supplied them
   const errors = probe.errors.filter((e) => {
     if (e.field === 'row_id' && fields.row_id === undefined) return false;
@@ -208,7 +215,7 @@ export function validateTreeUpdate(fields: Partial<TreeRowData>): ValidationResu
  */
 export function validateBulkImport(
   data: TreeRowData[],
-  existingTrees?: Array<{ row_id: string; position: number }>
+  existingTrees?: Array<{ row_id: string; position: string | number }>
 ): ValidationResult {
   const errors: ValidationError[] = [];
   const warnings: string[] = [];
@@ -220,7 +227,7 @@ export function validateBulkImport(
     errors.push(...rowValidation.errors);
 
     // Check for duplicates within the dataset
-    const key = `${row.row_id}-${row.position}`;
+    const key = `${row.row_id}-${String(row.position).trim()}`;
     if (seen.has(key)) {
       errors.push({
         field: 'row_id/position',
@@ -234,7 +241,9 @@ export function validateBulkImport(
     // Check against existing trees
     if (existingTrees) {
       const existingMatch = existingTrees.find(
-        t => t.row_id === row.row_id && t.position === row.position
+        t =>
+          t.row_id === row.row_id &&
+          String(t.position).trim() === String(row.position).trim()
       );
 
       if (existingMatch) {
@@ -302,8 +311,9 @@ export function validateCSVHeaders(headers: string[]): ValidationResult {
 export function sanitizeTreeRow(rowData: Record<string, string>): TreeRowData {
   return {
     row_id: rowData.row_id?.trim() || '',
-    position: parseInt(rowData.position) || 0,
+    position: rowData.position?.trim() || '',
     variety: rowData.variety?.trim() || undefined,
+    fruit_type: rowData.fruit_type?.trim().toLowerCase() || undefined,
     status: rowData.status?.toLowerCase().trim() || undefined,
     planted_date: rowData.planted_date?.trim() || undefined,
     age: rowData.age ? parseFloat(rowData.age) : undefined,

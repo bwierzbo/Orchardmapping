@@ -16,6 +16,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  bloomStagesFor,
+  normalizeWalkSettings,
+  DEFAULT_WALK_SETTINGS,
+  FRUIT_METRIC_CATALOG,
+  type WalkSettings,
+} from '@/lib/settings';
+import { sgToBrix } from '@/lib/sugar';
 
 const EVENT_LABEL: Record<string, string> = {
   created: 'Created',
@@ -29,9 +37,20 @@ const EVENT_LABEL: Record<string, string> = {
   observation: 'Observation',
   harvest: 'Harvested',
   note: 'Note',
+  bloom: 'Bloom stage',
+  fruit_check: 'Fruit check',
 };
 
-const MANUAL_TYPES = ['pruning', 'spray', 'fertilize', 'observation', 'harvest', 'note'];
+const MANUAL_TYPES = [
+  'observation',
+  'bloom',
+  'fruit_check',
+  'pruning',
+  'spray',
+  'fertilize',
+  'harvest',
+  'note',
+];
 
 /** Compact "field: a → b" summary for automatic audit events. */
 function changesSummary(changes: ClientTreeEvent['changes']): string | null {
@@ -64,10 +83,16 @@ export default function TreeHistory({
   const [events, setEvents] = useState<ClientTreeEvent[] | null>(null);
   const [logging, setLogging] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [eventType, setEventType] = useState('pruning');
+  const [eventType, setEventType] = useState('observation');
   const [eventDate, setEventDate] = useState(todayYMD());
   const [detail, setDetail] = useState('');
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  // Structured entries (bloom stage / fruit check), sharing the walk
+  // pass definitions so panel logs and Walk Mode logs stay identical
+  const [settings, setSettings] = useState<WalkSettings>(DEFAULT_WALK_SETTINGS);
+  const [bloomStage, setBloomStage] = useState<string | null>(null);
+  const [fruitLoad, setFruitLoad] = useState<number | null>(null);
+  const [metrics, setMetrics] = useState<Record<string, string>>({});
 
   // The panel mounts this with key={treeId}, so state resets per tree —
   // the effect only fetches (no synchronous setState).
@@ -76,24 +101,65 @@ export default function TreeHistory({
     fetchTreeEvents(treeId)
       .then((e) => !cancelled && setEvents(e))
       .catch(() => !cancelled && setEvents([]));
+    fetch('/api/settings')
+      .then((r) => r.json())
+      .then((b) => !cancelled && b?.walk && setSettings(normalizeWalkSettings(b.walk)))
+      .catch(() => {}); // defaults are fine offline
     return () => {
       cancelled = true;
     };
   }, [treeId]);
 
+  const structuredPayload = (): {
+    detail?: string;
+    changes?: Record<string, unknown>;
+  } | null => {
+    if (eventType === 'bloom') {
+      if (!bloomStage) return null;
+      return { detail: bloomStage, changes: { stage: bloomStage } };
+    }
+    if (eventType === 'fruit_check') {
+      if (fruitLoad === null) return null;
+      const payload: Record<string, unknown> = { load: fruitLoad };
+      for (const m of FRUIT_METRIC_CATALOG) {
+        const raw = metrics[m.key];
+        if (raw !== undefined && raw !== '' && !Number.isNaN(Number(raw))) {
+          const value = Number(raw);
+          // Sugar is stored canonically as °Bx; keep entered SG alongside
+          if (m.key === 'brix' && settings.sugarUnit === 'sg') {
+            payload.brix = Math.round(sgToBrix(value) * 10) / 10;
+            payload.sg = value;
+          } else {
+            payload[m.key] = value;
+          }
+        }
+      }
+      return { detail: `Load ${fruitLoad}/5`, changes: payload };
+    }
+    return { detail: detail || undefined };
+  };
+
+  const structuredReady =
+    eventType === 'bloom' ? bloomStage !== null : eventType === 'fruit_check' ? fruitLoad !== null : true;
+
   const submit = async () => {
+    const structured = structuredPayload();
+    if (!structured) return;
     setSaving(true);
     try {
       const updated = await createTreeEvent(treeId, {
         event_type: eventType,
         event_date: eventDate,
-        detail: detail || undefined,
+        ...structured,
         photo_url: photoUrl ?? undefined,
       });
       setEvents(updated);
       setLogging(false);
       setDetail('');
       setPhotoUrl(null);
+      setBloomStage(null);
+      setFruitLoad(null);
+      setMetrics({});
       setEventDate(todayYMD());
     } catch {
       // parseResponse surfaces the message via ApiError; keep the form open
@@ -101,6 +167,10 @@ export default function TreeHistory({
       setSaving(false);
     }
   };
+
+  const enabledMetrics = FRUIT_METRIC_CATALOG.filter((m) =>
+    settings.fruitMetrics.includes(m.key)
+  );
 
   return (
     <div className="pt-3 mt-1 border-t border-line">
@@ -135,12 +205,75 @@ export default function TreeHistory({
               onChange={(e) => setEventDate(e.target.value)}
             />
           </div>
-          <Input
-            placeholder="Notes (optional)"
-            className="h-8 text-sm"
-            value={detail}
-            onChange={(e) => setDetail(e.target.value)}
-          />
+          {eventType === 'bloom' && (
+            <div className="flex flex-wrap gap-1.5">
+              {bloomStagesFor(settings).map((stage) => (
+                <button
+                  key={stage}
+                  type="button"
+                  onClick={() => setBloomStage(stage)}
+                  className={`px-2 py-1 rounded-md text-xs font-medium border ${
+                    bloomStage === stage
+                      ? 'bg-canopy-600 text-white dark:text-paper border-canopy-600'
+                      : 'bg-paper text-ink border-line hover:bg-canopy-50'
+                  }`}
+                >
+                  {stage}
+                </button>
+              ))}
+            </div>
+          )}
+          {eventType === 'fruit_check' && (
+            <>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-bark mr-1">Load</span>
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setFruitLoad(n)}
+                    className={`w-8 h-8 rounded-md text-sm font-semibold border ${
+                      fruitLoad === n
+                        ? 'bg-canopy-600 text-white dark:text-paper border-canopy-600'
+                        : 'bg-paper text-ink border-line hover:bg-canopy-50'
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+              {fruitLoad !== null && enabledMetrics.length > 0 && (
+                <div className="grid grid-cols-2 gap-2">
+                  {enabledMetrics.map((m) => (
+                    <label key={m.key} className="block">
+                      <span className="text-[11px] text-bark">
+                        {m.key === 'brix' && settings.sugarUnit === 'sg'
+                          ? 'SG (hydrometer)'
+                          : m.label}
+                      </span>
+                      <Input
+                        type="number"
+                        step={m.key === 'brix' && settings.sugarUnit === 'sg' ? 0.001 : m.step}
+                        className="h-8 text-sm mt-0.5"
+                        value={metrics[m.key] ?? ''}
+                        onChange={(e) =>
+                          setMetrics((prev) => ({ ...prev, [m.key]: e.target.value }))
+                        }
+                      />
+                    </label>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+          {eventType !== 'bloom' && eventType !== 'fruit_check' && (
+            <Input
+              placeholder="Notes (optional)"
+              className="h-8 text-sm"
+              value={detail}
+              onChange={(e) => setDetail(e.target.value)}
+            />
+          )}
           <div className="flex items-center gap-2">
             <PhotoButton
               treeId={treeId}
@@ -157,7 +290,7 @@ export default function TreeHistory({
             <Button variant="secondary" size="sm" onClick={() => setLogging(false)}>
               Cancel
             </Button>
-            <Button size="sm" onClick={submit} disabled={saving}>
+            <Button size="sm" onClick={submit} disabled={saving || !structuredReady}>
               {saving ? 'Saving…' : 'Save'}
             </Button>
           </div>

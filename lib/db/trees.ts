@@ -1,6 +1,7 @@
 import { sql } from '@vercel/postgres';
 import { buildUpdateSet } from './sql-helpers';
 import { toNumOrUndefined } from './decode';
+import { normalizePosition, positionIdPart, rowIdPart } from '../position';
 
 /**
  * Columns a client is allowed to change through updateTree.
@@ -10,6 +11,7 @@ import { toNumOrUndefined } from './decode';
 export const TREE_UPDATABLE_COLUMNS = [
   'name',
   'variety',
+  'fruit_type',
   'status',
   'planted_date',
   'block_id',
@@ -38,11 +40,12 @@ export interface Tree {
   orchard_id: string;
   name?: string;
   variety?: string;
+  fruit_type?: string;
   status?: string;
   planted_date?: Date | string;
   block_id?: string;
   row_id?: string;
-  position?: number;
+  position?: string;
   age?: number;
   height?: number;
   lat?: number;
@@ -64,10 +67,11 @@ export interface Tree {
 export interface TreeInsertData {
   orchard_id: string;
   row_id: string;
-  position: number;
+  position: string | number;
   lat?: number;
   lng?: number;
   variety?: string;
+  fruit_type?: string;
   status?: string;
   planted_date?: Date | string;
   age?: number;
@@ -105,12 +109,15 @@ export function normalizeRowId(rowId: string): string {
 /**
  * Generate tree ID from orchard, row, and position
  * Format: [ORCHARD_ID]-R[ROW_ID]-P[POSITION]
- * Example: washington-R01-P001
+ * Numeric addresses keep the legacy padding (washington-R01-P001);
+ * alphanumeric ones stay readable (manytrees-RNorth-side-P1N).
  */
-export function generateTreeId(orchardId: string, rowId: string, position: number): string {
-  const paddedRow = normalizeRowId(rowId).padStart(2, '0');
-  const paddedPosition = String(position).padStart(3, '0');
-  return `${orchardId}-R${paddedRow}-P${paddedPosition}`;
+export function generateTreeId(
+  orchardId: string,
+  rowId: string,
+  position: string | number
+): string {
+  return `${orchardId}-R${rowIdPart(normalizeRowId(rowId))}-P${positionIdPart(String(position))}`;
 }
 
 /**
@@ -118,10 +125,11 @@ export function generateTreeId(orchardId: string, rowId: string, position: numbe
  * Auto-generates tree_id from orchard_id, row_id, and position
  */
 export async function insertTree(treeData: TreeInsertData): Promise<Tree> {
-  const { orchard_id, position, lat, lng, row_id: rawRowId, ...otherFields } = treeData;
+  const { orchard_id, position: rawPosition, lat, lng, row_id: rawRowId, ...otherFields } = treeData;
   const row_id = normalizeRowId(rawRowId);
+  const position = rawPosition == null ? '' : normalizePosition(rawPosition);
 
-  if (!orchard_id || !row_id || position === undefined || position === null) {
+  if (!orchard_id || !row_id || !position) {
     throw new Error('Missing required fields: orchard_id, row_id, and position are required');
   }
 
@@ -213,7 +221,9 @@ export async function getTreesByOrchard(orchard_id: string): Promise<Tree[]> {
   const result = await sql`
     SELECT * FROM trees
     WHERE orchard_id = ${orchard_id}
-    ORDER BY row_id, position
+    ORDER BY row_id,
+      NULLIF(substring(position from '^\d+'), '')::int NULLS LAST,
+      position
   `;
   return result.rows.map(decodeTreeRow);
 }
@@ -224,13 +234,13 @@ export async function getTreesByOrchard(orchard_id: string): Promise<Tree[]> {
 export async function checkDuplicateRowPosition(
   orchard_id: string,
   row_id: string,
-  position: number
+  position: string | number
 ): Promise<boolean> {
   const result = await sql`
     SELECT id FROM trees
     WHERE orchard_id = ${orchard_id}
       AND row_id = ${normalizeRowId(row_id)}
-      AND position = ${position}
+      AND position = ${normalizePosition(position)}
     LIMIT 1
   `;
   return result.rows.length > 0;
@@ -242,13 +252,13 @@ export async function checkDuplicateRowPosition(
 export async function getTreeByRowPosition(
   orchard_id: string,
   row_id: string,
-  position: number
+  position: string | number
 ): Promise<Tree | null> {
   const result = await sql`
     SELECT * FROM trees
     WHERE orchard_id = ${orchard_id}
       AND row_id = ${normalizeRowId(row_id)}
-      AND position = ${position}
+      AND position = ${normalizePosition(position)}
     LIMIT 1
   `;
   return result.rows.length > 0 ? decodeTreeRow(result.rows[0]) : null;
@@ -297,6 +307,7 @@ export async function getTreeCountsByOrchard(): Promise<Record<string, number>> 
 const BULK_UPSERT_FIELDS = [
   'name',
   'variety',
+  'fruit_type',
   'status',
   'planted_date',
   'block_id',
@@ -315,9 +326,10 @@ const BULK_UPSERT_FIELDS = [
 
 export interface BulkUpsertRow {
   row_id: string;
-  position: number;
+  position: string | number;
   name?: string;
   variety?: string;
+  fruit_type?: string;
   status?: string;
   planted_date?: Date | string;
   block_id?: string;
@@ -337,7 +349,7 @@ export interface BulkUpsertRow {
 export interface BulkUpsertResult {
   created: number;
   updated: number;
-  errors: Array<{ row_id: string; position: number; error: string }>;
+  errors: Array<{ row_id: string; position: string; error: string }>;
 }
 
 const BULK_CHUNK_SIZE = 200;
@@ -373,8 +385,9 @@ export async function bulkUpsertTrees(
       const values: unknown[] = [];
       const tuples = chunk.map((row, i) => {
         const row_id = normalizeRowId(row.row_id);
-        const tree_id = generateTreeId(orchard_id, row_id, row.position);
-        values.push(tree_id, orchard_id, row_id, row.position);
+        const position = normalizePosition(row.position);
+        const tree_id = generateTreeId(orchard_id, row_id, position);
+        values.push(tree_id, orchard_id, row_id, position);
         for (const f of BULK_UPSERT_FIELDS) values.push(row[f] ?? null);
         const base = i * columns.length;
         return `(${columns.map((_, j) => `$${base + j + 1}`).join(', ')})`;

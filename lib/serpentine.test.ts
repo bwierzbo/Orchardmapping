@@ -9,7 +9,7 @@ function tree(row: string, position: number): ClientTree {
     orchard_id: 'o',
     status: 'unknown',
     row_id: row,
-    position,
+    position: String(position),
   } as ClientTree;
 }
 

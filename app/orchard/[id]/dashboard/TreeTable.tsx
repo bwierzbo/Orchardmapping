@@ -9,6 +9,7 @@ import { STATUS_COLORS } from '@/lib/trees-geojson';
 import StatusBadge, { STATUS_LABEL } from '@/components/StatusBadge';
 import { formatYMD } from '@/lib/dates';
 import { normalizeRowId } from '@/lib/row-id';
+import { comparePositions } from '@/lib/position';
 
 type SortKey =
   | 'row'
@@ -109,6 +110,7 @@ export default function TreeTable({
       if (vb === null) return -1;
       let cmp: number;
       if (sortKey === 'row') cmp = rowCompare(va as string, vb as string);
+      else if (sortKey === 'position') cmp = comparePositions(String(va), String(vb));
       else if (typeof va === 'number' && typeof vb === 'number') cmp = va - vb;
       else cmp = String(va).localeCompare(String(vb));
       if (cmp !== 0) return cmp * dir;
@@ -118,7 +120,7 @@ export default function TreeTable({
         b.row_id ? normalizeRowId(b.row_id) : null
       );
       if (rowCmp !== 0) return rowCmp;
-      return (a.position ?? 0) - (b.position ?? 0);
+      return comparePositions(a.position ?? '', b.position ?? '');
     });
     return filtered;
   }, [trees, statusFilter, varietyFilter, search, sortKey, sortAsc]);
