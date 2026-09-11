@@ -25,6 +25,8 @@ import {
 import { serializeTree } from '@/lib/serialize';
 import { toYMD } from '@/lib/dates';
 import { TRPCError } from '@trpc/server';
+import { listAreas, insertArea, updateArea, deleteArea, AREA_KINDS } from '@/lib/db/areas';
+import { parseBoundary } from '@/lib/orchard-boundary';
 
 /**
  * App router — CiderPilot-style typed API surface. Reads are live here;
@@ -240,6 +242,70 @@ export const appRouter = router({
           detail: input.detail || undefined,
           created_by: ctx.userId,
         });
+        return { success: true };
+      }),
+  }),
+
+  area: router({
+    list: publicProcedure
+      .input(z.object({ orchardId: z.string().min(1) }))
+      .query(async ({ input }) => listAreas(input.orchardId)),
+    create: protectedProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          name: z.string().trim().min(1).max(100),
+          kind: z.enum(AREA_KINDS).default('area'),
+          color: z.string().max(20).optional(),
+          notes: z.string().max(2000).optional(),
+          polygon: z.unknown(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const polygon = parseBoundary(input.polygon);
+        if (!polygon) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid polygon geometry' });
+        }
+        return insertArea({
+          orchard_id: input.orchardId,
+          name: input.name,
+          kind: input.kind,
+          color: input.color,
+          notes: input.notes,
+          polygon,
+          created_by: ctx.userId,
+        });
+      }),
+    update: protectedProcedure
+      .input(
+        z.object({
+          id: z.number().int().positive(),
+          name: z.string().trim().min(1).max(100).optional(),
+          kind: z.enum(AREA_KINDS).optional(),
+          color: z.string().max(20).nullish(),
+          notes: z.string().max(2000).nullish(),
+          polygon: z.unknown().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const { id, polygon: rawPolygon, ...rest } = input;
+        const updates: Parameters<typeof updateArea>[1] = { ...rest };
+        if (rawPolygon !== undefined) {
+          const polygon = parseBoundary(rawPolygon);
+          if (!polygon) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid polygon geometry' });
+          }
+          updates.polygon = polygon;
+        }
+        const area = await updateArea(id, updates);
+        if (!area) throw new TRPCError({ code: 'NOT_FOUND', message: 'Area not found' });
+        return area;
+      }),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number().int().positive() }))
+      .mutation(async ({ input }) => {
+        const deleted = await deleteArea(input.id);
+        if (!deleted) throw new TRPCError({ code: 'NOT_FOUND', message: 'Area not found' });
         return { success: true };
       }),
   }),

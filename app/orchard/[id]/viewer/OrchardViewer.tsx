@@ -27,6 +27,9 @@ import {
 import EditModePanel from './EditModePanel';
 import MapLegend from './MapLegend';
 import OrchardSwitcher from './OrchardSwitcher';
+import { useAreaLayer } from './useAreaLayer';
+import AreaTools from './AreaTools';
+import { fetchAreas, type OrchardArea } from '@/lib/api/areas';
 
 export interface OrchardViewerProps {
   orchard: OrchardConfig;
@@ -69,6 +72,16 @@ export default function OrchardViewer({
 
   // Group actions (bulk event/field changes with undo)
   const [groupActionOpen, setGroupActionOpen] = useState(false);
+
+  // Area features (garden beds, berry fields, …)
+  const [areas, setAreas] = useState<OrchardArea[]>([]);
+  const [areaMode, setAreaMode] = useState(false);
+  const [selectedAreaId, setSelectedAreaId] = useState<number | null>(null);
+  useEffect(() => {
+    fetchAreas(orchard.id)
+      .then(setAreas)
+      .catch(() => {}); // map works without areas
+  }, [orchard.id]);
 
   // Walk (survey) mode — one-tap-per-tree recording, pass-based decks
   const [walkMode, setWalkMode] = useState(false);
@@ -260,6 +273,12 @@ export default function OrchardViewer({
     [move, showToast]
   );
 
+  useAreaLayer(mapObj, mapReady, areas, {
+    editingId: areaMode ? selectedAreaId : null,
+    areaMode,
+    onSelect: setSelectedAreaId,
+  });
+
   useTreeLayer(mapObj, mapReady, trees, {
     editMode,
     canEdit,
@@ -333,12 +352,16 @@ export default function OrchardViewer({
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (e.key === 'Escape') {
         if (selectedTreeId) clear();
-        else if (editMode) setEditMode(false);
+        else if (areaMode) {
+          if (selectedAreaId !== null) setSelectedAreaId(null);
+          else setAreaMode(false);
+        } else if (editMode) setEditMode(false);
       } else if (e.key === 'e' && canEdit) {
+        setAreaMode(false);
         setEditMode((v) => !v);
       }
     },
-    [selectedTreeId, clear, editMode, canEdit]
+    [selectedTreeId, clear, editMode, canEdit, areaMode, selectedAreaId]
   );
 
   // ---- panel actions ----
@@ -462,9 +485,12 @@ export default function OrchardViewer({
             </button>
           </>
         )}
-        {canEdit && !walkMode && (
+        {canEdit && !walkMode && !areaMode && (
           <button
-            onClick={() => setEditMode((v) => !v)}
+            onClick={() => {
+              setAreaMode(false);
+              setEditMode((v) => !v);
+            }}
             className={`px-4 py-3 rounded-lg shadow-lg text-sm font-medium ${
               editMode
                 ? 'bg-flag-600 text-white hover:bg-flag-700'
@@ -474,7 +500,39 @@ export default function OrchardViewer({
             {editMode ? 'Exit Edit Mode' : 'Enter Edit Mode'}
           </button>
         )}
+        {canEdit && !walkMode && !editMode && (
+          <button
+            onClick={() => {
+              setEditMode(false);
+              setSelectedAreaId(null);
+              setAreaMode((v) => !v);
+            }}
+            className={`px-4 py-3 rounded-lg shadow-lg text-sm font-medium ${
+              areaMode
+                ? 'bg-canopy-700 text-white hover:bg-canopy-800'
+                : 'bg-surface text-ink hover:bg-canopy-50'
+            }`}
+          >
+            {areaMode ? 'Done with Areas' : 'Areas'}
+          </button>
+        )}
       </div>
+
+      {/* Area drawing / reshaping tools */}
+      <AreaTools
+        map={mapObj}
+        mapReady={mapReady}
+        orchardId={orchard.id}
+        active={areaMode && canEdit}
+        areas={areas}
+        setAreas={setAreas}
+        selectedId={selectedAreaId}
+        setSelectedId={setSelectedAreaId}
+        onExit={() => {
+          setSelectedAreaId(null);
+          setAreaMode(false);
+        }}
+      />
 
       {/* Group action dialog */}
       {groupActionOpen && (
