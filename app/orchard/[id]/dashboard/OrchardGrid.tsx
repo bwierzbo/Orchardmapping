@@ -62,21 +62,53 @@ export default function OrchardGrid({
   }
 
   // Rows are planted north–south: render each as a vertical strip, row 1
-  // leftmost — the grid faces the same way you face the block. Position 1
-  // is at the top of each strip; a shared height keeps columns aligned.
-  const globalMaxPosition = Math.max(...rows.map((r) => r.maxPosition));
+  // leftmost — the grid faces the same way you face the block. Numeric
+  // rows keep gap cells for missing positions (a shared height aligns
+  // them); free-form rows ("Espalier" with 1N/1S…) render their trees
+  // in natural order without invented gaps.
+  const numericRows = rows.filter((r) => r.allNumeric);
+  const globalMaxPosition = Math.max(1, ...numericRows.map((r) => r.maxPosition));
+
+  const cellLink = (rowId: string, position: string, tree: RowSummary['trees'][number]) => {
+    const label = `R${rowId} P${position} — ${tree.variety ?? 'variety unrecorded'}, ${STATUS_LABEL[tree.status].toLowerCase()}. View on map.`;
+    return (
+      <Link
+        key={position}
+        href={`/orchard/${orchardId}?tree=${encodeURIComponent(tree.tree_id)}`}
+        title={label}
+        aria-label={label}
+        className="shrink-0 rounded-sm hover:scale-125 transition-transform duration-fast focus-visible:scale-125"
+      >
+        <Cell status={tree.status} />
+      </Link>
+    );
+  };
 
   return (
     <div>
       <div className="overflow-x-auto pb-1">
         <div className="flex gap-1.5 min-w-fit">
           {rows.map((row) => {
-            const byPosition = new Map(row.trees.map((t) => [t.position, t]));
+            const header = (
+              <span
+                className="font-mono text-[10px] text-bark leading-none pb-0.5 max-w-14 truncate"
+                title={row.rowId}
+              >
+                {/^\d+$/.test(row.rowId) ? `R${row.rowId.padStart(2, '0')}` : row.rowId}
+              </span>
+            );
+            if (!row.allNumeric) {
+              return (
+                <div key={row.rowId} className="flex flex-col items-center gap-1.5">
+                  {header}
+                  {row.trees.map((tree) => cellLink(row.rowId, tree.position, tree))}
+                </div>
+              );
+            }
+            const byPosition = new Map(row.trees.map((t) => [parseInt(t.position, 10), t]));
             return (
               <div key={row.rowId} className="flex flex-col items-center gap-1.5">
-                <span className="font-mono text-[10px] text-bark leading-none pb-0.5">
-                  R{row.rowId.padStart(2, '0')}
-                </span>
+                {header}
                 {Array.from({ length: globalMaxPosition }, (_, i) => {
                   const position = i + 1;
                   const tree = byPosition.get(position);
@@ -89,18 +121,7 @@ export default function OrchardGrid({
                       />
                     );
                   }
-                  const label = `R${row.rowId} P${position} — ${tree.variety ?? 'variety unrecorded'}, ${STATUS_LABEL[tree.status].toLowerCase()}. View on map.`;
-                  return (
-                    <Link
-                      key={position}
-                      href={`/orchard/${orchardId}?tree=${encodeURIComponent(tree.tree_id)}`}
-                      title={label}
-                      aria-label={label}
-                      className="shrink-0 rounded-sm hover:scale-125 transition-transform duration-fast focus-visible:scale-125"
-                    >
-                      <Cell status={tree.status} />
-                    </Link>
-                  );
+                  return cellLink(row.rowId, String(position), tree);
                 })}
               </div>
             );

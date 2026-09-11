@@ -12,9 +12,14 @@ describe('validateTreeRow', () => {
     expect(result.isValid).toBe(true);
   });
 
-  it('requires row_id and positive position', () => {
+  it('requires row_id and a valid position label', () => {
     expect(validateTreeRow({ row_id: '', position: 1 }).isValid).toBe(false);
-    expect(validateTreeRow({ row_id: '1', position: 0 }).isValid).toBe(false);
+    expect(validateTreeRow({ row_id: '1', position: '' }).isValid).toBe(false);
+    expect(validateTreeRow({ row_id: '1', position: '!!' }).isValid).toBe(false);
+    expect(validateTreeRow({ row_id: '1', position: 'x'.repeat(21) }).isValid).toBe(false);
+    // Alphanumeric labels are the point of the change
+    expect(validateTreeRow({ row_id: 'Espalier', position: '1N' }).isValid).toBe(true);
+    expect(validateTreeRow({ row_id: 'North side', position: 'A3' }).isValid).toBe(true);
   });
 
   it('rejects unknown status and bad dates', () => {

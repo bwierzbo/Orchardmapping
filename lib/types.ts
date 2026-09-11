@@ -70,11 +70,12 @@ export interface ClientTree {
   orchard_id: string;
   name?: string | null;
   variety?: string | null;
+  fruit_type?: string | null;
   status: TreeStatus;
   planted_date?: string | null;
   block_id?: string | null;
   row_id?: string | null;
-  position?: number | null;
+  position?: string | null;
   age?: number | null;
   height?: number | null;
   lat?: number | null;

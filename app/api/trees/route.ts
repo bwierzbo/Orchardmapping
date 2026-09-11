@@ -60,6 +60,7 @@ export async function POST(request: NextRequest) {
       lat,
       lng,
       variety,
+      fruit_type,
       status,
       planted_date,
       age,
@@ -81,18 +82,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate position is a positive number
-    if (typeof position !== 'number' || position < 1) {
-      return NextResponse.json(
-        {
-          error: 'Invalid position',
-          details: 'position must be a positive number'
-        },
-        { status: 400 }
-      );
-    }
-
-    // Validate field values (status enum, date formats, numeric ranges)
+    // Validate field values (position label, status enum, date formats)
     const validation = validateTreeRow({
       row_id, position, variety, status, planted_date, age,
       last_pruned, last_harvest, yield_estimate, notes,
@@ -124,6 +114,7 @@ export async function POST(request: NextRequest) {
       lat,
       lng,
       variety,
+      fruit_type,
       status,
       // YYYY-MM-DD strings go to Postgres verbatim; new Date() would
       // shift the calendar day through UTC in western timezones

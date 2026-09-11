@@ -19,6 +19,20 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
+/** Suggested fruit categories; the field accepts any value. */
+const FRUIT_TYPES = [
+  'apple',
+  'pear',
+  'plum',
+  'persimmon',
+  'apricot',
+  'cherry',
+  'peach',
+  'quince',
+  'fig',
+  'nut',
+];
+
 interface TreeDetailPanelProps {
   tree: ClientTree;
   canEdit: boolean;
@@ -50,6 +64,7 @@ export default function TreeDetailPanel({
   const startEdit = () => {
     setForm({
       variety: tree.variety ?? '',
+      fruit_type: tree.fruit_type ?? '',
       status: tree.status,
       planted_date: tree.planted_date ?? '',
       age: tree.age ?? undefined,
@@ -159,6 +174,7 @@ export default function TreeDetailPanel({
       <div className="overflow-y-auto px-5 py-3 flex-1">
         {!editing ? (
           <>
+            {field('Fruit', tree.fruit_type)}
             {field('Rootstock', tree.rootstock)}
             {field('Source', tree.source)}
             {field('Acquired', formatYMD(tree.acquired_date))}
@@ -179,7 +195,25 @@ export default function TreeDetailPanel({
           </>
         ) : (
           <div className="space-y-3">
-            {input('Variety', 'variety')}
+            <div className="grid grid-cols-2 gap-3">
+              {input('Variety', 'variety')}
+              <div className="space-y-1">
+                <Label className="text-xs text-bark">Fruit</Label>
+                <Input
+                  list="fruit-types"
+                  value={(form.fruit_type as string) ?? ''}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, fruit_type: e.target.value.toLowerCase() }))
+                  }
+                  placeholder="apple"
+                />
+                <datalist id="fruit-types">
+                  {FRUIT_TYPES.map((t) => (
+                    <option key={t} value={t} />
+                  ))}
+                </datalist>
+              </div>
+            </div>
             <div className="space-y-1">
               <Label className="text-xs text-bark">Status</Label>
               <Select

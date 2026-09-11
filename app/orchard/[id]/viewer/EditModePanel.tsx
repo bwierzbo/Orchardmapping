@@ -15,7 +15,7 @@ const STATUS_LABEL: Record<TreeStatus, string> = {
 interface EditModePanelProps {
   orchardId: string;
   row: string;
-  position: number;
+  position: string;
   autoIncrement: boolean;
   variety: string;
   status: TreeStatus;
@@ -23,7 +23,7 @@ interface EditModePanelProps {
   placedCount: number;
   canUndo: boolean;
   onRowChange: (row: string) => void;
-  onPositionChange: (position: number) => void;
+  onPositionChange: (position: string) => void;
   onAutoIncrementChange: (v: boolean) => void;
   onVarietyChange: (v: string) => void;
   onStatusChange: (s: TreeStatus) => void;
@@ -70,12 +70,12 @@ export default function EditModePanel({
 
       <div className="grid grid-cols-2 gap-2 mb-2">
         <label className="block">
-          <span className="text-xs font-medium text-bark">Row</span>
+          <span className="text-xs font-medium text-bark">Row / Block</span>
           <input
             type="text"
             value={row}
             onChange={(e) => onRowChange(e.target.value)}
-            placeholder="1"
+            placeholder="1, North side, …"
             list="existing-rows"
             className="mt-1 w-full text-sm px-2.5 py-1.5 bg-surface text-ink border border-line rounded-md focus:outline-none focus:ring-2 focus:ring-flag-600"
           />
@@ -88,10 +88,10 @@ export default function EditModePanel({
         <label className="block">
           <span className="text-xs font-medium text-bark">Position</span>
           <input
-            type="number"
-            min={1}
+            type="text"
             value={position}
-            onChange={(e) => onPositionChange(Math.max(1, parseInt(e.target.value) || 1))}
+            onChange={(e) => onPositionChange(e.target.value)}
+            placeholder="1, 1N, A3, …"
             className="mt-1 w-full text-sm px-2.5 py-1.5 bg-surface text-ink border border-line rounded-md focus:outline-none focus:ring-2 focus:ring-flag-600"
           />
         </label>

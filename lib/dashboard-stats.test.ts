@@ -15,7 +15,7 @@ function makeTree(overrides: Partial<ClientTree> = {}): ClientTree {
     planted_date: null,
     block_id: null,
     row_id: '1',
-    position: seq,
+    position: String(seq),
     age: null,
     height: null,
     lat: null,
@@ -88,23 +88,23 @@ describe('rows', () => {
   it('orders numerically, computes maxPosition, counts unplaced', () => {
     const stats = computeOrchardStats(
       [
-        makeTree({ row_id: '10', position: 1 }),
-        makeTree({ row_id: '2', position: 5 }),
-        makeTree({ row_id: '2', position: 2 }),
-        makeTree({ row_id: null, position: 1 }),
+        makeTree({ row_id: '10', position: '1' }),
+        makeTree({ row_id: '2', position: '5' }),
+        makeTree({ row_id: '2', position: '2' }),
+        makeTree({ row_id: null, position: '1' }),
         makeTree({ row_id: '3', position: null }),
       ],
       NOW
     );
     expect(stats.rows.map((r) => r.rowId)).toEqual(['2', '10']);
     expect(stats.rows[0].maxPosition).toBe(5);
-    expect(stats.rows[0].trees.map((t) => t.position)).toEqual([2, 5]);
+    expect(stats.rows[0].trees.map((t) => t.position)).toEqual(['2', '5']);
     expect(stats.unplacedCount).toBe(2);
   });
 
   it('normalizes zero-padded rows into one row', () => {
     const stats = computeOrchardStats(
-      [makeTree({ row_id: '01', position: 1 }), makeTree({ row_id: '1', position: 2 })],
+      [makeTree({ row_id: '01', position: '1' }), makeTree({ row_id: '1', position: '2' })],
       NOW
     );
     expect(stats.rows).toHaveLength(1);
@@ -203,9 +203,9 @@ describe('notes', () => {
   it('lists only non-empty trimmed notes in row/position order', () => {
     const stats = computeOrchardStats(
       [
-        makeTree({ row_id: '2', position: 1, notes: 'b' }),
-        makeTree({ row_id: '1', position: 2, notes: '  ' }),
-        makeTree({ row_id: '1', position: 1, notes: ' a ' }),
+        makeTree({ row_id: '2', position: '1', notes: 'b' }),
+        makeTree({ row_id: '1', position: '2', notes: '  ' }),
+        makeTree({ row_id: '1', position: '1', notes: ' a ' }),
       ],
       NOW
     );

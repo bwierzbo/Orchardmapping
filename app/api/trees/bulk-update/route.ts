@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
     const rows: BulkUpsertRow[] = updates.map((u: Record<string, unknown>) => ({
       ...u,
       row_id: String(u.row_id),
-      position: Number(u.position),
+      position: String(u.position).trim(),
       planted_date: (u.planted_date as string) || undefined,
       last_pruned: (u.last_pruned as string) || undefined,
       last_harvest: (u.last_harvest as string) || undefined,

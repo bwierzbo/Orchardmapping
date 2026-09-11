@@ -13,7 +13,7 @@ export interface TreeFeatureProperties {
   status: TreeStatus;
   variety: string;
   row_id: string;
-  position: number;
+  position: string;
 }
 
 /**
@@ -37,7 +37,7 @@ export function treesToFeatureCollection(
         status: tree.status,
         variety: tree.variety ?? '',
         row_id: tree.row_id ?? '',
-        position: tree.position ?? 0,
+        position: tree.position ?? '',
       },
     });
   }

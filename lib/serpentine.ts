@@ -1,5 +1,6 @@
 import type { ClientTree } from './types';
 import { normalizeRowId } from './row-id';
+import { comparePositions } from './position';
 
 /**
  * Serpentine walk order: rows numerically ascending; odd row-indexes
@@ -10,7 +11,7 @@ import { normalizeRowId } from './row-id';
 export function serpentineOrder(trees: ClientTree[]): ClientTree[] {
   const byRow = new Map<string, ClientTree[]>();
   for (const t of trees) {
-    if (!t.row_id || t.position == null) continue;
+    if (!t.row_id || t.position == null || t.position === '') continue;
     const row = normalizeRowId(t.row_id);
     const list = byRow.get(row);
     if (list) list.push(t);
@@ -25,7 +26,7 @@ export function serpentineOrder(trees: ClientTree[]): ClientTree[] {
   const ordered: ClientTree[] = [];
   rows.forEach((row, i) => {
     const list = byRow.get(row)!;
-    list.sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+    list.sort((a, b) => comparePositions(a.position ?? '', b.position ?? ''));
     if (i % 2 === 1) list.reverse();
     ordered.push(...list);
   });
