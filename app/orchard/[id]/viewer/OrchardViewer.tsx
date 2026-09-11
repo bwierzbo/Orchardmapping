@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { BarChart3 } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
@@ -466,6 +467,14 @@ export default function OrchardViewer({
 
       {/* Bottom toolbar */}
       <div className="absolute bottom-[max(2rem,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-10 flex gap-2">
+        {!canEdit && (
+          <Link
+            href={`/login?redirect_url=${encodeURIComponent(`/orchard/${orchard.id}`)}`}
+            className="px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-surface text-ink hover:bg-canopy-50"
+          >
+            Sign in to edit
+          </Link>
+        )}
         {canEdit && !editMode && (
           <BulkTreeImport orchardId={orchard.id} existingTrees={trees} onImportComplete={refresh} />
         )}
