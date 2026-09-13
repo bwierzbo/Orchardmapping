@@ -212,8 +212,40 @@ export default function AreaTools({
   }, [map, mapReady]);
 
   // ---- handles (reshape existing OR adjust draft corners) ----
+  //
+  // Drags are handled imperatively: during a gesture we mutate a ref
+  // and repaint the draft source + sibling markers directly, and only
+  // commit to React state on dragend. Committing per-frame would tear
+  // down and rebuild every marker mid-drag — which killed the drag,
+  // made handles jerky, and broke tap-to-delete.
   const markersRef = useRef<maplibregl.Marker[]>([]);
+  const vertsRef = useRef<LngLat[]>(verts);
+  useEffect(() => {
+    vertsRef.current = verts;
+  }, [verts]);
+  // Bumped when a drag gesture completes, so handles (midpoints, the ✥
+  // centroid) rebuild once per gesture at their new positions.
+  const [gestureEpoch, setGestureEpoch] = useState(0);
   const editing = active && (drawing || selected !== null) && verts.length > 0;
+
+  const paintDraft = useCallback(
+    (ring: LngLat[]) => {
+      const source = map?.getSource(DRAFT_SOURCE) as maplibregl.GeoJSONSource | undefined;
+      if (!source) return;
+      if (ring.length === 0) {
+        source.setData({ type: 'FeatureCollection', features: [] });
+      } else if (ring.length < 3) {
+        source.setData({
+          type: 'Feature',
+          properties: {},
+          geometry: { type: 'LineString', coordinates: ring },
+        });
+      } else {
+        source.setData({ type: 'Feature', properties: {}, geometry: ringToPolygon(ring) });
+      }
+    },
+    [map],
+  );
 
   useEffect(() => {
     if (!map) return;
@@ -221,10 +253,13 @@ export default function AreaTools({
     markersRef.current = [];
     if (!editing) return;
 
+    const ring = vertsRef.current;
     const markers: maplibregl.Marker[] = [];
+    const vertexMarkers: maplibregl.Marker[] = [];
 
-    // Corner handles: drag to move, tap to remove (when > 3 corners)
-    verts.forEach((v, i) => {
+    // Corner handles: drag to move (smooth, committed on release),
+    // tap to remove (when > 3 corners)
+    ring.forEach((v, i) => {
       const marker = new maplibregl.Marker({
         element: handleEl('vertex'),
         draggable: true,
@@ -232,36 +267,48 @@ export default function AreaTools({
       })
         .setLngLat(v)
         .addTo(map);
-      let moved = false;
-      marker.on('dragstart', () => {
-        moved = false;
-      });
       marker.on('drag', () => {
-        moved = true;
         const ll = marker.getLngLat();
-        setVerts((prev) => prev.map((p, j) => (j === i ? [ll.lng, ll.lat] : p)));
+        vertsRef.current = vertsRef.current.map((p, j) =>
+          j === i ? ([ll.lng, ll.lat] as LngLat) : p,
+        );
+        paintDraft(vertsRef.current);
+      });
+      marker.on('dragend', () => {
+        setVerts(vertsRef.current);
+        setDirty(true);
+        setGestureEpoch((e) => e + 1);
+      });
+      // Tap detection independent of the marker's drag machinery: a
+      // press that travels < 6 px is a tap even if a micro-drag fired.
+      const el = marker.getElement();
+      let down: [number, number] | null = null;
+      el.addEventListener('pointerdown', (ev) => {
+        down = [ev.clientX, ev.clientY];
+      });
+      el.addEventListener('pointerup', (ev) => {
+        if (!down) return;
+        const dist = Math.hypot(ev.clientX - down[0], ev.clientY - down[1]);
+        down = null;
+        if (dist >= 6) return;
+        ev.stopPropagation();
+        if (vertsRef.current.length <= 3) {
+          toast.warning('A shape needs at least 3 corners');
+          return;
+        }
+        vertsRef.current = vertsRef.current.filter((_, j) => j !== i);
+        setVerts(vertsRef.current);
         setDirty(true);
       });
-      marker.getElement().addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        if (moved) return;
-        setVerts((prev) => {
-          if (prev.length <= 3) {
-            toast.warning('A shape needs at least 3 corners');
-            return prev;
-          }
-          setDirty(true);
-          return prev.filter((_, j) => j !== i);
-        });
-      });
       markers.push(marker);
+      vertexMarkers.push(marker);
     });
 
-    // Midpoint handles: drag to add a corner
-    if (verts.length >= 2) {
-      verts.forEach((v, i) => {
-        const next = verts[(i + 1) % verts.length];
-        if (verts.length === 2 && i === 1) return;
+    // Midpoint handles: drag to add a corner (committed on release)
+    if (ring.length >= 2) {
+      ring.forEach((v, i) => {
+        const next = ring[(i + 1) % ring.length];
+        if (ring.length === 2 && i === 1) return;
         const mid: LngLat = [(v[0] + next[0]) / 2, (v[1] + next[1]) / 2];
         const marker = new maplibregl.Marker({
           element: handleEl('mid'),
@@ -270,23 +317,29 @@ export default function AreaTools({
         })
           .setLngLat(mid)
           .addTo(map);
+        marker.on('drag', () => {
+          const ll = marker.getLngLat();
+          const preview = [...vertsRef.current];
+          preview.splice(i + 1, 0, [ll.lng, ll.lat]);
+          paintDraft(preview);
+        });
         marker.on('dragend', () => {
           const ll = marker.getLngLat();
-          setVerts((prev) => {
-            const out = [...prev];
-            out.splice(i + 1, 0, [ll.lng, ll.lat]);
-            return out;
-          });
+          const out = [...vertsRef.current];
+          out.splice(i + 1, 0, [ll.lng, ll.lat]);
+          vertsRef.current = out;
+          setVerts(out);
           setDirty(true);
         });
         markers.push(marker);
       });
     }
 
-    // Whole-shape move handle at the centroid
-    if (verts.length >= 3) {
-      const cx = verts.reduce((s, v) => s + v[0], 0) / verts.length;
-      const cy = verts.reduce((s, v) => s + v[1], 0) / verts.length;
+    // Whole-shape move handle at the centroid: translates every corner
+    // live (draft + corner handles repainted imperatively per frame)
+    if (ring.length >= 3) {
+      const cx = ring.reduce((s, v) => s + v[0], 0) / ring.length;
+      const cy = ring.reduce((s, v) => s + v[1], 0) / ring.length;
       const moveMarker = new maplibregl.Marker({
         element: handleEl('move'),
         draggable: true,
@@ -304,8 +357,19 @@ export default function AreaTools({
         const dx = ll.lng - last[0];
         const dy = ll.lat - last[1];
         last = [ll.lng, ll.lat];
-        setVerts((prev) => prev.map(([x, y]) => [x + dx, y + dy]));
+        vertsRef.current = vertsRef.current.map(
+          ([x, y]) => [x + dx, y + dy] as LngLat,
+        );
+        vertexMarkers.forEach((vm, j) => {
+          const p = vertsRef.current[j];
+          if (p) vm.setLngLat(p);
+        });
+        paintDraft(vertsRef.current);
+      });
+      moveMarker.on('dragend', () => {
+        setVerts(vertsRef.current);
         setDirty(true);
+        setGestureEpoch((e) => e + 1);
       });
       markers.push(moveMarker);
     }
@@ -315,7 +379,9 @@ export default function AreaTools({
       markers.forEach((m) => m.remove());
       markersRef.current = [];
     };
-  }, [map, editing, verts]);
+    // Rebuild only when the corner count or target changes — never per-frame
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, editing, verts.length, selectedId, drawing, paintDraft, gestureEpoch]);
 
   // ---- persistence ----
   const save = async () => {
