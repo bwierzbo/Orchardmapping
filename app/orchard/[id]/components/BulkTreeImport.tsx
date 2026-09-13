@@ -15,6 +15,7 @@ import {
 import {
   parseTreeCSV,
   generateTemplateCSV,
+  generateTreesCSV,
   downloadBlob,
   type ParseResult,
   type TreeImportRow,
@@ -206,12 +207,24 @@ export default function BulkTreeImport({
                   Rows matching an existing row/position update that tree; everything runs in
                   one transaction.
                 </p>
-                <button
-                  onClick={() => downloadBlob(generateTemplateCSV(), 'tree-import-template.csv')}
-                  className="shrink-0 inline-flex items-center gap-1.5 text-xs font-medium text-canopy-600 hover:text-canopy-700"
-                >
-                  <Download aria-hidden size={14} /> Template
-                </button>
+                <div className="shrink-0 flex flex-col items-end gap-1.5">
+                  <button
+                    onClick={() =>
+                      downloadBlob(generateTreesCSV(existingTrees), `${orchardId}-trees.csv`)
+                    }
+                    disabled={existingTrees.length === 0}
+                    title="Download every tree as a spreadsheet — edit in Excel/Sheets, then re-import to apply all changes at once"
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-canopy-600 hover:text-canopy-700 disabled:opacity-40"
+                  >
+                    <Download aria-hidden size={14} /> Export current trees
+                  </button>
+                  <button
+                    onClick={() => downloadBlob(generateTemplateCSV(), 'tree-import-template.csv')}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-canopy-600 hover:text-canopy-700"
+                  >
+                    <Download aria-hidden size={14} /> Template
+                  </button>
+                </div>
               </div>
             </>
           )}
