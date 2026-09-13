@@ -31,7 +31,6 @@ import OrchardSwitcher from './OrchardSwitcher';
 import { useAreaLayer } from './useAreaLayer';
 import AreaTools from './AreaTools';
 import { fetchAreas, type OrchardArea } from '@/lib/api/areas';
-import { boundaryBounds } from '@/lib/orchard-boundary';
 
 export interface OrchardViewerProps {
   orchard: OrchardConfig;
@@ -79,6 +78,7 @@ export default function OrchardViewer({
   const [areas, setAreas] = useState<OrchardArea[]>([]);
   const [areaMode, setAreaMode] = useState(false);
   const [selectedAreaId, setSelectedAreaId] = useState<number | null>(null);
+  const [hiddenAreaIds, setHiddenAreaIds] = useState<ReadonlySet<number>>(new Set());
   useEffect(() => {
     fetchAreas(orchard.id)
       .then(setAreas)
@@ -279,6 +279,7 @@ export default function OrchardViewer({
     editingId: areaMode ? selectedAreaId : null,
     areaMode,
     onSelect: setSelectedAreaId,
+    hiddenIds: hiddenAreaIds,
   });
 
   useTreeLayer(mapObj, mapReady, trees, {
@@ -450,22 +451,7 @@ export default function OrchardViewer({
       </div>
 
       {/* Legend / status filter */}
-      <MapLegend
-        counts={statusCounts}
-        active={activeStatuses}
-        onToggle={toggleStatus}
-        areas={areas}
-        onAreaClick={(area) => {
-          const b = boundaryBounds(area.polygon);
-          mapObj?.fitBounds(
-            [
-              [b.minLng, b.minLat],
-              [b.maxLng, b.maxLat],
-            ],
-            { padding: 90, maxZoom: 20.5, duration: 600 }
-          );
-        }}
-      />
+      <MapLegend counts={statusCounts} active={activeStatuses} onToggle={toggleStatus} />
 
       {/* Empty state */}
       {trees.length === 0 && !editMode && (
@@ -553,6 +539,8 @@ export default function OrchardViewer({
         setAreas={setAreas}
         selectedId={selectedAreaId}
         setSelectedId={setSelectedAreaId}
+        hiddenIds={hiddenAreaIds}
+        setHiddenIds={setHiddenAreaIds}
         onExit={() => {
           setSelectedAreaId(null);
           setAreaMode(false);
