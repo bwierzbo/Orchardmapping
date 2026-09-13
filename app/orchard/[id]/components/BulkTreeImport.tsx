@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 import {
   Download,
+  FileSpreadsheet,
   FileUp,
   Loader2,
   MapPinOff,
@@ -136,15 +137,15 @@ export default function BulkTreeImport({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Import tree data"
+        aria-label="Tree spreadsheet"
         className="relative bg-surface w-full sm:max-w-2xl max-h-[90vh] sm:max-h-[85vh] rounded-t-2xl sm:rounded-xl border border-line shadow-lg flex flex-col"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-line">
           <div>
-            <h2 className="text-lg font-semibold text-ink">Import tree data</h2>
+            <h2 className="text-lg font-semibold text-ink">Tree spreadsheet</h2>
             <p className="text-xs text-bark mt-0.5">
-              {step === 'pick' && 'CSV or Excel (.xlsx) with row_id + position; add lat/lng to place trees on the map.'}
+              {step === 'pick' && 'Export trees to a spreadsheet, edit in bulk, and import the changes back — or import a new CSV/Excel (.xlsx) file.'}
               {step === 'review' && fileName}
               {step === 'importing' && 'Importing…'}
             </p>
@@ -360,7 +361,7 @@ export default function BulkTreeImport({
         onClick={() => setIsOpen(true)}
         className="px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-surface text-ink hover:bg-canopy-50 flex items-center gap-2"
       >
-        <Upload aria-hidden size={15} /> Import CSV
+        <FileSpreadsheet aria-hidden size={15} /> Spreadsheet
       </button>
       {mounted && dialog && createPortal(dialog, document.body)}
     </>
