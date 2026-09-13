@@ -73,7 +73,7 @@ export function useAreaLayer(
         id: AREA_FILL,
         type: 'fill',
         source: SOURCE_ID,
-        paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.22 },
+        paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.3 },
       },
       beforeId
     );
@@ -82,7 +82,7 @@ export function useAreaLayer(
         id: AREA_LINE,
         type: 'line',
         source: SOURCE_ID,
-        paint: { 'line-color': ['get', 'color'], 'line-width': 2, 'line-opacity': 0.9 },
+        paint: { 'line-color': ['get', 'color'], 'line-width': 2.5, 'line-opacity': 0.95 },
       },
       beforeId
     );
