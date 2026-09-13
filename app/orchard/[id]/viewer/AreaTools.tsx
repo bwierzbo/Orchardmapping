@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import { toast } from 'sonner';
-import { Move, Trash2 } from 'lucide-react';
+import { Eye, EyeOff, Move, Trash2 } from 'lucide-react';
 import {
   createArea,
   updateArea,
@@ -14,6 +14,7 @@ import {
 } from '@/lib/api/areas';
 import type { LngLat, OrchardBoundary } from '@/lib/types';
 import { AREA_KIND_COLORS } from './useAreaLayer';
+import { boundaryBounds } from '@/lib/orchard-boundary';
 
 const DRAFT_SOURCE = 'area-draft';
 const DRAFT_FILL = 'area-draft-fill';
@@ -62,6 +63,9 @@ interface AreaToolsProps {
   setAreas: React.Dispatch<React.SetStateAction<OrchardArea[]>>;
   selectedId: number | null;
   setSelectedId: (id: number | null) => void;
+  /** Areas the user chose not to display on the map. */
+  hiddenIds: ReadonlySet<number>;
+  setHiddenIds: (ids: ReadonlySet<number>) => void;
   onExit: () => void;
 }
 
@@ -82,6 +86,8 @@ export default function AreaTools({
   setAreas,
   selectedId,
   setSelectedId,
+  hiddenIds,
+  setHiddenIds,
   onExit,
 }: AreaToolsProps) {
   const [drawing, setDrawing] = useState(false);
@@ -450,7 +456,8 @@ export default function AreaTools({
       {!drawing && !selected && (
         <>
           <p className="text-xs text-bark mb-3">
-            Tap an area on the map to reshape it, or draw a new one.
+            Tap an area on the map (or in the list) to reshape it — the eye
+            toggles whether it shows on the map.
           </p>
           <button
             onClick={startDraw}
@@ -460,24 +467,51 @@ export default function AreaTools({
           </button>
           {areas.length > 0 && (
             <ul className="mt-3 space-y-1">
-              {areas.map((a) => (
-                <li key={a.id}>
-                  <button
-                    onClick={() => setSelectedId(a.id)}
-                    className="w-full text-left text-sm px-2 py-1.5 rounded-md hover:bg-canopy-50 text-ink flex items-center gap-2"
-                  >
-                    <span
-                      aria-hidden
-                      className="w-3 h-3 rounded-sm shrink-0"
-                      style={{
-                        backgroundColor: a.color || AREA_KIND_COLORS[a.kind] || AREA_KIND_COLORS.area,
+              {areas.map((a) => {
+                const hidden = hiddenIds.has(a.id);
+                return (
+                  <li key={a.id} className="flex items-center gap-1">
+                    <button
+                      onClick={() => {
+                        setSelectedId(a.id);
+                        const b = boundaryBounds(a.polygon);
+                        map?.fitBounds(
+                          [
+                            [b.minLng, b.minLat],
+                            [b.maxLng, b.maxLat],
+                          ],
+                          { padding: 90, maxZoom: 20.5, duration: 500 },
+                        );
                       }}
-                    />
-                    <span className="truncate">{a.name}</span>
-                    <span className="ml-auto text-[11px] text-bark">{KIND_LABEL[a.kind as AreaKind] ?? a.kind}</span>
-                  </button>
-                </li>
-              ))}
+                      className="flex-1 min-w-0 text-left text-sm px-2 py-1.5 rounded-md hover:bg-canopy-50 text-ink flex items-center gap-2"
+                    >
+                      <span
+                        aria-hidden
+                        className="w-3 h-3 rounded-sm shrink-0"
+                        style={{
+                          backgroundColor: a.color || AREA_KIND_COLORS[a.kind] || AREA_KIND_COLORS.area,
+                          opacity: hidden ? 0.35 : 1,
+                        }}
+                      />
+                      <span className={`truncate ${hidden ? 'text-bark/60' : ''}`}>{a.name}</span>
+                      <span className="ml-auto text-[11px] text-bark">{KIND_LABEL[a.kind as AreaKind] ?? a.kind}</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        const next = new Set(hiddenIds);
+                        if (hidden) next.delete(a.id);
+                        else next.add(a.id);
+                        setHiddenIds(next);
+                      }}
+                      aria-pressed={!hidden}
+                      title={hidden ? `Show ${a.name} on the map` : `Hide ${a.name} from the map`}
+                      className="shrink-0 p-1.5 rounded-md text-bark hover:text-ink hover:bg-canopy-50"
+                    >
+                      {hidden ? <EyeOff aria-hidden size={15} /> : <Eye aria-hidden size={15} />}
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </>

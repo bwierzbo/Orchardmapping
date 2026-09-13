@@ -18,11 +18,16 @@ export const AREA_KIND_COLORS: Record<string, string> = {
   area: '#3E7A57',
 };
 
-function toFeatureCollection(areas: OrchardArea[], hideId: number | null): GeoJSON.FeatureCollection {
+function toFeatureCollection(
+  areas: OrchardArea[],
+  hideId: number | null,
+  hiddenIds: ReadonlySet<number>
+): GeoJSON.FeatureCollection {
   return {
     type: 'FeatureCollection',
     features: areas
-      .filter((a) => a.id !== hideId) // the one being edited renders as a draft instead
+      // the one being edited renders as a draft; user-hidden areas skipped
+      .filter((a) => a.id !== hideId && !hiddenIds.has(a.id))
       .map((a) => ({
         type: 'Feature' as const,
         id: a.id,
@@ -50,9 +55,11 @@ export function useAreaLayer(
     editingId: number | null;
     areaMode: boolean;
     onSelect: (areaId: number) => void;
+    /** Areas the user chose not to display (Areas panel checkboxes). */
+    hiddenIds: ReadonlySet<number>;
   }
 ) {
-  const { editingId, areaMode, onSelect } = options;
+  const { editingId, areaMode, onSelect, hiddenIds } = options;
   const stateRef = useRef({ areaMode, onSelect });
   useEffect(() => {
     stateRef.current = { areaMode, onSelect };
@@ -129,6 +136,6 @@ export function useAreaLayer(
   useEffect(() => {
     if (!mapReady || !map) return;
     const source = map.getSource(SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
-    source?.setData(toFeatureCollection(areas, editingId));
-  }, [map, mapReady, areas, editingId]);
+    source?.setData(toFeatureCollection(areas, editingId, hiddenIds));
+  }, [map, mapReady, areas, editingId, hiddenIds]);
 }

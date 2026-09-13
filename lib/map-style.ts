@@ -32,8 +32,13 @@ export const SATELLITE_LAYER = 'satellite-basemap';
 export function buildMapStyle(orchard: OrchardConfig, origin: string): StyleSpecification {
   const style: StyleSpecification = {
     version: 8,
-    // Needed for symbol layers (cluster counts, optional labels)
-    glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
+    // Needed for symbol layers (cluster counts, area labels). Glyphs
+    // are self-hosted (public/glyphs, vendored from protomaps
+    // basemaps-assets): fonts.openmaptiles.org began returning HTML
+    // with HTTP 200, which the worker fails to parse as protobuf and
+    // that silently killed every layer of any source with a symbol
+    // layer (the invisible-areas bug, 2026-09).
+    glyphs: `${origin}/glyphs/{fontstack}/{range}.pbf`,
     sources: {},
     layers: [
       {
