@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 import {
+  ArrowUpDown,
   Download,
-  FileSpreadsheet,
   FileUp,
   Loader2,
   MapPinOff,
@@ -137,15 +137,15 @@ export default function BulkTreeImport({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Tree spreadsheet"
+        aria-label="Import / export trees"
         className="relative bg-surface w-full sm:max-w-2xl max-h-[90vh] sm:max-h-[85vh] rounded-t-2xl sm:rounded-xl border border-line shadow-lg flex flex-col"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-line">
           <div>
-            <h2 className="text-lg font-semibold text-ink">Tree spreadsheet</h2>
+            <h2 className="text-lg font-semibold text-ink">Import / Export Trees</h2>
             <p className="text-xs text-bark mt-0.5">
-              {step === 'pick' && 'Export trees to a spreadsheet, edit in bulk, and import the changes back — or import a new CSV/Excel (.xlsx) file.'}
+              {step === 'pick' && 'Bring tree data in from a spreadsheet, or take it out to edit in bulk.'}
               {step === 'review' && fileName}
               {step === 'importing' && 'Importing…'}
             </p>
@@ -199,33 +199,72 @@ export default function BulkTreeImport({
                 </label>
               </div>
 
-              <div className="mt-4 flex items-start justify-between gap-4">
-                <p className="text-xs text-bark">
-                  Columns: <span className="font-mono">row_id, position</span> (required — any
-                  alphanumeric labels, e.g. &quot;Espalier&quot; / &quot;1N&quot;) ·{' '}
-                  <span className="font-mono">lat, lng, variety, fruit_type, status, planted_date,
-                  age, height, last_pruned, last_harvest, yield_estimate, notes</span>.
-                  Rows matching an existing row/position update that tree; everything runs in
-                  one transaction.
-                </p>
-                <div className="shrink-0 flex flex-col items-end gap-1.5">
-                  <button
-                    onClick={() =>
-                      downloadBlob(generateTreesCSV(existingTrees), `${orchardId}-trees.csv`)
-                    }
-                    disabled={existingTrees.length === 0}
-                    title="Download every tree as a spreadsheet — edit in Excel/Sheets, then re-import to apply all changes at once"
-                    className="inline-flex items-center gap-1.5 text-xs font-medium text-canopy-600 hover:text-canopy-700 disabled:opacity-40"
-                  >
-                    <Download aria-hidden size={14} /> Export current trees
-                  </button>
-                  <button
-                    onClick={() => downloadBlob(generateTemplateCSV(), 'tree-import-template.csv')}
-                    className="inline-flex items-center gap-1.5 text-xs font-medium text-canopy-600 hover:text-canopy-700"
-                  >
-                    <Download aria-hidden size={14} /> Template
-                  </button>
-                </div>
+              {/* Export + template as proper actions */}
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  onClick={() =>
+                    downloadBlob(generateTreesCSV(existingTrees), `${orchardId}-trees.csv`)
+                  }
+                  disabled={existingTrees.length === 0}
+                  className="flex items-start gap-3 rounded-lg border border-line bg-paper p-4 text-left hover:border-canopy-600 hover:bg-canopy-50 disabled:opacity-40 disabled:hover:border-line disabled:hover:bg-paper"
+                >
+                  <Download aria-hidden size={20} className="text-canopy-600 shrink-0 mt-0.5" />
+                  <span>
+                    <span className="block text-sm font-semibold text-ink">
+                      Export current trees
+                    </span>
+                    <span className="block text-xs text-bark mt-0.5">
+                      All {existingTrees.length} trees as a CSV — edit in Excel or Sheets, then
+                      import it back to apply every change at once.
+                    </span>
+                  </span>
+                </button>
+                <button
+                  onClick={() => downloadBlob(generateTemplateCSV(), 'tree-import-template.csv')}
+                  className="flex items-start gap-3 rounded-lg border border-line bg-paper p-4 text-left hover:border-canopy-600 hover:bg-canopy-50"
+                >
+                  <Download aria-hidden size={20} className="text-canopy-600 shrink-0 mt-0.5" />
+                  <span>
+                    <span className="block text-sm font-semibold text-ink">Blank template</span>
+                    <span className="block text-xs text-bark mt-0.5">
+                      A starter file with the right columns and a few example rows.
+                    </span>
+                  </span>
+                </button>
+              </div>
+
+              {/* How the round-trip behaves */}
+              <div className="mt-4 text-xs text-bark space-y-1">
+                <p className="font-semibold text-ink">How it works</p>
+                <ul className="list-disc pl-4 space-y-1">
+                  <li>
+                    Each spreadsheet row is one tree, identified by its{' '}
+                    <span className="font-medium text-ink">Row/Block + Position</span> (any labels
+                    work — &quot;Espalier&quot; / &quot;1N&quot;).
+                  </li>
+                  <li>
+                    Importing <span className="font-medium text-ink">updates</span> trees that
+                    match an existing address and{' '}
+                    <span className="font-medium text-ink">creates</span> trees at new addresses —
+                    you&apos;ll see a preview before anything is saved.
+                  </li>
+                  <li>Blank cells leave a tree&apos;s existing values unchanged.</li>
+                  <li>All changes apply together, or not at all.</li>
+                </ul>
+                <details className="pt-1">
+                  <summary className="cursor-pointer text-canopy-600 hover:text-canopy-700 font-medium">
+                    Supported columns
+                  </summary>
+                  <p className="mt-1.5 font-mono text-[11px] leading-relaxed">
+                    row_id, position (required) · name, variety, fruit_type, status, lat, lng,
+                    planted_date, block_id, age, height, last_pruned, last_harvest,
+                    yield_estimate, notes, rootstock, source, acquired_date
+                  </p>
+                  <p className="mt-1">
+                    Common header spellings are recognized too (&quot;row&quot;, &quot;pos&quot;,
+                    &quot;cultivar&quot;, &quot;latitude&quot;, …). Dates are YYYY-MM-DD.
+                  </p>
+                </details>
               </div>
             </>
           )}
@@ -361,7 +400,7 @@ export default function BulkTreeImport({
         onClick={() => setIsOpen(true)}
         className="px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-surface text-ink hover:bg-canopy-50 flex items-center gap-2"
       >
-        <FileSpreadsheet aria-hidden size={15} /> Spreadsheet
+        <ArrowUpDown aria-hidden size={15} /> Import/Export
       </button>
       {mounted && dialog && createPortal(dialog, document.body)}
     </>
