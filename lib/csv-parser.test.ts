@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseTreeCSV } from './csv-parser';
+import { parseTreeCSV, generateTreesCSV } from './csv-parser';
 
 function csvFile(content: string, name = 'trees.csv'): File {
   return new File([content], name, { type: 'text/csv' });
@@ -35,5 +35,31 @@ describe('parseTreeCSV', () => {
   it('reports rows with missing required fields', async () => {
     const result = await parseTreeCSV(csvFile('row_id,position,variety\n,1,Fuji\n'));
     expect(result.success).toBe(false);
+  });
+});
+
+describe('generateTreesCSV', () => {
+  it('emits import-compatible headers and escapes commas/quotes', async () => {
+    const blob = generateTreesCSV([
+      {
+        row_id: '1',
+        position: '2',
+        variety: 'Cox, Orange "Pippin"',
+        fruit_type: 'apple',
+        status: 'healthy',
+        notes: null,
+      },
+      { row_id: null, position: '9', variety: 'skipped — no address' },
+    ]);
+    const text = await blob.text();
+    const [header, row, ...rest] = text.split('\n');
+    expect(header.startsWith('row_id,position,lat,lng,name,variety,fruit_type,status')).toBe(true);
+    expect(row).toContain('"Cox, Orange ""Pippin"""');
+    expect(rest).toHaveLength(0); // address-less tree skipped
+
+    // Round-trip: the export parses back through the importer
+    const parsed = await parseTreeCSV(new File([text], 'roundtrip.csv', { type: 'text/csv' }));
+    expect(parsed.success).toBe(true);
+    expect(parsed.data[0]).toMatchObject({ row_id: '1', position: '2', fruit_type: 'apple' });
   });
 });

@@ -340,6 +340,58 @@ function isValidDate(dateString: string): boolean {
   return date instanceof Date && !isNaN(date.getTime());
 }
 
+/** Escape one CSV field (quotes fields containing , " or newlines). */
+function csvEscape(value: string): string {
+  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+/** Column order for tree exports — every header re-imports cleanly. */
+export const EXPORT_COLUMNS = [
+  'row_id',
+  'position',
+  'lat',
+  'lng',
+  'name',
+  'variety',
+  'fruit_type',
+  'status',
+  'planted_date',
+  'block_id',
+  'age',
+  'height',
+  'last_pruned',
+  'last_harvest',
+  'yield_estimate',
+  'notes',
+  'rootstock',
+  'source',
+  'acquired_date',
+] as const;
+
+/**
+ * Export the orchard's trees as an import-compatible CSV: the
+ * spreadsheet round-trip. Edit any columns in Excel/Sheets and
+ * re-import — rows are matched by row_id + position and updated in
+ * one transaction (blank cells leave existing values untouched).
+ * Trees without a row/position address are skipped (they can't be
+ * matched on re-import).
+ */
+export function generateTreesCSV(
+  trees: Array<Partial<Record<(typeof EXPORT_COLUMNS)[number], unknown>>>
+): Blob {
+  const lines = [EXPORT_COLUMNS.join(',')];
+  for (const t of trees) {
+    if (t.row_id == null || t.position == null || t.position === '') continue;
+    lines.push(
+      EXPORT_COLUMNS.map((c) => {
+        const v = t[c];
+        return v == null ? '' : csvEscape(String(v));
+      }).join(',')
+    );
+  }
+  return new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+}
+
 /**
  * Generate a sample CSV template for download
  */
