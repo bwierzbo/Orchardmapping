@@ -49,7 +49,16 @@ export default async function Home() {
             </span>
             <span className="font-display font-semibold text-lg text-ink">Orchard Map</span>
           </Link>
-          <UserMenu />
+          <div className="flex items-center gap-2">
+            <Link
+              href="/discover"
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-canopy-600 text-white hover:bg-canopy-700"
+              title="Photograph a tree anywhere and put it on the map"
+            >
+              📸 Found a tree
+            </Link>
+            <UserMenu />
+          </div>
         </div>
       </header>
 

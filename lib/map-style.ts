@@ -88,7 +88,11 @@ export function buildMapStyle(orchard: OrchardConfig, origin: string): StyleSpec
   // Pre-flight orchards have no orthomosaic of their own. Put satellite
   // imagery underneath so the traced block can be checked against the
   // real ground (Esri World Imagery — the source these traces come from).
-  if (!hasOrthoImagery && orchard.boundary) {
+  // The satellite base now sits under EVERY orchard map: the drone ortho
+  // draws on top where it exists, and panning past its edge lands on
+  // real imagery instead of a blank background (found-tree discovery,
+  // neighboring orchards down the road, point-orchards with no flight).
+  {
     style.sources[SATELLITE_SOURCE] = {
       type: 'raster',
       tiles: [
@@ -99,7 +103,8 @@ export function buildMapStyle(orchard: OrchardConfig, origin: string): StyleSpec
       attribution:
         'Imagery &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community',
     };
-    style.layers.push({
+    // Insert directly above the background so any orchard ortho stays on top
+    style.layers.splice(1, 0, {
       id: SATELLITE_LAYER,
       type: 'raster',
       source: SATELLITE_SOURCE,

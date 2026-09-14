@@ -20,13 +20,17 @@ import { Label } from '@/components/ui/label';
 export default function SettingsPage() {
   const { isSignedIn } = useAuth();
   const [walk, setWalk] = useState<WalkSettings | null>(null);
+  const [photos, setPhotos] = useState<{ geotagOnMap: boolean }>({ geotagOnMap: false });
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
   useEffect(() => {
     fetch('/api/settings')
       .then((r) => r.json())
-      .then((b) => setWalk(b.walk))
+      .then((b) => {
+        setWalk(b.walk);
+        if (b.photos) setPhotos(b.photos);
+      })
       .catch(() => setWalk(null));
   }, []);
 
@@ -37,7 +41,7 @@ export default function SettingsPage() {
       const r = await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ walk }),
+        body: JSON.stringify({ walk, photos }),
       });
       if (r.ok) setSavedAt(Date.now());
     } finally {
@@ -186,6 +190,35 @@ export default function SettingsPage() {
                     </span>
                   </label>
                 ))}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Photos</CardTitle>
+                <CardDescription>
+                  Geotagged photo drops on the orchard map
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={photos.geotagOnMap}
+                    onChange={(e) => setPhotos({ geotagOnMap: e.target.checked })}
+                    className="mt-1 accent-[rgb(var(--canopy-600))]"
+                  />
+                  <span>
+                    <span className="text-sm font-medium text-ink">
+                      Camera button on the map
+                    </span>
+                    <span className="block text-xs text-bark">
+                      Take a photo from the map view; it drops a pin at your GPS
+                      location, which you drag onto the tree it belongs to — the
+                      photo lands in that tree&apos;s history.
+                    </span>
+                  </span>
+                </label>
               </CardContent>
             </Card>
 
