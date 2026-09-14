@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ClientTree, TreeStatus } from '@/lib/types';
 import { STATUS_COLORS } from '@/lib/trees-geojson';
 import { STATUS_LABEL } from '@/components/StatusBadge';
@@ -13,6 +13,7 @@ import {
   type WalkSettings,
 } from '@/lib/settings';
 import { ArrowLeft, Check, ChevronRight, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import PhotoButton from '@/components/PhotoButton';
@@ -84,7 +85,15 @@ export default function WalkMode({
   const [index, setIndex] = useState(0);
   const [busy, setBusy] = useState(false);
   const [recorded, setRecorded] = useState(0);
-  // per-tree answers
+  // Per-tree answers live in a ref so completion checks always see the
+  // latest values regardless of React render timing; the useState
+  // mirrors exist only to highlight the selected buttons.
+  const answersRef = useRef<{
+    health: TreeStatus | null;
+    healthDetail?: string;
+    bloom: string | null;
+    fruit: number | null;
+  }>({ health: null, healthDetail: undefined, bloom: null, fruit: null });
   const [healthChoice, setHealthChoice] = useState<TreeStatus | null>(null);
   const [healthDetail, setHealthDetail] = useState<string | undefined>(undefined);
   const [stressOpen, setStressOpen] = useState(false);
@@ -202,6 +211,7 @@ export default function WalkMode({
   const atEnd = index >= path.length - 1;
 
   const resetEntry = () => {
+    answersRef.current = { health: null, healthDetail: undefined, bloom: null, fruit: null };
     setHealthChoice(null);
     setHealthDetail(undefined);
     setStressOpen(false);
@@ -220,13 +230,9 @@ export default function WalkMode({
   };
 
   /** Save every answered inspection for this tree, then advance. */
-  const saveAll = async (answers: {
-    health: TreeStatus | null;
-    healthDetail?: string;
-    bloom: string | null;
-    fruit: number | null;
-  }) => {
+  const saveAll = async () => {
     if (busy) return;
+    const answers = { ...answersRef.current };
     setBusy(true);
     try {
       let saved = 0;
@@ -277,49 +283,52 @@ export default function WalkMode({
       }
       if (saved > 0) setRecorded((n) => n + saved);
       advance();
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? `Save failed: ${err.message}` : 'Save failed — try again',
+      );
     } finally {
       setBusy(false);
     }
   };
 
+  /** True when every chosen inspection has an answer (reads the ref). */
+  const refComplete = () => {
+    const a = answersRef.current;
+    return (
+      (!chosen.has('health') || a.health !== null) &&
+      (!chosen.has('bloom') || a.bloom !== null) &&
+      (!chosen.has('fruit') || a.fruit !== null)
+    );
+  };
+
   /** An inspection answer landed — auto-save when everything chosen is in
    *  (unless detailed fruit metrics are open, which use the button). */
-  const maybeComplete = (next: {
-    health?: TreeStatus | null;
-    healthDetail?: string;
-    bloom?: string | null;
-    fruit?: number | null;
-  }) => {
-    const answers = {
-      health: next.health !== undefined ? next.health : healthChoice,
-      healthDetail: next.healthDetail !== undefined ? next.healthDetail : healthDetail,
-      bloom: next.bloom !== undefined ? next.bloom : bloomChoice,
-      fruit: next.fruit !== undefined ? next.fruit : fruitLoad,
-    };
-    const complete =
-      (!chosen.has('health') || answers.health !== null) &&
-      (!chosen.has('bloom') || answers.bloom !== null) &&
-      (!chosen.has('fruit') || answers.fruit !== null);
-    if (complete && !detailedFruit) {
-      void saveAll(answers);
+  const maybeComplete = () => {
+    if (refComplete() && !detailedFruit) {
+      void saveAll();
     }
   };
 
   const pickHealth = (status: TreeStatus, detail?: string) => {
+    answersRef.current.health = status;
+    answersRef.current.healthDetail = detail;
     setHealthChoice(status);
     setHealthDetail(detail);
     setStressOpen(false);
-    maybeComplete({ health: status, healthDetail: detail });
+    maybeComplete();
   };
 
   const pickBloom = (stage: string) => {
+    answersRef.current.bloom = stage;
     setBloomChoice(stage);
-    maybeComplete({ bloom: stage });
+    maybeComplete();
   };
 
   const pickFruit = (load: number) => {
+    answersRef.current.fruit = load;
     setFruitLoad(load);
-    maybeComplete({ fruit: load });
+    maybeComplete();
   };
 
   const allAnswered =
@@ -521,9 +530,11 @@ export default function WalkMode({
           </div>
         )}
 
-        {/* Detailed mode saves via the button (metrics never block) */}
-        {detailedFruit && (
-          <Button className="w-full h-11" onClick={() => saveAll({ health: healthChoice, healthDetail, bloom: bloomChoice, fruit: fruitLoad })} disabled={busy || !allAnswered}>
+        {/* Detailed mode saves via the button (metrics never block).
+            In quick mode the same button appears only as a failsafe if
+            everything is answered but auto-advance didn't fire. */}
+        {(detailedFruit || (allAnswered && !busy)) && (
+          <Button className="w-full h-11" onClick={() => void saveAll()} disabled={busy || !allAnswered}>
             {busy ? 'Saving…' : 'Record & next'}
           </Button>
         )}
