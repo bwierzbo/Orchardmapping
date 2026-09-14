@@ -32,6 +32,7 @@ import { useAreaLayer } from './useAreaLayer';
 import AreaTools from './AreaTools';
 import PhotoDropController from './PhotoDropController';
 import MoveTreeController from './MoveTreeController';
+import DetectTreesController from './DetectTreesController';
 import { fetchAreas, type OrchardArea } from '@/lib/api/areas';
 
 export interface OrchardViewerProps {
@@ -128,6 +129,11 @@ export default function OrchardViewer({
 
   // "Move on map" flow from the tree panel — no Edit Mode required
   const [movingTree, setMovingTree] = useState<ClientTree | null>(null);
+
+  // Auto-detect trees from imagery; boundary is state so an Areas-panel
+  // save shows up here without a reload
+  const [detectMode, setDetectMode] = useState(false);
+  const [boundaryGeo, setBoundaryGeo] = useState(orchard.boundary ?? null);
 
   // Edit ("marking") mode
   const [editMode, setEditMode] = useState(false);
@@ -366,16 +372,17 @@ export default function OrchardViewer({
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (e.key === 'Escape') {
         if (selectedTreeId) clear();
+        else if (detectMode) setDetectMode(false);
         else if (areaMode) {
           if (selectedAreaId !== null) setSelectedAreaId(null);
           else setAreaMode(false);
         } else if (editMode) setEditMode(false);
-      } else if (e.key === 'e' && canEdit) {
+      } else if (e.key === 'e' && canEdit && !detectMode) {
         setAreaMode(false);
         setEditMode((v) => !v);
       }
     },
-    [selectedTreeId, clear, editMode, canEdit, areaMode, selectedAreaId]
+    [selectedTreeId, clear, editMode, canEdit, areaMode, selectedAreaId, detectMode]
   );
 
   // ---- panel actions ----
@@ -488,10 +495,10 @@ export default function OrchardViewer({
             Sign in to edit
           </Link>
         )}
-        {canEdit && !editMode && (
+        {canEdit && !editMode && !detectMode && (
           <BulkTreeImport orchardId={orchard.id} existingTrees={trees} onImportComplete={refresh} />
         )}
-        {canEdit && !editMode && !walkMode && !areaMode && (
+        {canEdit && !editMode && !walkMode && !areaMode && !detectMode && (
           <PhotoDropController
             map={mapObj}
             trees={trees}
@@ -499,7 +506,15 @@ export default function OrchardViewer({
             enabled={photoSettings.geotagOnMap}
           />
         )}
-        {canEdit && !editMode && !walkMode && trees.length > 0 && (
+        {canEdit && !editMode && !walkMode && !areaMode && !detectMode && (
+          <button
+            onClick={() => setDetectMode(true)}
+            className="px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-surface text-ink hover:bg-canopy-50"
+          >
+            Detect Trees
+          </button>
+        )}
+        {canEdit && !editMode && !walkMode && !detectMode && trees.length > 0 && (
           <>
             <button
               onClick={startWalk}
@@ -515,7 +530,7 @@ export default function OrchardViewer({
             </button>
           </>
         )}
-        {canEdit && !walkMode && !areaMode && (
+        {canEdit && !walkMode && !areaMode && !detectMode && (
           <button
             onClick={() => {
               setAreaMode(false);
@@ -530,7 +545,7 @@ export default function OrchardViewer({
             {editMode ? 'Exit Edit Mode' : 'Enter Edit Mode'}
           </button>
         )}
-        {canEdit && !walkMode && !editMode && (
+        {canEdit && !walkMode && !editMode && !detectMode && (
           <button
             onClick={() => {
               setEditMode(false);
@@ -560,10 +575,24 @@ export default function OrchardViewer({
         setSelectedId={setSelectedAreaId}
         hiddenIds={hiddenAreaIds}
         setHiddenIds={setHiddenAreaIds}
+        boundary={boundaryGeo}
+        onBoundarySaved={setBoundaryGeo}
         onExit={() => {
           setSelectedAreaId(null);
           setAreaMode(false);
         }}
+      />
+
+      {/* Auto-detect trees from satellite imagery */}
+      <DetectTreesController
+        map={mapObj}
+        mapReady={mapReady}
+        orchardId={orchard.id}
+        trees={trees}
+        boundary={boundaryGeo}
+        active={detectMode && canEdit}
+        onSaved={refresh}
+        onExit={() => setDetectMode(false)}
       />
 
       {/* Group action dialog */}
@@ -616,7 +645,7 @@ export default function OrchardViewer({
       )}
 
       {/* Tree details (suppressed during a walk — the sheet owns the screen) */}
-      {selectedTree && !walkMode && !movingTree && (
+      {selectedTree && !walkMode && !movingTree && !detectMode && (
         <TreeDetailPanel
           key={selectedTree.tree_id}
           tree={selectedTree}

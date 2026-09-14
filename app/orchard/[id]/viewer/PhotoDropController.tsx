@@ -7,14 +7,8 @@ import { toast } from 'sonner';
 import { Camera, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { createTreeEvent, ApiError } from '@/lib/api/trees';
+import { metersBetween } from '@/lib/tree-detect';
 import type { ClientTree } from '@/lib/types';
-
-/** Meters between two lng/lat points (equirectangular, fine at orchard scale). */
-function metersBetween(aLng: number, aLat: number, bLng: number, bLat: number): number {
-  const mLat = 111320;
-  const mLng = 111320 * Math.cos(((aLat + bLat) / 2) * (Math.PI / 180));
-  return Math.hypot((aLng - bLng) * mLng, (aLat - bLat) * mLat);
-}
 
 const ATTACH_RADIUS_M = 12;
 

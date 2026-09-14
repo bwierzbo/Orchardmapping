@@ -16,7 +16,13 @@ import {
   formatValidationErrors,
   TreeRowData,
 } from '@/lib/tree-validation';
-import { getAllOrchardConfigs, getOrchardConfigById } from '@/lib/db/orchards';
+import {
+  getAllOrchardConfigs,
+  getOrchardConfigById,
+  getOrchardById,
+  updateOrchard,
+} from '@/lib/db/orchards';
+import { boundaryBounds } from '@/lib/orchard-boundary';
 import {
   insertTreeEvent,
   listTreeEvents,
@@ -44,6 +50,34 @@ export const appRouter = router({
           throw new TRPCError({ code: 'NOT_FOUND', message: 'Orchard not found' });
         }
         return config;
+      }),
+    setBoundary: protectedProcedure
+      .input(z.object({ orchardId: z.string().min(1), boundary: z.unknown() }))
+      .mutation(async ({ input }) => {
+        const boundary = parseBoundary(input.boundary);
+        if (!boundary) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid boundary geometry' });
+        }
+        const orchard = await getOrchardById(input.orchardId);
+        if (!orchard) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Orchard not found' });
+        }
+        // Bounds only ever grow to cover the boundary (plus a margin) —
+        // never shrink, so existing orthomosaic coverage stays reachable.
+        const b = boundaryBounds(boundary);
+        const marginLng = Math.max((b.maxLng - b.minLng) * 0.15, 0.0004);
+        const marginLat = Math.max((b.maxLat - b.minLat) * 0.15, 0.0003);
+        const updated = await updateOrchard(input.orchardId, {
+          boundary_geojson: JSON.stringify(boundary),
+          bounds_min_lng: Math.min(orchard.bounds_min_lng ?? Infinity, b.minLng - marginLng),
+          bounds_min_lat: Math.min(orchard.bounds_min_lat ?? Infinity, b.minLat - marginLat),
+          bounds_max_lng: Math.max(orchard.bounds_max_lng ?? -Infinity, b.maxLng + marginLng),
+          bounds_max_lat: Math.max(orchard.bounds_max_lat ?? -Infinity, b.maxLat + marginLat),
+        });
+        if (!updated) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Orchard not found' });
+        }
+        return { success: true, boundary };
       }),
   }),
 

@@ -11,7 +11,7 @@ export function pmtilesSourceUrl(path: string, origin: string): string {
   return `pmtiles://${absolute}`;
 }
 
-const BOUNDARY_SOURCE = 'orchard-boundary';
+export const BOUNDARY_SOURCE = 'orchard-boundary';
 export const BOUNDARY_FILL_LAYER = 'orchard-boundary-fill';
 export const BOUNDARY_LINE_LAYER = 'orchard-boundary-line';
 const SATELLITE_SOURCE = 'satellite-basemap';

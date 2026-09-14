@@ -15,6 +15,8 @@ import {
 import type { LngLat, OrchardBoundary } from '@/lib/types';
 import { AREA_KIND_COLORS } from './useAreaLayer';
 import { boundaryBounds } from '@/lib/orchard-boundary';
+import { saveOrchardBoundary } from '@/lib/api/orchards';
+import { BOUNDARY_SOURCE, BOUNDARY_LINE_LAYER } from '@/lib/map-style';
 
 const DRAFT_SOURCE = 'area-draft';
 const DRAFT_FILL = 'area-draft-fill';
@@ -66,6 +68,9 @@ interface AreaToolsProps {
   /** Areas the user chose not to display on the map. */
   hiddenIds: ReadonlySet<number>;
   setHiddenIds: (ids: ReadonlySet<number>) => void;
+  /** Orchard planted-footprint boundary (edited here, stored on the orchard). */
+  boundary: OrchardBoundary | null;
+  onBoundarySaved: (boundary: OrchardBoundary) => void;
   onExit: () => void;
 }
 
@@ -88,8 +93,11 @@ export default function AreaTools({
   setSelectedId,
   hiddenIds,
   setHiddenIds,
+  boundary,
+  onBoundarySaved,
   onExit,
 }: AreaToolsProps) {
+  const [boundaryMode, setBoundaryMode] = useState(false);
   const [drawing, setDrawing] = useState(false);
   const [verts, setVerts] = useState<LngLat[]>([]);
   const [name, setName] = useState('');
@@ -105,13 +113,28 @@ export default function AreaTools({
   // Entering/leaving states
   const startDraw = () => {
     setSelectedId(null);
+    setBoundaryMode(false);
     setDrawing(true);
     setVerts([]);
     setName('');
     setKind('area');
     setDirty(false);
   };
+  const startBoundary = () => {
+    setSelectedId(null);
+    setBoundaryMode(true);
+    if (boundary) {
+      setDrawing(false);
+      setVerts(polygonToRing(boundary));
+    } else {
+      setDrawing(true);
+      setVerts([]);
+    }
+    setName('');
+    setDirty(false);
+  };
   const resetAll = useCallback(() => {
+    setBoundaryMode(false);
     setDrawing(false);
     setVerts([]);
     setName('');
@@ -129,7 +152,7 @@ export default function AreaTools({
       setName(selected.name);
       setKind((selected.kind as AreaKind) ?? 'area');
       setDirty(false);
-    } else if (!drawing) {
+    } else if (!drawing && !boundaryMode) {
       setVerts([]);
     }
   }
@@ -137,6 +160,7 @@ export default function AreaTools({
   if (active !== prevActive) {
     setPrevActive(active);
     if (!active) {
+      setBoundaryMode(false);
       setDrawing(false);
       setVerts([]);
       setName('');
@@ -232,7 +256,7 @@ export default function AreaTools({
   // Bumped when a drag gesture completes, so handles (midpoints, the ✥
   // centroid) rebuild once per gesture at their new positions.
   const [gestureEpoch, setGestureEpoch] = useState(0);
-  const editing = active && (drawing || selected !== null) && verts.length > 0;
+  const editing = active && (drawing || selected !== null || boundaryMode) && verts.length > 0;
 
   const paintDraft = useCallback(
     (ring: LngLat[]) => {
@@ -386,15 +410,40 @@ export default function AreaTools({
       markersRef.current = [];
     };
     // Rebuild only when the corner count or target changes — never per-frame
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map, editing, verts.length, selectedId, drawing, paintDraft, gestureEpoch]);
+  }, [map, editing, verts.length, selectedId, drawing, boundaryMode, paintDraft, gestureEpoch]);
 
   // ---- persistence ----
   const save = async () => {
-    if (verts.length < 3 || !name.trim()) return;
+    if (verts.length < 3 || (!boundaryMode && !name.trim())) return;
     setSaving(true);
     try {
-      if (drawing) {
+      if (boundaryMode) {
+        const saved = await saveOrchardBoundary(orchardId, ringToPolygon(verts));
+        // Live-update the boundary layer; first-ever boundary needs the
+        // source and line layer added (style was built without them).
+        if (map) {
+          const feature = { type: 'Feature' as const, properties: {}, geometry: saved };
+          const src = map.getSource(BOUNDARY_SOURCE) as maplibregl.GeoJSONSource | undefined;
+          if (src) {
+            src.setData(feature);
+          } else {
+            map.addSource(BOUNDARY_SOURCE, { type: 'geojson', data: feature });
+            map.addLayer(
+              {
+                id: BOUNDARY_LINE_LAYER,
+                type: 'line',
+                source: BOUNDARY_SOURCE,
+                layout: { 'line-join': 'round' },
+                paint: { 'line-color': '#D9481C', 'line-width': 3, 'line-opacity': 0.95 },
+              },
+              map.getLayer('trees-clusters') ? 'trees-clusters' : undefined
+            );
+          }
+        }
+        onBoundarySaved(saved);
+        toast.success('Orchard boundary saved');
+        resetAll();
+      } else if (drawing) {
         const area = await createArea({
           orchardId,
           name: name.trim(),
@@ -453,7 +502,7 @@ export default function AreaTools({
         </button>
       </div>
 
-      {!drawing && !selected && (
+      {!drawing && !selected && !boundaryMode && (
         <>
           <p className="text-xs text-bark mb-3">
             Tap an area on the map (or in the list) to reshape it — the eye
@@ -464,6 +513,12 @@ export default function AreaTools({
             className="w-full px-3 py-2 bg-canopy-600 text-white dark:text-paper text-sm font-medium rounded-md hover:bg-canopy-700"
           >
             Draw new area
+          </button>
+          <button
+            onClick={startBoundary}
+            className="mt-2 w-full px-3 py-2 border border-canopy-600/50 text-canopy-700 dark:text-canopy-100 text-sm font-medium rounded-md hover:bg-canopy-50"
+          >
+            {boundary ? 'Edit orchard boundary' : 'Draw orchard boundary'}
           </button>
           {areas.length > 0 && (
             <ul className="mt-3 space-y-1">
@@ -517,8 +572,13 @@ export default function AreaTools({
         </>
       )}
 
-      {(drawing || selected) && (
+      {(drawing || selected || boundaryMode) && (
         <>
+          {boundaryMode && (
+            <p className="text-xs font-medium text-canopy-700 dark:text-canopy-100 mb-1">
+              Orchard boundary
+            </p>
+          )}
           <p className="text-xs text-bark mb-2">
             {drawing
               ? verts.length < 3
@@ -526,34 +586,50 @@ export default function AreaTools({
                 : 'Tap for more corners, or adjust the handles.'
               : 'Drag corners to reshape · drag a small dot to add a corner · tap a corner to remove it · drag ✥ to move the shape.'}
           </p>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Name (e.g. Raised garden)"
-            className="w-full text-sm px-2.5 py-1.5 bg-surface text-ink border border-line rounded-md focus:outline-none focus:ring-2 focus:ring-canopy-600 mb-2"
-          />
-          <select
-            value={kind}
-            onChange={(e) => {
-              setKind(e.target.value as AreaKind);
-              setDirty(true);
-            }}
-            className="w-full text-sm px-2.5 py-1.5 bg-surface text-ink border border-line rounded-md focus:outline-none focus:ring-2 focus:ring-canopy-600 mb-3"
-          >
-            {(Object.keys(KIND_LABEL) as AreaKind[]).map((k) => (
-              <option key={k} value={k}>
-                {KIND_LABEL[k]}
-              </option>
-            ))}
-          </select>
+          {!boundaryMode && (
+            <>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Name (e.g. Raised garden)"
+                className="w-full text-sm px-2.5 py-1.5 bg-surface text-ink border border-line rounded-md focus:outline-none focus:ring-2 focus:ring-canopy-600 mb-2"
+              />
+              <select
+                value={kind}
+                onChange={(e) => {
+                  setKind(e.target.value as AreaKind);
+                  setDirty(true);
+                }}
+                className="w-full text-sm px-2.5 py-1.5 bg-surface text-ink border border-line rounded-md focus:outline-none focus:ring-2 focus:ring-canopy-600 mb-3"
+              >
+                {(Object.keys(KIND_LABEL) as AreaKind[]).map((k) => (
+                  <option key={k} value={k}>
+                    {KIND_LABEL[k]}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
           <div className="flex items-center gap-2">
             <button
               onClick={save}
-              disabled={saving || verts.length < 3 || !name.trim() || (!drawing && !dirty && name.trim() === selected?.name)}
+              disabled={
+                saving ||
+                verts.length < 3 ||
+                (!boundaryMode &&
+                  (!name.trim() || (!drawing && !dirty && name.trim() === selected?.name))) ||
+                (boundaryMode && !drawing && !dirty)
+              }
               className="flex-1 px-3 py-2 bg-canopy-600 text-white dark:text-paper text-sm font-medium rounded-md hover:bg-canopy-700 disabled:opacity-50"
             >
-              {saving ? 'Saving…' : drawing ? 'Finish shape' : 'Save changes'}
+              {saving
+                ? 'Saving…'
+                : boundaryMode
+                  ? 'Save boundary'
+                  : drawing
+                    ? 'Finish shape'
+                    : 'Save changes'}
             </button>
             <button
               onClick={() => {
