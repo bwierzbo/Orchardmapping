@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import { BarChart3, MapPin, Plus } from 'lucide-react';
+import { BarChart3, BookOpen, Camera, MapPin, Plus, Settings } from 'lucide-react';
 import { getAllOrchardConfigs } from '@/lib/db/orchards';
 import { getTreeCountsByOrchard } from '@/lib/db/trees';
 import { auth } from '@clerk/nextjs/server';
@@ -27,8 +27,38 @@ export default async function Home() {
   ]);
   const signedIn = !!userId;
 
-  const hero = orchards.find((o) => o.previewImage) ?? orchards[0];
   const totalTrees = Object.values(treeCounts).reduce((a, b) => a + b, 0);
+
+  const actions = [
+    {
+      href: '/discover',
+      icon: Camera,
+      title: 'Found a Tree',
+      sub: 'Photograph a tree anywhere and put it on the map',
+    },
+    {
+      href: '/varieties',
+      icon: BookOpen,
+      title: 'Variety Library',
+      sub: 'Reference notes for every variety you grow',
+    },
+    ...(signedIn
+      ? [
+          {
+            href: '/orchards/new',
+            icon: Plus,
+            title: 'Add Orchard',
+            sub: 'From a tree photo or a drone orthomosaic',
+          },
+        ]
+      : []),
+    {
+      href: '/settings',
+      icon: Settings,
+      title: 'Settings',
+      sub: 'Scope the app to your operation',
+    },
+  ];
 
   return (
     <main className="min-h-screen bg-paper">
@@ -49,61 +79,36 @@ export default async function Home() {
             </span>
             <span className="font-display font-semibold text-lg text-ink">Orchard Map</span>
           </Link>
-          <div className="flex items-center gap-2">
-            <Link
-              href="/discover"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-canopy-600 text-white hover:bg-canopy-700"
-              title="Photograph a tree anywhere and put it on the map"
-            >
-              📸 Found a tree
-            </Link>
-            <UserMenu />
-          </div>
+          <UserMenu />
         </div>
       </header>
 
-      {/* Hero */}
-      <section className="relative">
-        {hero?.previewImage ? (
-          <div className="relative h-[46vh] min-h-[320px] max-h-[520px] overflow-hidden">
-            <Image
-              src={hero.previewImage}
-              alt={`Aerial orthomosaic of ${hero.name}`}
-              fill
-              priority
-              sizes="100vw"
-              className="object-cover"
-            />
-            <div
-              aria-hidden
-              className="absolute inset-0 bg-gradient-to-t from-[#14211A]/85 via-[#14211A]/30 to-transparent"
-            />
-            <div className="absolute inset-x-0 bottom-0">
-              <div className="max-w-6xl mx-auto px-5 pb-8">
-                <h1 className="font-display text-4xl sm:text-5xl font-semibold text-white max-w-2xl [text-wrap:balance]">
-                  {orchards.length === 1 ? 'One orchard' : `${orchards.length} orchards`}, mapped
-                  tree by tree.
-                </h1>
-                <p className="mt-3 text-white/85 max-w-xl text-sm sm:text-base">
-                  Drone-flown orthomosaic maps with a record for every tree — variety, health, and
-                  where it stands in the row.
-                </p>
-                <p className="mt-4 pt-3 border-t border-white/25 font-mono text-[11px] uppercase tracking-widest text-white/70">
-                  {surveyCaption(hero, totalTrees)}
-                </p>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="max-w-6xl mx-auto px-5 pt-16 pb-8">
-            <h1 className="font-display text-4xl sm:text-5xl font-semibold text-ink max-w-2xl [text-wrap:balance]">
-              Orchards, mapped tree by tree.
-            </h1>
-            <p className="mt-3 text-bark max-w-xl">
-              Drone-flown orthomosaic maps with a record for every tree.
-            </p>
-          </div>
-        )}
+      {/* Dashboard header + quick actions */}
+      <section className="max-w-6xl mx-auto px-5 pt-8">
+        <h1 className="font-display text-3xl sm:text-4xl font-semibold text-ink">Orchard Map</h1>
+        <p className="mt-1.5 font-mono text-[11px] uppercase tracking-widest text-bark">
+          {orchards.length} {orchards.length === 1 ? 'orchard' : 'orchards'} · {totalTrees} trees
+          mapped
+        </p>
+
+        <div className="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {actions.map((a) => {
+            const Icon = a.icon;
+            return (
+              <Link
+                key={a.href}
+                href={a.href}
+                className="group bg-surface border border-line rounded-lg p-4 sm:p-5 shadow-xs hover:border-canopy-600 transition-colors duration-base"
+              >
+                <span className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-canopy-50 dark:bg-canopy-600/15 text-canopy-600 group-hover:bg-canopy-600 group-hover:text-white transition-colors duration-base">
+                  <Icon aria-hidden size={20} />
+                </span>
+                <span className="block mt-3 font-display font-semibold text-ink">{a.title}</span>
+                <span className="mt-0.5 hidden sm:block text-xs text-bark">{a.sub}</span>
+              </Link>
+            );
+          })}
+        </div>
       </section>
 
       {/* Orchard plates */}

@@ -318,21 +318,26 @@ export default function DiscoverPage() {
             </div>
           </div>
         ) : !photoUrl ? (
-          <label className="flex h-16 items-center justify-center gap-2 rounded-xl bg-canopy-600 text-white font-semibold cursor-pointer hover:bg-canopy-700 active:scale-[0.99]">
-            {uploading ? <Loader2 className="animate-spin" size={20} aria-hidden /> : <Camera size={20} aria-hidden />}
-            {uploading ? 'Uploading…' : 'Take a photo of the tree'}
-            <input
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="sr-only"
-              disabled={uploading}
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) handlePhoto(f);
-              }}
-            />
-          </label>
+          <div>
+            <label className="flex h-16 items-center justify-center gap-2 rounded-xl bg-canopy-600 text-white font-semibold cursor-pointer hover:bg-canopy-700 active:scale-[0.99]">
+              {uploading ? <Loader2 className="animate-spin" size={20} aria-hidden /> : <Camera size={20} aria-hidden />}
+              {uploading ? 'Uploading…' : 'Take a photo of the tree'}
+              <input
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                disabled={uploading}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handlePhoto(f);
+                }}
+              />
+            </label>
+            <p className="mt-2 text-xs text-bark text-center">
+              Tip: shoot in your camera&apos;s Portrait mode to blur out the background, then
+              choose the photo here. Fill the frame with your tree.
+            </p>
+          </div>
         ) : !point ? (
           <p className="text-sm text-bark text-center py-2">
             <MapPin className="inline mr-1" size={15} aria-hidden />

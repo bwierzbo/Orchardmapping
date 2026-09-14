@@ -45,11 +45,12 @@ export default function PhotoButton({
 
   return (
     <>
+      {/* No `capture` attr: the chooser lets users shoot Portrait-mode
+          photos in the native Camera app and pick them from the library. */}
       <input
         ref={inputRef}
         type="file"
         accept="image/*"
-        capture="environment"
         className="hidden"
         onChange={(e) => handleFile(e.target.files?.[0])}
       />

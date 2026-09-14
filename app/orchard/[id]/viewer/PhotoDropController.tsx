@@ -169,8 +169,8 @@ export default function PhotoDropController({
       className="px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-surface text-ink hover:bg-canopy-50 cursor-pointer inline-flex items-center gap-2"
       title={
         targetTree
-          ? `Photo attaches directly to R${targetTree.row_id}·P${targetTree.position}`
-          : 'Take a geotagged photo and drag it onto its tree'
+          ? `Photo attaches directly to R${targetTree.row_id}·P${targetTree.position} — Portrait mode blurs the background`
+          : 'Take a geotagged photo and drag it onto its tree — Portrait mode blurs the background'
       }
     >
       {busy ? (
@@ -179,10 +179,11 @@ export default function PhotoDropController({
         <Camera size={15} aria-hidden />
       )}
       Photo
+      {/* No `capture` attr: the chooser lets users shoot Portrait-mode
+          photos in the native Camera app and pick them from the library. */}
       <input
         type="file"
         accept="image/*"
-        capture="environment"
         className="sr-only"
         disabled={busy}
         onChange={(e) => {
