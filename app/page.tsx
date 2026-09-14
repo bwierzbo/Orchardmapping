@@ -52,10 +52,11 @@ export default async function Home() {
           <div className="flex items-center gap-2">
             <Link
               href="/discover"
-              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-canopy-600 text-white hover:bg-canopy-700"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-canopy-600 text-white hover:bg-canopy-700"
               title="Photograph a tree anywhere and put it on the map"
             >
-              📸 Found a tree
+              📸<span className="hidden sm:inline"> Found a tree</span>
+              <span className="sm:hidden">Found a tree</span>
             </Link>
             <UserMenu />
           </div>
