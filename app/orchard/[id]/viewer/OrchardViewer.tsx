@@ -31,6 +31,7 @@ import OrchardSwitcher from './OrchardSwitcher';
 import { useAreaLayer } from './useAreaLayer';
 import AreaTools from './AreaTools';
 import PhotoDropController from './PhotoDropController';
+import MoveTreeController from './MoveTreeController';
 import { fetchAreas, type OrchardArea } from '@/lib/api/areas';
 
 export interface OrchardViewerProps {
@@ -124,6 +125,9 @@ export default function OrchardViewer({
     (treeId: string, status: TreeStatus) => update(treeId, { status }),
     [update]
   );
+
+  // "Move on map" flow from the tree panel — no Edit Mode required
+  const [movingTree, setMovingTree] = useState<ClientTree | null>(null);
 
   // Edit ("marking") mode
   const [editMode, setEditMode] = useState(false);
@@ -612,7 +616,7 @@ export default function OrchardViewer({
       )}
 
       {/* Tree details (suppressed during a walk — the sheet owns the screen) */}
-      {selectedTree && !walkMode && (
+      {selectedTree && !walkMode && !movingTree && (
         <TreeDetailPanel
           key={selectedTree.tree_id}
           tree={selectedTree}
@@ -621,6 +625,26 @@ export default function OrchardViewer({
           onClose={clear}
           onSave={handleSave}
           onDelete={handleDelete}
+          onStartMove={() => {
+            setMovingTree(selectedTree);
+            clear();
+          }}
+        />
+      )}
+
+      {movingTree && !walkMode && (
+        <MoveTreeController
+          map={mapObj}
+          tree={movingTree}
+          saving={saving}
+          onSave={async (lng, lat) => {
+            const ok = await move(movingTree.tree_id, lng, lat);
+            if (ok) {
+              showToast('success', 'Tree position updated');
+              setMovingTree(null);
+            }
+          }}
+          onCancel={() => setMovingTree(null)}
         />
       )}
     </div>

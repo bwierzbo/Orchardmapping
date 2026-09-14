@@ -40,6 +40,7 @@ interface TreeDetailPanelProps {
   onClose: () => void;
   onSave: (patch: TreeUpdateInput) => Promise<boolean>;
   onDelete: () => Promise<boolean>;
+  onStartMove: () => void;
 }
 
 /**
@@ -53,6 +54,7 @@ export default function TreeDetailPanel({
   onClose,
   onSave,
   onDelete,
+  onStartMove,
 }: TreeDetailPanelProps) {
   const [editing, setEditing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -267,7 +269,16 @@ export default function TreeDetailPanel({
             >
               {tree.tree_id}
             </button>
-            {canEdit && <Button onClick={startEdit}>Edit tree</Button>}
+            {canEdit && (
+              <div className="flex gap-2">
+                {tree.lat != null && tree.lng != null && (
+                  <Button variant="secondary" onClick={onStartMove}>
+                    Move on map
+                  </Button>
+                )}
+                <Button onClick={startEdit}>Edit tree</Button>
+              </div>
+            )}
           </div>
         ) : confirmingDelete ? (
           <div className="flex items-center justify-between gap-2">
