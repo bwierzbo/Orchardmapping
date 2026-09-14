@@ -21,6 +21,9 @@ const ATTACH_RADIUS_M = 12;
 interface PhotoDropControllerProps {
   map: maplibregl.Map | null;
   trees: ClientTree[];
+  /** A tree already called up (detail panel open): photos attach to it
+   *  directly — no pin dragging. Null = the drag-a-pin flow. */
+  targetTree?: ClientTree | null;
   /** Photo settings toggle + edit rights + no competing mode active. */
   enabled: boolean;
   onAttached?: () => void;
@@ -35,6 +38,7 @@ interface PhotoDropControllerProps {
 export default function PhotoDropController({
   map,
   trees,
+  targetTree = null,
   enabled,
   onAttached,
 }: PhotoDropControllerProps) {
@@ -58,6 +62,20 @@ export default function PhotoDropController({
         access: 'public',
         handleUploadUrl: '/api/photos/upload',
       });
+
+      // A tree is already called up: attach straight to it, no pin.
+      if (targetTree) {
+        await createTreeEvent(targetTree.tree_id, {
+          event_type: 'observation',
+          detail: 'Photo',
+          photo_url: blob.url,
+        });
+        toast.success(
+          `Photo attached to ${targetTree.variety || 'tree'} (R${targetTree.row_id}·P${targetTree.position})`
+        );
+        onAttached?.();
+        return;
+      }
 
       const place = (lng: number, lat: number) => {
         const el = document.createElement('div');
@@ -149,7 +167,11 @@ export default function PhotoDropController({
   ) : (
     <label
       className="px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-surface text-ink hover:bg-canopy-50 cursor-pointer inline-flex items-center gap-2"
-      title="Take a geotagged photo and attach it to a tree"
+      title={
+        targetTree
+          ? `Photo attaches directly to R${targetTree.row_id}·P${targetTree.position}`
+          : 'Take a geotagged photo and drag it onto its tree'
+      }
     >
       {busy ? (
         <Loader2 size={15} className="animate-spin" aria-hidden />

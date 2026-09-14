@@ -9,13 +9,13 @@ const PHOTO_KEY = 'photo_settings';
 
 export interface PhotoSettings {
   /** Show a camera button on the orchard map that drops a geolocated,
-   *  draggable photo pin to attach to a tree. */
+   *  draggable photo pin to attach to a tree. Default on. */
   geotagOnMap: boolean;
 }
 
 function normalizePhotoSettings(stored: unknown): PhotoSettings {
   const s = (stored ?? {}) as Partial<PhotoSettings>;
-  return { geotagOnMap: s.geotagOnMap === true };
+  return { geotagOnMap: s.geotagOnMap !== false };
 }
 
 /** GET /api/settings — walk-survey + photo configuration (defaults merged). */

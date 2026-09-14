@@ -90,7 +90,7 @@ export default function OrchardViewer({
   const [walkMode, setWalkMode] = useState(false);
   const [walkSettings, setWalkSettings] = useState<WalkSettings>(DEFAULT_WALK_SETTINGS);
   const [photoSettings, setPhotoSettings] = useState<{ geotagOnMap: boolean }>({
-    geotagOnMap: false,
+    geotagOnMap: true,
   });
   useEffect(() => {
     fetch('/api/settings')
@@ -491,6 +491,7 @@ export default function OrchardViewer({
           <PhotoDropController
             map={mapObj}
             trees={trees}
+            targetTree={selectedTree}
             enabled={photoSettings.geotagOnMap}
           />
         )}

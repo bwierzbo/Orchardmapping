@@ -20,7 +20,7 @@ import { Label } from '@/components/ui/label';
 export default function SettingsPage() {
   const { isSignedIn } = useAuth();
   const [walk, setWalk] = useState<WalkSettings | null>(null);
-  const [photos, setPhotos] = useState<{ geotagOnMap: boolean }>({ geotagOnMap: false });
+  const [photos, setPhotos] = useState<{ geotagOnMap: boolean }>({ geotagOnMap: true });
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
