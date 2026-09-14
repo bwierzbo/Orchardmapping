@@ -125,12 +125,32 @@ export default function NewOrchardPage() {
         </Link>
 
         <h1 className="font-display text-3xl font-semibold text-ink">Add a new orchard</h1>
-        <p className="text-bark mt-2 text-sm max-w-lg">
-          Upload the orthomosaic as a PMTiles archive. Export one from OpenDroneMap or QGIS
+
+        {/* No drone flight yet? A single tree photo is enough to start. */}
+        <Link
+          href="/discover"
+          className="mt-5 flex items-start gap-3 rounded-lg border-2 border-canopy-600/40 bg-canopy-50 dark:bg-canopy-600/10 p-4 hover:border-canopy-600 max-w-lg"
+        >
+          <span className="text-2xl" aria-hidden>
+            📸
+          </span>
+          <span>
+            <span className="block text-sm font-semibold text-ink">
+              Start from a tree photo
+            </span>
+            <span className="block text-xs text-bark mt-0.5">
+              No imagery needed — photograph a tree, the photo&apos;s GPS places it on the
+              satellite map, and the orchard is created around it. Fly it later.
+            </span>
+          </span>
+        </Link>
+
+        <p className="text-bark mt-6 text-sm max-w-lg">
+          Or upload an orthomosaic as a PMTiles archive. Export one from OpenDroneMap or QGIS
           (GeoTIFF → MBTiles → <code className="font-mono text-xs">pmtiles convert</code>).
         </p>
 
-        <form onSubmit={handleSubmit} className="mt-8 space-y-5">
+        <form onSubmit={handleSubmit} className="mt-6 space-y-5">
           {error && (
             <div
               role="alert"
