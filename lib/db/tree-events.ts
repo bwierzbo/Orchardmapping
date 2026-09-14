@@ -66,7 +66,7 @@ export async function insertTreeEvent(
         ${event.tree_id},
         ${event.orchard_id},
         ${event.event_type},
-        ${event.event_date ?? null},
+        COALESCE(${event.event_date ?? null}, CURRENT_DATE),
         ${event.detail ?? null},
         ${event.changes ? JSON.stringify(event.changes) : null},
         ${event.photo_url ?? null},
