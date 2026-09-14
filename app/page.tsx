@@ -55,8 +55,7 @@ export default async function Home() {
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-canopy-600 text-white hover:bg-canopy-700"
               title="Photograph a tree anywhere and put it on the map"
             >
-              📸<span className="hidden sm:inline"> Found a tree</span>
-              <span className="sm:hidden">Found a tree</span>
+              📸 Found a tree
             </Link>
             <UserMenu />
           </div>
