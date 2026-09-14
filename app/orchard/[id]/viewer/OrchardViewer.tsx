@@ -30,6 +30,7 @@ import MapLegend from './MapLegend';
 import OrchardSwitcher from './OrchardSwitcher';
 import { useAreaLayer } from './useAreaLayer';
 import AreaTools from './AreaTools';
+import PhotoDropController from './PhotoDropController';
 import { fetchAreas, type OrchardArea } from '@/lib/api/areas';
 
 export interface OrchardViewerProps {
@@ -88,10 +89,16 @@ export default function OrchardViewer({
   // Walk (survey) mode — one-tap-per-tree recording, pass-based decks
   const [walkMode, setWalkMode] = useState(false);
   const [walkSettings, setWalkSettings] = useState<WalkSettings>(DEFAULT_WALK_SETTINGS);
+  const [photoSettings, setPhotoSettings] = useState<{ geotagOnMap: boolean }>({
+    geotagOnMap: false,
+  });
   useEffect(() => {
     fetch('/api/settings')
       .then((r) => r.json())
-      .then((b) => b?.walk && setWalkSettings(normalizeWalkSettings(b.walk)))
+      .then((b) => {
+        if (b?.walk) setWalkSettings(normalizeWalkSettings(b.walk));
+        if (b?.photos) setPhotoSettings(b.photos);
+      })
       .catch(() => {}); // defaults are fine offline
   }, []);
   const [walkStartId, setWalkStartId] = useState<string | null>(null);
@@ -479,6 +486,13 @@ export default function OrchardViewer({
         )}
         {canEdit && !editMode && (
           <BulkTreeImport orchardId={orchard.id} existingTrees={trees} onImportComplete={refresh} />
+        )}
+        {canEdit && !editMode && !walkMode && !areaMode && (
+          <PhotoDropController
+            map={mapObj}
+            trees={trees}
+            enabled={photoSettings.geotagOnMap}
+          />
         )}
         {canEdit && !editMode && !walkMode && trees.length > 0 && (
           <>

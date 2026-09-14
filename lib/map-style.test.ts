@@ -58,8 +58,10 @@ describe('buildMapStyle boundary', () => {
 
   it('adds no boundary source or layers when the orchard has none', () => {
     const style = buildMapStyle(orchard(), ORIGIN);
-    expect(Object.keys(style.sources)).toHaveLength(0);
-    expect(style.layers.map((l) => l.id)).toEqual(['background']);
+    // The world satellite base is always present (under any ortho);
+    // no boundary source/layers appear without a boundary.
+    expect(Object.keys(style.sources)).toEqual(['satellite-basemap']);
+    expect(style.layers.map((l) => l.id)).toEqual(['background', 'satellite-basemap']);
   });
 
   it('serves the boundary as a GeoJSON feature source', () => {
