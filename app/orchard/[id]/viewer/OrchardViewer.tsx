@@ -19,6 +19,7 @@ import { useTreeLayer } from './useTreeLayer';
 import { useTreeSelection, useMapUrlState, parseMapHash } from './useUrlState';
 import TreeDetailPanel from './TreeDetailPanel';
 import WalkMode from './WalkMode';
+import { useWalkPathLayer } from './useWalkPathLayer';
 import GroupActionDialog from '@/components/GroupActionDialog';
 import {
   DEFAULT_WALK_SETTINGS,
@@ -103,12 +104,10 @@ export default function OrchardViewer({
       })
       .catch(() => {}); // defaults are fine offline
   }, []);
-  const [walkStartId, setWalkStartId] = useState<string | null>(null);
-  const startWalk = useCallback(() => {
-    setWalkStartId(selectedTreeId);
-    clear();
-    setWalkMode(true);
-  }, [selectedTreeId, clear]);
+  // The map selection doubles as the walk's start tree while the setup
+  // sheet is open, so tapping a tree there picks the starting point.
+  const startWalk = useCallback(() => setWalkMode(true), []);
+  const [walkPath, setWalkPath] = useState<ClientTree[] | null>(null);
   const focusWalkTree = useCallback(
     (tree: ClientTree) => {
       select(tree.tree_id);
@@ -298,6 +297,8 @@ export default function OrchardViewer({
     onSelect: setSelectedAreaId,
     hiddenIds: hiddenAreaIds,
   });
+
+  useWalkPathLayer(mapObj, mapReady, walkMode ? walkPath : null);
 
   useTreeLayer(mapObj, mapReady, trees, {
     editMode,
@@ -611,7 +612,8 @@ export default function OrchardViewer({
         <WalkMode
           trees={trees}
           settings={walkSettings}
-          startTreeId={walkStartId}
+          startTreeId={selectedTreeId}
+          onPathPreview={setWalkPath}
           onSetStatus={walkSetStatus}
           onFocusTree={focusWalkTree}
           onExit={() => {

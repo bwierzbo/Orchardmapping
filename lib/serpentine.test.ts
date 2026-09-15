@@ -61,3 +61,67 @@ describe('varietySamplePath', () => {
     ]);
   });
 });
+
+describe('walkPathFrom', () => {
+  const grid = [
+    tree('1', 1), tree('1', 2), tree('1', 3),
+    tree('2', 1), tree('2', 2), tree('2', 3),
+    tree('3', 1), tree('3', 2), tree('3', 3),
+  ];
+  const ids = (list: ClientTree[]) => list.map((t) => t.tree_id);
+
+  it('starts at the chosen tree and serpentines in the chosen directions', async () => {
+    const { walkPathFrom } = await import('./serpentine');
+    const { path, turnaround } = walkPathFrom(grid, 't-R2-P2', { along: 1, rows: 1 });
+    expect(ids(path.slice(0, turnaround))).toEqual([
+      't-R2-P2', 't-R2-P3',
+      't-R3-P3', 't-R3-P2', 't-R3-P1',
+    ]);
+    // Second leg: back at the start, the rest of row 2 the other way, then row 1
+    expect(ids(path.slice(turnaround))).toEqual(['t-R2-P1', 't-R1-P1', 't-R1-P2', 't-R1-P3']);
+    expect(path).toHaveLength(grid.length);
+  });
+
+  it('walks down positions and down rows when asked', async () => {
+    const { walkPathFrom } = await import('./serpentine');
+    const { path, turnaround } = walkPathFrom(grid, 't-R3-P3', { along: -1, rows: -1 });
+    expect(ids(path)).toEqual([
+      't-R3-P3', 't-R3-P2', 't-R3-P1',
+      't-R2-P1', 't-R2-P2', 't-R2-P3',
+      't-R1-P3', 't-R1-P2', 't-R1-P1',
+    ]);
+    expect(turnaround).toBe(path.length);
+  });
+
+  it('handles a start at the end of its row', async () => {
+    const { walkPathFrom } = await import('./serpentine');
+    const { path, turnaround } = walkPathFrom(grid, 't-R1-P3', { along: 1, rows: 1 });
+    expect(ids(path.slice(0, turnaround))).toEqual([
+      't-R1-P3',
+      't-R2-P3', 't-R2-P2', 't-R2-P1',
+      't-R3-P1', 't-R3-P2', 't-R3-P3',
+    ]);
+    expect(ids(path.slice(turnaround))).toEqual(['t-R1-P2', 't-R1-P1']);
+  });
+
+  it('falls back to the default serpentine when the start is unknown', async () => {
+    const { walkPathFrom, serpentineOrder } = await import('./serpentine');
+    const { path, turnaround } = walkPathFrom(grid, 'nope', { along: -1, rows: -1 });
+    expect(ids(path)).toEqual(ids(serpentineOrder(grid)));
+    expect(turnaround).toBe(path.length);
+    expect(ids(walkPathFrom(grid, null, { along: 1, rows: 1 }).path)).toEqual(ids(serpentineOrder(grid)));
+  });
+
+  it('describes the surroundings of a start tree and picks the longer way as default', async () => {
+    const { walkContext, defaultDirection } = await import('./serpentine');
+    const ctx = walkContext(grid, 't-R3-P3');
+    expect(ctx).toMatchObject({
+      row: '3', position: '3',
+      aheadUp: 0, aheadDown: 2, nextPosUp: null, nextPosDown: '2',
+      rowsUp: 0, rowsDown: 2, nextRowUp: null, nextRowDown: '2',
+    });
+    expect(defaultDirection(ctx)).toEqual({ along: -1, rows: -1 });
+    expect(defaultDirection(walkContext(grid, 't-R2-P2'))).toEqual({ along: 1, rows: 1 });
+    expect(walkContext(grid, 'nope')).toBeNull();
+  });
+});

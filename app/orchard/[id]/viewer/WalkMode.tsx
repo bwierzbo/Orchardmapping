@@ -5,14 +5,21 @@ import type { ClientTree, TreeStatus } from '@/lib/types';
 import { STATUS_COLORS } from '@/lib/trees-geojson';
 import { STATUS_LABEL } from '@/components/StatusBadge';
 import { createTreeEvent } from '@/lib/api/trees';
-import { serpentineOrder, varietySamplePath } from '@/lib/serpentine';
+import {
+  defaultDirection,
+  sampleVarietyRuns,
+  walkContext,
+  walkPathFrom,
+  type Heading,
+  type WalkDirection,
+} from '@/lib/serpentine';
 import { sgToBrix } from '@/lib/sugar';
 import {
   bloomStagesFor,
   FRUIT_METRIC_CATALOG,
   type WalkSettings,
 } from '@/lib/settings';
-import { ArrowLeft, Check, ChevronRight, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check, ChevronRight, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,8 +45,14 @@ const STRESS_REASONS = [
 interface WalkModeProps {
   trees: ClientTree[];
   settings: WalkSettings;
-  /** Where to begin — e.g. the currently selected tree; null starts at the top. */
+  /**
+   * The tree currently selected on the map. During setup it is the
+   * starting point (tapping another tree changes it); null starts at
+   * the top of the orchard.
+   */
   startTreeId: string | null;
+  /** Route to draw on the map — the preview during setup, the fixed path during the walk; null clears it. */
+  onPathPreview: (path: ClientTree[] | null) => void;
   onSetStatus: (treeId: string, status: TreeStatus) => Promise<boolean>;
   /** Pan the map + highlight the current tree. */
   onFocusTree: (tree: ClientTree) => void;
@@ -56,11 +69,17 @@ interface WalkModeProps {
  * at setup — and even then every metric is optional and never blocks
  * saving. Bloom/fruit walks honor the survey-scope setting (per-tree
  * or first-N-of-each-variety-run); health-only walks every tree.
+ *
+ * The route starts at the tree selected on the map (tap to change it)
+ * and heads the chosen way along that row, then through the rows the
+ * chosen way, serpentine. Anything behind the start is picked up on a
+ * second leg so the walk still covers the whole orchard.
  */
 export default function WalkMode({
   trees,
   settings,
   startTreeId,
+  onPathPreview,
   onSetStatus,
   onFocusTree,
   onExit,
@@ -70,17 +89,48 @@ export default function WalkMode({
   const [detailedFruit, setDetailedFruit] = useState(false);
   const [started, setStarted] = useState(false);
 
+  // ---- route ----
+  // Start tree = the map selection; the direction resets to "the longer
+  // way" whenever the start changes, and the user can flip either axis.
+  const startTree = useMemo(
+    () => (startTreeId ? trees.find((t) => t.tree_id === startTreeId) ?? null : null),
+    [trees, startTreeId]
+  );
+  const context = useMemo(
+    () => (startTreeId ? walkContext(trees, startTreeId) : null),
+    [trees, startTreeId]
+  );
+  const [direction, setDirection] = useState<WalkDirection>(() => defaultDirection(context));
+  const [directionFor, setDirectionFor] = useState<string | null>(startTreeId);
+  if (!started && directionFor !== startTreeId) {
+    setDirectionFor(startTreeId);
+    setDirection(defaultDirection(context));
+  }
+  const sampled =
+    (chosen.has('bloom') || chosen.has('fruit')) && settings.surveyScope === 'variety_sample';
+  const preview = useMemo(() => {
+    const { path: full, turnaround } = walkPathFrom(trees, context ? startTreeId : null, direction);
+    if (!sampled) return { path: full, turnaround };
+    // Sampling drops trees; keep the turnaround pointing at the same spot
+    const mainLeg = sampleVarietyRuns(full.slice(0, turnaround), settings.sampleSize);
+    const secondLeg = sampleVarietyRuns(full.slice(turnaround), settings.sampleSize);
+    return { path: [...mainLeg, ...secondLeg], turnaround: mainLeg.length };
+  }, [trees, context, startTreeId, direction, sampled, settings.sampleSize]);
+
   // Path is fixed at start; edits during the walk don't reshuffle it
-  const path = useMemo(() => {
-    if (!started) return [];
-    const sampled =
-      (chosen.has('bloom') || chosen.has('fruit')) &&
-      settings.surveyScope === 'variety_sample';
-    return sampled
-      ? varietySamplePath(trees, settings.sampleSize)
-      : serpentineOrder(trees);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [started]);
+  const [route, setRoute] = useState<{ path: ClientTree[]; turnaround: number }>({
+    path: [],
+    turnaround: 0,
+  });
+  const path = route.path;
+
+  // Draw the route on the map: the live preview while setting up, then
+  // the fixed path for the whole walk.
+  const shownPath = started ? path : preview.path;
+  useEffect(() => {
+    onPathPreview(shownPath.length > 1 ? shownPath : null);
+  }, [shownPath, onPathPreview]);
+  useEffect(() => () => onPathPreview(null), [onPathPreview]);
 
   const [index, setIndex] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -112,7 +162,13 @@ export default function WalkMode({
   );
 
   useEffect(() => {
-    if (current) onFocusTree(current);
+    if (!current) return;
+    onFocusTree(current);
+    // Arriving at the second leg: the route jumps back past the start
+    // tree, so say so rather than letting the map silently pan away.
+    if (started && route.turnaround < path.length && index === route.turnaround) {
+      toast.info(`Leg 2 — head back to R${current.row_id} P${current.position} and walk the other way`);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, started]);
 
@@ -174,23 +230,21 @@ export default function WalkMode({
             </span>
           </button>
         )}
+        <RouteSetup
+          startTree={startTree}
+          context={context}
+          direction={direction}
+          onDirection={setDirection}
+          preview={preview}
+        />
         <div className="px-4 pb-2">
           <Button
             className="w-full h-12 text-base"
-            disabled={chosen.size === 0}
+            disabled={chosen.size === 0 || preview.path.length === 0}
             onClick={() => {
+              setRoute(preview);
+              setIndex(0);
               setStarted(true);
-              setIndex(() => {
-                if (!startTreeId) return 0;
-                const sampled =
-                  (chosen.has('bloom') || chosen.has('fruit')) &&
-                  settings.surveyScope === 'variety_sample';
-                const source = sampled
-                  ? varietySamplePath(trees, settings.sampleSize)
-                  : serpentineOrder(trees);
-                const i = source.findIndex((t) => t.tree_id === startTreeId);
-                return i >= 0 ? i : 0;
-              });
             }}
           >
             Start walk
@@ -387,6 +441,7 @@ export default function WalkMode({
         <>
           <p className="font-mono text-xs text-bark tracking-wide">
             R{current.row_id} · P{current.position} — {index + 1}/{path.length}
+            {route.turnaround < path.length && index >= route.turnaround && ' · leg 2'}
           </p>
           <p className="text-base font-semibold text-ink truncate">
             {current.variety || 'Unknown variety'}
@@ -587,6 +642,124 @@ export default function WalkMode({
         </div>
       )}
     </Sheet>
+  );
+}
+
+/**
+ * Setup-screen route picker: where the walk starts (the map selection)
+ * and which way it heads along the row and through the rows. Each
+ * direction button names the neighbour it leads toward so the choice
+ * reads like the orchard, not like a sort order.
+ */
+function RouteSetup({
+  startTree,
+  context,
+  direction,
+  onDirection,
+  preview,
+}: {
+  startTree: ClientTree | null;
+  context: ReturnType<typeof walkContext>;
+  direction: WalkDirection;
+  onDirection: (d: WalkDirection) => void;
+  preview: { path: ClientTree[]; turnaround: number };
+}) {
+  const behind = preview.path.length - preview.turnaround;
+  const label = (kind: 'pos' | 'row', heading: Heading) => {
+    if (!context) return heading === 1 ? 'Up' : 'Down';
+    const next =
+      kind === 'pos'
+        ? heading === 1 ? context.nextPosUp : context.nextPosDown
+        : heading === 1 ? context.nextRowUp : context.nextRowDown;
+    if (next === null) return kind === 'pos' ? 'Row end' : 'Orchard edge';
+    return kind === 'pos' ? `Toward P${next}` : `Toward R${next}`;
+  };
+  const count = (kind: 'pos' | 'row', heading: Heading) => {
+    if (!context) return null;
+    const n =
+      kind === 'pos'
+        ? heading === 1 ? context.aheadUp : context.aheadDown
+        : heading === 1 ? context.rowsUp : context.rowsDown;
+    return `${n} ${kind === 'pos' ? 'tree' : 'row'}${n === 1 ? '' : 's'}`;
+  };
+
+  const choice = (
+    kind: 'pos' | 'row',
+    heading: Heading,
+    Icon: typeof ArrowUp,
+  ) => {
+    const on = (kind === 'pos' ? direction.along : direction.rows) === heading;
+    const empty =
+      context !== null &&
+      (kind === 'pos'
+        ? heading === 1 ? context.aheadUp : context.aheadDown
+        : heading === 1 ? context.rowsUp : context.rowsDown) === 0;
+    return (
+      <button
+        type="button"
+        onClick={() =>
+          onDirection(kind === 'pos' ? { ...direction, along: heading } : { ...direction, rows: heading })
+        }
+        aria-pressed={on}
+        disabled={empty && !on}
+        className={`h-12 rounded-xl border-2 px-2 text-sm font-medium active:scale-[0.97] flex items-center justify-center gap-1.5 disabled:opacity-40 ${
+          on
+            ? 'bg-canopy-600 border-canopy-700 text-white'
+            : 'bg-paper border-line text-ink hover:bg-canopy-50'
+        }`}
+      >
+        <Icon size={15} aria-hidden />
+        <span className="truncate">{label(kind, heading)}</span>
+        {count(kind, heading) && (
+          <span className={`text-[10px] font-normal ${on ? 'text-white/80' : 'text-bark'}`}>
+            {count(kind, heading)}
+          </span>
+        )}
+      </button>
+    );
+  };
+
+  return (
+    <div className="px-4 pb-3 space-y-2">
+      <div className="rounded-xl border border-line bg-paper px-3 py-2">
+        <p className="text-[11px] font-semibold tracking-wide text-bark uppercase">Start from</p>
+        {startTree && context ? (
+          <p className="text-sm text-ink">
+            <span className="font-mono">R{context.row} · P{context.position}</span>
+            {startTree.variety ? ` — ${startTree.variety}` : ''}
+            <span className="block text-[11px] text-bark">Tap another tree on the map to change.</span>
+          </p>
+        ) : (
+          <p className="text-sm text-ink">
+            First tree of the orchard
+            <span className="block text-[11px] text-bark">
+              {startTree
+                ? 'The selected tree has no row/position, so it can’t anchor a route.'
+                : 'Tap a tree on the map to start there instead.'}
+            </span>
+          </p>
+        )}
+      </div>
+      {context && (
+        <>
+          <div className="grid grid-cols-2 gap-2">
+            {choice('pos', -1, ArrowLeft)}
+            {choice('pos', 1, ArrowRight)}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {choice('row', -1, ArrowDown)}
+            {choice('row', 1, ArrowUp)}
+          </div>
+        </>
+      )}
+      <p className="text-[11px] text-bark">
+        {preview.path.length === 0
+          ? 'No trees with a row and position to walk.'
+          : behind > 0
+            ? `${preview.path.length} trees. ${behind} behind your start are covered on a second leg back from R${context?.row} P${context?.position}.`
+            : `${preview.path.length} trees, one pass.`}
+      </p>
+    </div>
   );
 }
 
