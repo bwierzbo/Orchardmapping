@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ClientTree, TreeStatus } from '@/lib/types';
 import { STATUS_COLORS } from '@/lib/trees-geojson';
 import { STATUS_LABEL } from '@/components/StatusBadge';
 import { createTreeEvent } from '@/lib/api/trees';
+import { deleteWalkProgress, fetchWalkProgress, putWalkProgress } from '@/lib/api/walk-progress';
 import {
   defaultDirection,
   sampleVarietyRuns,
@@ -13,6 +14,15 @@ import {
   type Heading,
   type WalkDirection,
 } from '@/lib/serpentine';
+import {
+  clearLocalWalkProgress,
+  loadLocalWalkProgress,
+  newerWalkProgress,
+  resumeRoute,
+  saveLocalWalkProgress,
+  type WalkInspection,
+  type WalkProgress,
+} from '@/lib/walk-progress';
 import { sgToBrix } from '@/lib/sugar';
 import {
   bloomStagesFor,
@@ -25,13 +35,18 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import PhotoButton from '@/components/PhotoButton';
 
-export type Inspection = 'health' | 'bloom' | 'fruit';
+export type Inspection = WalkInspection;
 
 const INSPECTIONS: Array<{ key: Inspection; label: string; hint: string }> = [
   { key: 'health', label: 'Health', hint: 'Healthy / Stressed / Dead' },
   { key: 'bloom', label: 'Bloom', hint: 'Phenology stage' },
   { key: 'fruit', label: 'Fruit', hint: 'Crop load 1–5' },
 ];
+const INSPECTION_LABEL: Record<Inspection, string> = {
+  health: 'Health',
+  bloom: 'Bloom',
+  fruit: 'Fruit',
+};
 
 const STRESS_REASONS = [
   'Pests',
@@ -42,7 +57,16 @@ const STRESS_REASONS = [
   'Other',
 ];
 
+/** Server mirror of the progress waits this long after the last step. */
+const SYNC_DELAY_MS = 1500;
+
+export interface WalkProgressView {
+  done: ReadonlySet<string>;
+  todo: ReadonlySet<string>;
+}
+
 interface WalkModeProps {
+  orchardId: string;
   trees: ClientTree[];
   settings: WalkSettings;
   /**
@@ -53,6 +77,8 @@ interface WalkModeProps {
   startTreeId: string | null;
   /** Route to draw on the map — the preview during setup, the fixed path during the walk; null clears it. */
   onPathPreview: (path: ClientTree[] | null) => void;
+  /** Which trees are assessed / still to visit, for the map to style; null clears it. */
+  onProgress: (progress: WalkProgressView | null) => void;
   onSetStatus: (treeId: string, status: TreeStatus) => Promise<boolean>;
   /** Pan the map + highlight the current tree. */
   onFocusTree: (tree: ClientTree) => void;
@@ -74,12 +100,23 @@ interface WalkModeProps {
  * and heads the chosen way along that row, then through the rows the
  * chosen way, serpentine. Anything behind the start is picked up on a
  * second leg so the walk still covers the whole orchard.
+ *
+ * Progress is saved after every tree (locally at once, to the server a
+ * moment later), so closing the sheet pauses the walk and "Walk Survey"
+ * offers to resume it — on this device or another — with the assessed
+ * and remaining trees marked on the map.
+ *
+ * A notes field is always on screen. Notes ride along with whatever is
+ * recorded for the tree; a stressed tree also takes a highlighted key
+ * issue, and stressed never auto-advances so there is room to type.
  */
 export default function WalkMode({
+  orchardId,
   trees,
   settings,
   startTreeId,
   onPathPreview,
+  onProgress,
   onSetStatus,
   onFocusTree,
   onExit,
@@ -88,6 +125,26 @@ export default function WalkMode({
   const [chosen, setChosen] = useState<Set<Inspection>>(() => new Set(['health']));
   const [detailedFruit, setDetailedFruit] = useState(false);
   const [started, setStarted] = useState(false);
+
+  // ---- a paused walk to resume? ----
+  // Local copy first (instant, works offline), then the server copy if
+  // it is newer. Once the user resumes or starts over, a late server
+  // reply must not resurrect the card.
+  const [saved, setSaved] = useState<WalkProgress | null>(() => loadLocalWalkProgress(orchardId));
+  const savedSettledRef = useRef(false);
+  useEffect(() => {
+    let cancelled = false;
+    fetchWalkProgress(orchardId)
+      .then((remote) => {
+        if (cancelled || savedSettledRef.current || !remote) return;
+        setSaved((prev) => newerWalkProgress(prev, remote));
+      })
+      .catch(() => {}); // local copy is enough
+    return () => {
+      cancelled = true;
+    };
+  }, [orchardId]);
+  const resumable = useMemo(() => (saved ? resumeRoute(saved, trees) : null), [saved, trees]);
 
   // ---- route ----
   // Start tree = the map selection; the direction resets to "the longer
@@ -124,38 +181,96 @@ export default function WalkMode({
   });
   const path = route.path;
 
-  // Draw the route on the map: the live preview while setting up, then
-  // the fixed path for the whole walk.
-  const shownPath = started ? path : preview.path;
+  const [index, setIndex] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [recorded, setRecorded] = useState(0);
+  /** Trees with at least one inspection recorded on this walk. */
+  const [done, setDone] = useState<Set<string>>(() => new Set());
+  const startedAtRef = useRef<string>('');
+
+  // Draw the route on the map: the paused walk while its card shows,
+  // the live preview while setting up, then the fixed path for the walk.
+  const shownPath = started ? path : resumable ? resumable.path : preview.path;
   useEffect(() => {
     onPathPreview(shownPath.length > 1 ? shownPath : null);
   }, [shownPath, onPathPreview]);
   useEffect(() => () => onPathPreview(null), [onPathPreview]);
 
-  const [index, setIndex] = useState(0);
-  const [busy, setBusy] = useState(false);
-  const [recorded, setRecorded] = useState(0);
+  // Assessed / remaining trees for the map styling
+  useEffect(() => {
+    if (started) {
+      onProgress({
+        done,
+        todo: new Set(path.filter((t) => !done.has(t.tree_id)).map((t) => t.tree_id)),
+      });
+    } else if (resumable) {
+      onProgress({
+        done: resumable.done,
+        todo: new Set(
+          resumable.path.filter((t) => !resumable.done.has(t.tree_id)).map((t) => t.tree_id)
+        ),
+      });
+    } else {
+      onProgress(null);
+    }
+  }, [started, path, done, resumable, onProgress]);
+  useEffect(() => () => onProgress(null), [onProgress]);
+
+  // ---- progress persistence ----
+  const current = path[index] ?? null;
+  const finishedRef = useRef(false);
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const snapshotRef = useRef<WalkProgress | null>(null);
+  const flushSync = useCallback(() => {
+    if (syncTimerRef.current) {
+      clearTimeout(syncTimerRef.current);
+      syncTimerRef.current = null;
+    }
+    const snap = snapshotRef.current;
+    snapshotRef.current = null; // sent once; the next step sets a fresh one
+    if (snap) putWalkProgress(snap).catch(() => {}); // local copy already saved
+  }, []);
+  useEffect(() => {
+    if (!started || finishedRef.current) return;
+    const snap: WalkProgress = {
+      version: 1,
+      orchardId,
+      inspections: [...chosen],
+      detailedFruit,
+      pathIds: path.map((t) => t.tree_id),
+      turnaround: route.turnaround,
+      currentId: current?.tree_id ?? null,
+      doneIds: [...done],
+      recorded,
+      startedAt: startedAtRef.current,
+      updatedAt: new Date().toISOString(),
+    };
+    snapshotRef.current = snap;
+    saveLocalWalkProgress(snap);
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = setTimeout(flushSync, SYNC_DELAY_MS);
+    // chosen/detailedFruit are fixed once started; only steps re-save
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [started, index, done, recorded]);
+  // Unmount mid-walk (navigation, unload) still lands the last step
+  useEffect(() => () => flushSync(), [flushSync]);
+
   // Per-tree answers live in a ref so completion checks always see the
   // latest values regardless of React render timing; the useState
   // mirrors exist only to highlight the selected buttons.
   const answersRef = useRef<{
     health: TreeStatus | null;
-    healthDetail?: string;
     bloom: string | null;
     fruit: number | null;
-  }>({ health: null, healthDetail: undefined, bloom: null, fruit: null });
+  }>({ health: null, bloom: null, fruit: null });
   const [healthChoice, setHealthChoice] = useState<TreeStatus | null>(null);
-  const [healthDetail, setHealthDetail] = useState<string | undefined>(undefined);
-  const [stressOpen, setStressOpen] = useState(false);
-  const [stressNote, setStressNote] = useState('');
+  const [stressReason, setStressReason] = useState<string | null>(null);
   const [bloomChoice, setBloomChoice] = useState<string | null>(null);
   const [fruitLoad, setFruitLoad] = useState<number | null>(null);
   const [metrics, setMetrics] = useState<Record<string, string>>({});
-  // shared note entry
-  const [noteOpen, setNoteOpen] = useState(false);
+  // Always-visible notes; saved with whatever is recorded for the tree
   const [note, setNote] = useState('');
 
-  const current = path[index] ?? null;
   const liveCurrent = useMemo(
     () => (current ? trees.find((t) => t.tree_id === current.tree_id) ?? current : null),
     [trees, current]
@@ -172,6 +287,61 @@ export default function WalkMode({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, started]);
 
+  // ---- start / resume / finish ----
+  const startNew = () => {
+    savedSettledRef.current = true;
+    startedAtRef.current = new Date().toISOString();
+    setRoute(preview);
+    setDone(new Set());
+    setRecorded(0);
+    setIndex(0);
+    setStarted(true);
+  };
+
+  const resume = () => {
+    if (!saved || !resumable) return;
+    savedSettledRef.current = true;
+    startedAtRef.current = saved.startedAt;
+    setChosen(new Set(saved.inspections));
+    setDetailedFruit(saved.detailedFruit);
+    setRoute({ path: resumable.path, turnaround: resumable.turnaround });
+    setDone(new Set(resumable.done));
+    setRecorded(saved.recorded);
+    setIndex(resumable.index);
+    setStarted(true);
+  };
+
+  const discardSaved = () => {
+    savedSettledRef.current = true;
+    clearLocalWalkProgress(orchardId);
+    deleteWalkProgress(orchardId).catch(() => {});
+    setSaved(null);
+  };
+
+  /** Close the sheet mid-walk: progress is already saved; push the server copy now. */
+  const pause = () => {
+    flushSync();
+    if (started && !finishedRef.current) {
+      toast.info('Walk paused — open Walk Survey to pick it up again');
+    }
+    onExit();
+  };
+
+  const finish = () => {
+    finishedRef.current = true;
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    snapshotRef.current = null;
+    clearLocalWalkProgress(orchardId);
+    deleteWalkProgress(orchardId).catch(() => {});
+    const skipped = path.length - done.size;
+    toast.success(
+      skipped > 0
+        ? `Walk complete — ${done.size} of ${path.length} assessed, ${skipped} skipped`
+        : `Walk complete — all ${path.length} trees assessed`
+    );
+    onExit();
+  };
+
   // ---- setup screen ----
   if (!started) {
     const toggle = (k: Inspection) =>
@@ -181,6 +351,47 @@ export default function WalkMode({
         else next.add(k);
         return next;
       });
+
+    if (saved && resumable) {
+      const nextUp = resumable.path[resumable.index];
+      const remaining = resumable.path.length - resumable.done.size;
+      return (
+        <Sheet
+          onExit={onExit}
+          header={<p className="text-base font-semibold text-ink">Walk in progress</p>}
+        >
+          <div className="px-4 pb-4 space-y-3">
+            <div className="rounded-xl border border-line bg-paper px-3 py-2.5 space-y-1">
+              <p className="text-sm font-medium text-ink">
+                {saved.inspections.map((i) => INSPECTION_LABEL[i]).join(' + ')}
+                {saved.detailedFruit ? ' (detailed)' : ''}
+              </p>
+              <p className="text-sm text-ink">
+                <span className="font-semibold">{resumable.done.size}</span> of{' '}
+                {resumable.path.length} assessed ·{' '}
+                <span className="font-semibold">{remaining}</span> remaining
+              </p>
+              <p className="text-[11px] text-bark">
+                Paused {relativeTime(saved.updatedAt)} · next up{' '}
+                <span className="font-mono">
+                  R{nextUp.row_id} · P{nextUp.position}
+                </span>
+              </p>
+              <p className="text-[11px] text-bark">
+                On the map, assessed trees are faded and remaining ones ringed.
+              </p>
+            </div>
+            <Button className="w-full h-12 text-base" onClick={resume}>
+              Resume walk
+            </Button>
+            <Button variant="secondary" className="w-full h-11" onClick={discardSaved}>
+              Start over
+            </Button>
+          </div>
+        </Sheet>
+      );
+    }
+
     return (
       <Sheet
         onExit={onExit}
@@ -241,11 +452,7 @@ export default function WalkMode({
           <Button
             className="w-full h-12 text-base"
             disabled={chosen.size === 0 || preview.path.length === 0}
-            onClick={() => {
-              setRoute(preview);
-              setIndex(0);
-              setStarted(true);
-            }}
+            onClick={startNew}
           >
             Start walk
           </Button>
@@ -254,7 +461,8 @@ export default function WalkMode({
           Health visits every tree.{' '}
           {settings.surveyScope === 'variety_sample'
             ? `Bloom & fruit sample the first ${settings.sampleSize} of each variety run (change in Settings).`
-            : 'Bloom & fruit also visit every tree (change in Settings).'}
+            : 'Bloom & fruit also visit every tree (change in Settings).'}{' '}
+          You can close the walk at any point and resume later.
         </p>
       </Sheet>
     );
@@ -265,44 +473,51 @@ export default function WalkMode({
   const atEnd = index >= path.length - 1;
 
   const resetEntry = () => {
-    answersRef.current = { health: null, healthDetail: undefined, bloom: null, fruit: null };
+    answersRef.current = { health: null, bloom: null, fruit: null };
     setHealthChoice(null);
-    setHealthDetail(undefined);
-    setStressOpen(false);
-    setStressNote('');
+    setStressReason(null);
     setBloomChoice(null);
     setFruitLoad(null);
     setMetrics({});
-    setNoteOpen(false);
     setNote('');
   };
 
   const advance = () => {
     resetEntry();
-    if (atEnd) onExit();
+    if (atEnd) finish();
     else setIndex((i) => i + 1);
   };
 
-  /** Save every answered inspection for this tree, then advance. */
+  /** Save every answered inspection (and the note) for this tree, then advance. */
   const saveAll = async () => {
     if (busy) return;
     const answers = { ...answersRef.current };
+    const noteText = note.trim();
     setBusy(true);
     try {
       let saved = 0;
+      let noteUsed = false;
       if (answers.health) {
         const ok = await onSetStatus(current.tree_id, answers.health);
-        if (ok && answers.healthDetail) {
-          try {
-            await createTreeEvent(current.tree_id, {
-              event_type: 'observation',
-              detail: answers.healthDetail,
-            });
-          } catch {
-            /* status is saved; observation is best-effort */
+        if (ok) {
+          saved++;
+          // The key issue (stressed) and/or the note become one observation
+          const reason = answers.health === 'stressed' ? stressReason : null;
+          const detail = reason
+            ? noteText
+              ? `${reason}: ${noteText}`
+              : reason
+            : noteText || null;
+          if (detail) {
+            noteUsed = true;
+            try {
+              await createTreeEvent(current.tree_id, { event_type: 'observation', detail });
+              saved++;
+            } catch {
+              /* status is saved; observation is best-effort */
+            }
           }
         }
-        if (ok) saved++;
       }
       if (answers.bloom) {
         await createTreeEvent(current.tree_id, {
@@ -335,7 +550,15 @@ export default function WalkMode({
         });
         saved++;
       }
-      if (saved > 0) setRecorded((n) => n + saved);
+      if (noteText && !noteUsed) {
+        await createTreeEvent(current.tree_id, { event_type: 'observation', detail: noteText });
+        saved++;
+      }
+      if (saved > 0) {
+        setRecorded((n) => n + saved);
+        const inspected = answers.health || answers.bloom || answers.fruit !== null;
+        if (inspected) setDone((prev) => new Set(prev).add(current.tree_id));
+      }
       advance();
     } catch (err) {
       toast.error(
@@ -356,20 +579,19 @@ export default function WalkMode({
     );
   };
 
-  /** An inspection answer landed — auto-save when everything chosen is in
-   *  (unless detailed fruit metrics are open, which use the button). */
+  /** An inspection answer landed — auto-save when everything chosen is
+   *  in. Stressed trees and detailed fruit metrics wait for the button
+   *  so there is room to pick a key issue, type a note, or enter values. */
   const maybeComplete = () => {
-    if (refComplete() && !detailedFruit) {
+    if (refComplete() && !detailedFruit && answersRef.current.health !== 'stressed') {
       void saveAll();
     }
   };
 
-  const pickHealth = (status: TreeStatus, detail?: string) => {
+  const pickHealth = (status: TreeStatus) => {
     answersRef.current.health = status;
-    answersRef.current.healthDetail = detail;
     setHealthChoice(status);
-    setHealthDetail(detail);
-    setStressOpen(false);
+    if (status !== 'stressed') setStressReason(null);
     maybeComplete();
   };
 
@@ -385,26 +607,8 @@ export default function WalkMode({
     maybeComplete();
   };
 
-  const allAnswered =
-    (!chosen.has('health') || healthChoice !== null) &&
-    (!chosen.has('bloom') || bloomChoice !== null) &&
-    (!chosen.has('fruit') || fruitLoad !== null);
-
-  const saveNote = async () => {
-    if (!note.trim() || busy) return;
-    setBusy(true);
-    try {
-      await createTreeEvent(current.tree_id, {
-        event_type: 'observation',
-        detail: note.trim(),
-      });
-      setRecorded((n) => n + 1);
-      setNote('');
-      setNoteOpen(false);
-    } finally {
-      setBusy(false);
-    }
-  };
+  const hasAnything =
+    healthChoice !== null || bloomChoice !== null || fruitLoad !== null || note.trim() !== '';
 
   // Photo taken mid-walk: records an observation event carrying the
   // image (with the note text if one is typed). Does not auto-advance —
@@ -418,7 +622,6 @@ export default function WalkMode({
       });
       setRecorded((n) => n + 1);
       setNote('');
-      setNoteOpen(false);
     } catch {
       /* upload succeeded but event failed — photo remains in Blob */
     }
@@ -436,7 +639,8 @@ export default function WalkMode({
 
   return (
     <Sheet
-      onExit={onExit}
+      onExit={pause}
+      exitLabel="Pause walk"
       header={
         <>
           <p className="font-mono text-xs text-bark tracking-wide">
@@ -447,7 +651,9 @@ export default function WalkMode({
             {current.variety || 'Unknown variety'}
           </p>
           <p className="text-xs text-bark">
-            now: {STATUS_LABEL[liveCurrent?.status ?? current.status]} · recorded {recorded}
+            now: {STATUS_LABEL[liveCurrent?.status ?? current.status]} · assessed {done.size}/
+            {path.length}
+            {done.has(current.tree_id) && ' · this tree done'}
           </p>
         </>
       }
@@ -455,7 +661,7 @@ export default function WalkMode({
     >
       <div className="space-y-3 px-4 pb-2">
         {/* ── Health ── */}
-        {chosen.has('health') && !stressOpen && (
+        {chosen.has('health') && (
           <div className="space-y-1.5">
             {chosen.size > 1 && sectionLabel('Health', healthChoice !== null)}
             <div className="grid grid-cols-3 gap-2">
@@ -470,7 +676,7 @@ export default function WalkMode({
               <TapButton
                 color={STATUS_COLORS.stressed}
                 selected={healthChoice === 'stressed'}
-                onClick={() => setStressOpen(true)}
+                onClick={() => pickHealth('stressed')}
                 disabled={busy}
               >
                 Stressed
@@ -484,37 +690,36 @@ export default function WalkMode({
                 Dead
               </TapButton>
             </div>
-          </div>
-        )}
-
-        {chosen.has('health') && stressOpen && (
-          <div className="space-y-2">
-            <p className="text-xs font-medium text-bark">Why stressed?</p>
-            <div className="flex flex-wrap gap-1.5">
-              {STRESS_REASONS.map((r) => (
-                <button
-                  key={r}
-                  onClick={() =>
-                    pickHealth('stressed', stressNote.trim() ? `${r}: ${stressNote.trim()}` : r)
-                  }
-                  disabled={busy}
-                  className="px-3 py-2 rounded-lg text-sm font-medium border border-line text-ink bg-paper hover:bg-canopy-50 active:scale-[0.97]"
-                >
-                  {r}
-                </button>
-              ))}
-            </div>
-            <Input
-              placeholder="Detail (optional, tap a reason to save)"
-              value={stressNote}
-              onChange={(e) => setStressNote(e.target.value)}
-              className="h-10"
-            />
+            {healthChoice === 'stressed' && (
+              <div className="space-y-1">
+                <p className="text-[11px] font-medium text-bark">Key issue (tap to highlight)</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {STRESS_REASONS.map((r) => {
+                    const on = stressReason === r;
+                    return (
+                      <button
+                        key={r}
+                        onClick={() => setStressReason(on ? null : r)}
+                        aria-pressed={on}
+                        disabled={busy}
+                        className={`px-3 py-2 rounded-lg text-sm font-medium border active:scale-[0.97] disabled:opacity-50 ${
+                          on
+                            ? 'bg-canopy-700 border-canopy-700 text-white ring-2 ring-canopy-600 ring-offset-1'
+                            : 'border-line text-ink bg-paper hover:bg-canopy-50'
+                        }`}
+                      >
+                        {r}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         {/* ── Bloom ── */}
-        {chosen.has('bloom') && !stressOpen && (
+        {chosen.has('bloom') && (
           <div className="space-y-1.5">
             {chosen.size > 1 && sectionLabel('Bloom', bloomChoice !== null)}
             <div className="flex flex-wrap gap-1.5">
@@ -537,7 +742,7 @@ export default function WalkMode({
         )}
 
         {/* ── Fruit ── */}
-        {chosen.has('fruit') && !stressOpen && (
+        {chosen.has('fruit') && (
           <div className="space-y-2">
             {chosen.size > 1 && sectionLabel('Fruit load', fruitLoad !== null)}
             <div className="grid grid-cols-5 gap-1.5">
@@ -585,72 +790,60 @@ export default function WalkMode({
           </div>
         )}
 
-        {/* Detailed mode saves via the button (metrics never block).
-            In quick mode the same button appears only as a failsafe if
-            everything is answered but auto-advance didn't fire. */}
-        {(detailedFruit || (allAnswered && !busy)) && (
-          <Button className="w-full h-11" onClick={() => void saveAll()} disabled={busy || !allAnswered}>
-            {busy ? 'Saving…' : 'Record & next'}
-          </Button>
-        )}
+        {/* ── Notes: always available; saved with the tree's record ── */}
+        <Input
+          placeholder={
+            healthChoice === 'stressed'
+              ? 'Notes — what you see (optional)'
+              : 'Notes (optional) — saved with this tree'
+          }
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && hasAnything && !busy && void saveAll()}
+          disabled={busy}
+          className="h-11"
+          aria-label="Notes"
+        />
+
+        {/* Healthy/dead, bloom and fruit auto-advance once complete; this
+            button is the explicit path for stressed trees, detailed fruit
+            metrics, partial records and note-only entries. */}
+        <Button
+          className="w-full h-11"
+          onClick={() => void saveAll()}
+          disabled={busy || !hasAnything}
+        >
+          {busy ? 'Saving…' : 'Record & next'}
+        </Button>
       </div>
 
       {/* ── Shared secondary actions ── */}
-      {noteOpen ? (
-        <div className="flex gap-2 px-4 pb-4">
-          <Input
-            autoFocus
-            placeholder="Observation…"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && saveNote()}
-            className="h-11"
-          />
-          <Button className="h-11" onClick={saveNote} disabled={busy || !note.trim()}>
-            Save
-          </Button>
-        </div>
-      ) : (
-        <div className="flex gap-2 px-4 pb-4">
-          <PhotoButton
-            treeId={current.tree_id}
-            onUploaded={savePhoto}
-            className="h-11 px-3.5"
-          />
-          {stressOpen ? (
-            <Button
-              variant="secondary"
-              className="h-11 flex-1"
-              onClick={() => setStressOpen(false)}
-              disabled={busy}
-            >
-              Back
-            </Button>
-          ) : (
-            <Button
-              variant="secondary"
-              className="h-11 flex-1"
-              onClick={() => setNoteOpen(true)}
-              disabled={busy}
-            >
-              + Note
-            </Button>
-          )}
-          <Button variant="secondary" className="h-11 flex-1" onClick={advance} disabled={busy}>
-            {atEnd ? 'Finish' : 'Skip'} <ChevronRight size={16} aria-hidden />
-          </Button>
-        </div>
-      )}
+      <div className="flex gap-2 px-4 pb-4">
+        <PhotoButton
+          treeId={current.tree_id}
+          onUploaded={savePhoto}
+          className="h-11 px-3.5"
+        />
+        <Button variant="secondary" className="h-11 flex-1" onClick={advance} disabled={busy}>
+          {atEnd ? 'Finish walk' : 'Skip'} <ChevronRight size={16} aria-hidden />
+        </Button>
+      </div>
     </Sheet>
   );
 }
 
-/**
- * Setup-screen route picker: where the walk starts (the map selection)
- * and which way it heads along the row and through the rows. Each
- * direction button names the neighbour it leads toward so the choice
- * reads like the orchard, not like a sort order.
- */
+function relativeTime(iso: string): string {
+  const ms = Date.now() - Date.parse(iso);
+  if (Number.isNaN(ms) || ms < 0) return 'just now';
+  const min = Math.round(ms / 60000);
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min} min ago`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `${h} h ago`;
+  const d = Math.round(h / 24);
+  return d === 1 ? 'yesterday' : `${d} days ago`;
+}
+
 function RouteSetup({
   startTree,
   context,
@@ -793,11 +986,13 @@ function TapButton({
 function Sheet({
   header,
   onExit,
+  exitLabel = 'Exit walk mode',
   onBack,
   children,
 }: {
   header: React.ReactNode;
   onExit: () => void;
+  exitLabel?: string;
   onBack?: () => void;
   children: React.ReactNode;
 }) {
@@ -820,7 +1015,8 @@ function Sheet({
         <div className="text-center min-w-0">{header}</div>
         <button
           onClick={onExit}
-          aria-label="Exit walk mode"
+          aria-label={exitLabel}
+          title={exitLabel}
           className="p-2 -m-1 rounded-lg text-bark hover:text-ink hover:bg-canopy-50"
         >
           <X size={20} aria-hidden />

@@ -25,11 +25,18 @@ export interface TreeLayerCallbacks {
   onMove: (treeId: string, lng: number, lat: number) => void;
 }
 
+/** Walk-survey progress by tree_id: assessed trees fade, remaining ones get a dark ring. */
+export interface WalkProgressSets {
+  done: ReadonlySet<string>;
+  todo: ReadonlySet<string>;
+}
+
 interface Options extends TreeLayerCallbacks {
   editMode: boolean;
   canEdit: boolean;
   statusFilter: ReadonlySet<TreeStatus> | null;
   selectedTreeId: string | null;
+  walkProgress?: WalkProgressSets | null;
 }
 
 /**
@@ -44,6 +51,7 @@ export function useTreeLayer(
   options: Options
 ) {
   const { editMode, canEdit, statusFilter, selectedTreeId, onSelect, onMove } = options;
+  const walkProgress = options.walkProgress ?? null;
 
   // Refs so map handlers see fresh values without re-binding
   const stateRef = useRef({ editMode, canEdit, trees, onSelect, onMove });
@@ -112,20 +120,31 @@ export function useTreeLayer(
           ['boolean', ['feature-state', 'hover'], false], 9,
           7,
         ],
+        // feature-state.walk: 'done' (assessed on this walk) fades the
+        // dot; 'todo' (still to visit) gets a dark ring. Unset = normal.
         'circle-opacity': [
           'case',
           ['boolean', ['feature-state', 'dragging'], false], 0.15,
+          ['==', ['coalesce', ['feature-state', 'walk'], ''], 'done'], 0.35,
           1,
         ],
         'circle-stroke-color': [
           'case',
           ['boolean', ['feature-state', 'selected'], false], '#D9481C',
+          ['==', ['coalesce', ['feature-state', 'walk'], ''], 'todo'], '#14211A',
+          ['==', ['coalesce', ['feature-state', 'walk'], ''], 'done'], '#2F6B3F',
           '#ffffff',
         ],
         'circle-stroke-width': [
           'case',
           ['boolean', ['feature-state', 'selected'], false], 3,
+          ['==', ['coalesce', ['feature-state', 'walk'], ''], 'todo'], 2.5,
           2,
+        ],
+        'circle-stroke-opacity': [
+          'case',
+          ['==', ['coalesce', ['feature-state', 'walk'], ''], 'done'], 0.5,
+          1,
         ],
       },
     });
@@ -350,4 +369,27 @@ export function useTreeLayer(
       }
     }
   }, [map, mapReady, selectedTreeId, trees]);
+
+  // Walk-progress feature-state sync: clear what was marked last time,
+  // then mark the current done/todo sets. setData() keeps feature-state,
+  // so this only needs to run when the sets (or the id map) change.
+  const walkMarkedRef = useRef<number[]>([]);
+  useEffect(() => {
+    if (!mapReady || !map || !map.getSource(SOURCE_ID)) return;
+    for (const id of walkMarkedRef.current) {
+      map.setFeatureState({ source: SOURCE_ID, id }, { walk: null });
+    }
+    walkMarkedRef.current = [];
+    if (!walkProgress) return;
+    for (const t of trees) {
+      const state = walkProgress.done.has(t.tree_id)
+        ? 'done'
+        : walkProgress.todo.has(t.tree_id)
+          ? 'todo'
+          : null;
+      if (!state) continue;
+      map.setFeatureState({ source: SOURCE_ID, id: t.id }, { walk: state });
+      walkMarkedRef.current.push(t.id);
+    }
+  }, [map, mapReady, walkProgress, trees]);
 }

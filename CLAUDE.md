@@ -40,6 +40,7 @@ CI (`.github/workflows/ci.yml`) runs typecheck, lint, test, build on every PR â€
 This app is being aligned with CiderPilot (see the cidery repo's practices).
 - **tRPC** lives at `/api/trpc` (`lib/trpc/`): `orchard.list/get`, `tree.list/get/events`, `tree.logEvent`. Reads + event logging are live; the REST routes below remain the write path until the viewer's mutations are switched over.
 - **Drizzle schema** in `lib/db/schema.ts` + client in `lib/db/drizzle.ts` (over the same @vercel/postgres pool). SQL migrations stay the DDL source of truth; the raw-SQL modules are being ported to Drizzle incrementally.
+- **Walk survey progress** (`lib/walk-progress.ts`, `/api/walk-progress`): a paused walk is saved per orchard in localStorage and mirrored into `app_settings` (`walk_progress:<orchard>`), reconciled by `updatedAt`; the route itself comes from `lib/serpentine.ts` (`walkPathFrom`).
 - **tree_events** (`lib/db/tree-events.ts`, migration 006): per-tree audit + field-activity log. The tree API routes auto-write created/updated/status_change/moved/deleted events (best-effort â€” audit failure never fails the edit); manual events via `POST /api/trees/[id]/events`. No FK on tree_id so history survives deletion.
 
 ### Data layer (raw SQL, no ORM)

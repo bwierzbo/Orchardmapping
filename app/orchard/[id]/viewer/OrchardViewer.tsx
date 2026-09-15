@@ -18,7 +18,7 @@ import { useTrees } from './useTrees';
 import { useTreeLayer } from './useTreeLayer';
 import { useTreeSelection, useMapUrlState, parseMapHash } from './useUrlState';
 import TreeDetailPanel from './TreeDetailPanel';
-import WalkMode from './WalkMode';
+import WalkMode, { type WalkProgressView } from './WalkMode';
 import { useWalkPathLayer } from './useWalkPathLayer';
 import GroupActionDialog from '@/components/GroupActionDialog';
 import {
@@ -108,6 +108,7 @@ export default function OrchardViewer({
   // sheet is open, so tapping a tree there picks the starting point.
   const startWalk = useCallback(() => setWalkMode(true), []);
   const [walkPath, setWalkPath] = useState<ClientTree[] | null>(null);
+  const [walkProgress, setWalkProgress] = useState<WalkProgressView | null>(null);
   const focusWalkTree = useCallback(
     (tree: ClientTree) => {
       select(tree.tree_id);
@@ -305,6 +306,7 @@ export default function OrchardViewer({
     canEdit,
     statusFilter: activeStatuses.size === TREE_STATUSES.length ? null : activeStatuses,
     selectedTreeId,
+    walkProgress: walkMode ? walkProgress : null,
     onSelect: select,
     onMove: handleMove,
   });
@@ -610,10 +612,12 @@ export default function OrchardViewer({
       {/* Walk (survey) mode sheet */}
       {walkMode && (
         <WalkMode
+          orchardId={orchard.id}
           trees={trees}
           settings={walkSettings}
           startTreeId={selectedTreeId}
           onPathPreview={setWalkPath}
+          onProgress={setWalkProgress}
           onSetStatus={walkSetStatus}
           onFocusTree={focusWalkTree}
           onExit={() => {
