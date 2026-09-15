@@ -2,6 +2,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { BarChart3, BookOpen, Camera, MapPin, Plus, Settings } from 'lucide-react';
 import { getAllOrchardConfigs } from '@/lib/db/orchards';
+import { satellitePreviewUrl, boundarySvgPoints } from '@/lib/satellite-preview';
 import { getTreeCountsByOrchard } from '@/lib/db/trees';
 import { auth } from '@clerk/nextjs/server';
 import UserMenu from '@/components/UserMenu';
@@ -161,6 +162,33 @@ export default async function Home() {
                         sizes="(min-width: 768px) 50vw, 100vw"
                         className="object-cover transition-transform duration-slow ease-out group-hover:scale-[1.02]"
                       />
+                    ) : orchard.bounds ? (
+                      // No drone flight yet: live satellite snapshot of the
+                      // orchard's location, with its boundary when drawn
+                      <>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={satellitePreviewUrl(orchard.bounds)}
+                          alt={`Satellite view of ${orchard.name}`}
+                          loading="lazy"
+                          className="absolute inset-0 w-full h-full object-cover transition-transform duration-slow ease-out group-hover:scale-[1.02]"
+                        />
+                        {orchard.boundary && (
+                          <svg
+                            viewBox="0 0 660 440"
+                            preserveAspectRatio="xMidYMid slice"
+                            aria-hidden
+                            className="absolute inset-0 w-full h-full"
+                          >
+                            <polygon
+                              points={boundarySvgPoints(orchard.boundary, orchard.bounds)}
+                              fill="rgba(127,154,109,0.15)"
+                              stroke="#D9481C"
+                              strokeWidth="3"
+                            />
+                          </svg>
+                        )}
+                      </>
                     ) : (
                       <div className="absolute inset-0 flex items-center justify-center">
                         <MapPin aria-hidden className="text-canopy-600/40" size={40} />

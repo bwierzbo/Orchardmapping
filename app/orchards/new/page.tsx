@@ -126,24 +126,43 @@ export default function NewOrchardPage() {
 
         <h1 className="font-display text-3xl font-semibold text-ink">Add a new orchard</h1>
 
-        {/* No drone flight yet? A single tree photo is enough to start. */}
-        <Link
-          href="/discover"
-          className="mt-5 flex items-start gap-3 rounded-lg border-2 border-canopy-600/40 bg-canopy-50 dark:bg-canopy-600/10 p-4 hover:border-canopy-600 max-w-lg"
-        >
-          <span className="text-2xl" aria-hidden>
-            📸
-          </span>
-          <span>
-            <span className="block text-sm font-semibold text-ink">
-              Start from a tree photo
+        {/* No drone flight yet? A photo or an address is enough to start. */}
+        <div className="mt-5 grid sm:grid-cols-2 gap-3 max-w-lg">
+          <Link
+            href="/discover"
+            className="flex items-start gap-3 rounded-lg border-2 border-canopy-600/40 bg-canopy-50 dark:bg-canopy-600/10 p-4 hover:border-canopy-600"
+          >
+            <span className="text-2xl" aria-hidden>
+              📸
             </span>
-            <span className="block text-xs text-bark mt-0.5">
-              No imagery needed — photograph a tree, the photo&apos;s GPS places it on the
-              satellite map, and the orchard is created around it. Fly it later.
+            <span>
+              <span className="block text-sm font-semibold text-ink">
+                Start from a tree photo
+              </span>
+              <span className="block text-xs text-bark mt-0.5">
+                Photograph a tree — its GPS places it on the satellite map and the orchard is
+                created around it.
+              </span>
             </span>
-          </span>
-        </Link>
+          </Link>
+          <Link
+            href="/orchards/new/from-address"
+            className="flex items-start gap-3 rounded-lg border-2 border-canopy-600/40 bg-canopy-50 dark:bg-canopy-600/10 p-4 hover:border-canopy-600"
+          >
+            <span className="text-2xl" aria-hidden>
+              📍
+            </span>
+            <span>
+              <span className="block text-sm font-semibold text-ink">
+                Start from an address
+              </span>
+              <span className="block text-xs text-bark mt-0.5">
+                Type the address, land on the satellite map, drop the pin — then draw the
+                boundary and detect trees.
+              </span>
+            </span>
+          </Link>
+        </div>
 
         <p className="text-bark mt-6 text-sm max-w-lg">
           Or upload an orthomosaic as a PMTiles archive. Export one from OpenDroneMap or QGIS
