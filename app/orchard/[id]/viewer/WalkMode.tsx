@@ -16,6 +16,7 @@ import {
   clearLocalWalkProgress,
   loadLocalWalkProgress,
   newerWalkProgress,
+  nextUnassessed,
   resumeRoute,
   saveLocalWalkProgress,
   type WalkInspection,
@@ -439,9 +440,26 @@ export default function WalkMode({
 
   const atEnd = index >= path.length - 1;
 
+  // Next tree still to visit — trees assessed meanwhile (from the map's
+  // Inspect button while the walk was paused) are passed over.
   const advance = () => {
-    if (atEnd) finish();
-    else setIndex((i) => i + 1);
+    if (atEnd) {
+      finish();
+      return;
+    }
+    const next = nextUnassessed(path, done, index + 1);
+    if (next < 0) {
+      // Everything ahead is assessed: land on the last tree so Finish shows
+      const skipped = path.length - 1 - index;
+      if (skipped > 1) toast.info(`Skipped ${skipped - 1} trees already assessed`);
+      setIndex(path.length - 1);
+      return;
+    }
+    const skipped = next - index - 1;
+    if (skipped > 0) {
+      toast.info(`Skipped ${skipped} ${skipped === 1 ? 'tree' : 'trees'} already assessed`);
+    }
+    setIndex(next);
   };
 
   return (

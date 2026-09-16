@@ -6,6 +6,7 @@ import { TREE_STATUSES } from '@/lib/types';
 import type { WalkSettings } from '@/lib/settings';
 import { toast } from 'sonner';
 import InspectionEntry from './InspectionEntry';
+import { recordInspectionInSavedWalk } from '@/lib/api/walk-progress';
 import { formatYMD } from '@/lib/dates';
 import StatusBadge, { STATUS_LABEL } from '@/components/StatusBadge';
 import TreeHistory from './TreeHistory';
@@ -206,11 +207,19 @@ export default function TreeDetailPanel({
             recordLabel="Record"
             onSetStatus={onSetStatus}
             onBusyChange={setInspectBusy}
-            onSaved={({ saved, photo }) => {
+            onSaved={({ saved, inspected, photo }) => {
               setHistoryVersion((v) => v + 1);
-              if (!photo) {
-                if (saved > 0) toast.success(`Recorded for R${tree.row_id ?? '—'} P${tree.position ?? '—'}`);
-                setInspecting(false);
+              if (photo) return;
+              const where = `R${tree.row_id ?? '—'} P${tree.position ?? '—'}`;
+              if (saved > 0) toast.success(`Recorded for ${where}`);
+              setInspecting(false);
+              // A paused walk covering this tree counts it as assessed
+              if (inspected) {
+                recordInspectionInSavedWalk(tree.orchard_id, tree.tree_id, saved)
+                  .then((updated) => {
+                    if (updated) toast.info(`${where} marked assessed on the paused walk`);
+                  })
+                  .catch(() => {});
               }
             }}
           />

@@ -91,11 +91,49 @@ export interface ResumedRoute {
   done: Set<string>;
 }
 
+/** Index of the first tree at or after `from` that isn't assessed; -1 when none. */
+export function nextUnassessed(path: ClientTree[], done: ReadonlySet<string>, from: number): number {
+  for (let i = Math.max(0, from); i < path.length; i++) {
+    if (!done.has(path[i].tree_id)) return i;
+  }
+  return -1;
+}
+
+/**
+ * A tree inspected outside the walk (the panel's Inspect button while
+ * a walk is paused) counts as assessed on that walk. Returns the updated
+ * walk, or null when the tree isn't on the route or is already done. If
+ * it was the tree the walker paused on, the walk moves on to the next
+ * unassessed tree so resuming doesn't land on a finished one.
+ */
+export function markTreeInspected(
+  progress: WalkProgress,
+  treeId: string,
+  saved: number
+): WalkProgress | null {
+  if (!progress.pathIds.includes(treeId) || progress.doneIds.includes(treeId)) return null;
+  const doneIds = [...progress.doneIds, treeId];
+  let currentId = progress.currentId;
+  if (currentId === treeId) {
+    const at = progress.pathIds.indexOf(treeId);
+    const next = progress.pathIds.slice(at + 1).find((id) => !doneIds.includes(id));
+    if (next) currentId = next;
+  }
+  return {
+    ...progress,
+    doneIds,
+    currentId,
+    recorded: progress.recorded + Math.max(0, saved),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 /**
  * Rebuild a saved route against the current tree list. Trees deleted
  * since the walk started drop out (the turnaround shifts with them);
- * the walker resumes on the saved tree, or the first tree not yet
- * assessed if that one is gone. Null when nothing of the route survives.
+ * the walker resumes on the saved tree — or, if that one is gone or
+ * has since been assessed, the next unassessed tree after it. Null
+ * when nothing of the route survives.
  */
 export function resumeRoute(progress: WalkProgress, trees: ClientTree[]): ResumedRoute | null {
   const byId = new Map(trees.map((t) => [t.tree_id, t]));
@@ -109,8 +147,10 @@ export function resumeRoute(progress: WalkProgress, trees: ClientTree[]): Resume
   });
   if (path.length === 0) return null;
   const done = new Set(progress.doneIds.filter((id) => byId.has(id)));
-  let index = progress.currentId ? path.findIndex((t) => t.tree_id === progress.currentId) : -1;
-  if (index < 0) index = path.findIndex((t) => !done.has(t.tree_id));
+  const savedAt = progress.currentId ? path.findIndex((t) => t.tree_id === progress.currentId) : -1;
+  let index = savedAt >= 0 && !done.has(path[savedAt].tree_id) ? savedAt : -1;
+  if (index < 0) index = nextUnassessed(path, done, savedAt + 1);
+  if (index < 0) index = nextUnassessed(path, done, 0);
   if (index < 0) index = path.length - 1;
   return { path, turnaround, index, done };
 }

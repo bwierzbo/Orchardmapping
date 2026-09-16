@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { newerWalkProgress, normalizeWalkProgress, resumeRoute, type WalkProgress } from './walk-progress';
+import {
+  markTreeInspected,
+  newerWalkProgress,
+  nextUnassessed,
+  normalizeWalkProgress,
+  resumeRoute,
+  type WalkProgress,
+} from './walk-progress';
 import type { ClientTree } from './types';
 
 function tree(id: string): ClientTree {
@@ -82,5 +89,41 @@ describe('resumeRoute', () => {
 
   it('returns null when none of the route survives', () => {
     expect(resumeRoute(saved, [tree('zzz')])).toBeNull();
+  });
+
+  it('skips past a saved tree that was assessed from the panel meanwhile', () => {
+    const trees = ['a', 'b', 'c', 'd', 'e'].map(tree);
+    const r = resumeRoute({ ...saved, doneIds: ['a', 'b', 'c', 'd'] }, trees)!;
+    expect(r.index).toBe(4); // e
+    const all = resumeRoute({ ...saved, doneIds: ['a', 'b', 'c', 'd', 'e'] }, trees)!;
+    expect(all.index).toBe(4); // nothing left: land on the end so Finish shows
+  });
+});
+
+describe('markTreeInspected', () => {
+  it('adds the tree, bumps the count, and moves the walker off it', () => {
+    const updated = markTreeInspected(saved, 'c', 2)!;
+    expect(updated.doneIds).toEqual(['a', 'b', 'c']);
+    expect(updated.recorded).toBe(4);
+    expect(updated.currentId).toBe('d');
+    expect(Date.parse(updated.updatedAt)).toBeGreaterThan(Date.parse(saved.updatedAt));
+  });
+
+  it('keeps the walker where it is when another tree is inspected', () => {
+    expect(markTreeInspected(saved, 'e', 1)!.currentId).toBe('c');
+  });
+
+  it('ignores trees off the route or already done', () => {
+    expect(markTreeInspected(saved, 'zzz', 1)).toBeNull();
+    expect(markTreeInspected(saved, 'a', 1)).toBeNull();
+  });
+});
+
+describe('nextUnassessed', () => {
+  it('finds the next tree not in the done set', () => {
+    const path = ['a', 'b', 'c'].map(tree);
+    expect(nextUnassessed(path, new Set(['b']), 1)).toBe(2);
+    expect(nextUnassessed(path, new Set(['b', 'c']), 1)).toBe(-1);
+    expect(nextUnassessed(path, new Set(), -5)).toBe(0);
   });
 });
