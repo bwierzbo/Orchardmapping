@@ -2,9 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ClientTree, TreeStatus } from '@/lib/types';
-import { STATUS_COLORS } from '@/lib/trees-geojson';
 import { STATUS_LABEL } from '@/components/StatusBadge';
-import { createTreeEvent } from '@/lib/api/trees';
 import { deleteWalkProgress, fetchWalkProgress, putWalkProgress } from '@/lib/api/walk-progress';
 import {
   defaultDirection,
@@ -23,17 +21,11 @@ import {
   type WalkInspection,
   type WalkProgress,
 } from '@/lib/walk-progress';
-import { sgToBrix } from '@/lib/sugar';
-import {
-  bloomStagesFor,
-  FRUIT_METRIC_CATALOG,
-  type WalkSettings,
-} from '@/lib/settings';
+import type { WalkSettings } from '@/lib/settings';
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check, ChevronRight, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import PhotoButton from '@/components/PhotoButton';
+import InspectionEntry from './InspectionEntry';
 
 export type Inspection = WalkInspection;
 
@@ -47,15 +39,6 @@ const INSPECTION_LABEL: Record<Inspection, string> = {
   bloom: 'Bloom',
   fruit: 'Fruit',
 };
-
-const STRESS_REASONS = [
-  'Pests',
-  'Disease',
-  'Deer/Vole',
-  'Drought',
-  'Broken/Leaning',
-  'Other',
-];
 
 /** Server mirror of the progress waits this long after the last step. */
 const SYNC_DELAY_MS = 1500;
@@ -254,22 +237,6 @@ export default function WalkMode({
   }, [started, index, done, recorded]);
   // Unmount mid-walk (navigation, unload) still lands the last step
   useEffect(() => () => flushSync(), [flushSync]);
-
-  // Per-tree answers live in a ref so completion checks always see the
-  // latest values regardless of React render timing; the useState
-  // mirrors exist only to highlight the selected buttons.
-  const answersRef = useRef<{
-    health: TreeStatus | null;
-    bloom: string | null;
-    fruit: number | null;
-  }>({ health: null, bloom: null, fruit: null });
-  const [healthChoice, setHealthChoice] = useState<TreeStatus | null>(null);
-  const [stressReason, setStressReason] = useState<string | null>(null);
-  const [bloomChoice, setBloomChoice] = useState<string | null>(null);
-  const [fruitLoad, setFruitLoad] = useState<number | null>(null);
-  const [metrics, setMetrics] = useState<Record<string, string>>({});
-  // Always-visible notes; saved with whatever is recorded for the tree
-  const [note, setNote] = useState('');
 
   const liveCurrent = useMemo(
     () => (current ? trees.find((t) => t.tree_id === current.tree_id) ?? current : null),
@@ -472,170 +439,10 @@ export default function WalkMode({
 
   const atEnd = index >= path.length - 1;
 
-  const resetEntry = () => {
-    answersRef.current = { health: null, bloom: null, fruit: null };
-    setHealthChoice(null);
-    setStressReason(null);
-    setBloomChoice(null);
-    setFruitLoad(null);
-    setMetrics({});
-    setNote('');
-  };
-
   const advance = () => {
-    resetEntry();
     if (atEnd) finish();
     else setIndex((i) => i + 1);
   };
-
-  /** Save every answered inspection (and the note) for this tree, then advance. */
-  const saveAll = async () => {
-    if (busy) return;
-    const answers = { ...answersRef.current };
-    const noteText = note.trim();
-    setBusy(true);
-    try {
-      let saved = 0;
-      let noteUsed = false;
-      if (answers.health) {
-        const ok = await onSetStatus(current.tree_id, answers.health);
-        if (ok) {
-          saved++;
-          // The key issue (stressed) and/or the note become one observation
-          const reason = answers.health === 'stressed' ? stressReason : null;
-          const detail = reason
-            ? noteText
-              ? `${reason}: ${noteText}`
-              : reason
-            : noteText || null;
-          if (detail) {
-            noteUsed = true;
-            try {
-              await createTreeEvent(current.tree_id, { event_type: 'observation', detail });
-              saved++;
-            } catch {
-              /* status is saved; observation is best-effort */
-            }
-          }
-        }
-      }
-      if (answers.bloom) {
-        await createTreeEvent(current.tree_id, {
-          event_type: 'bloom',
-          detail: answers.bloom,
-          changes: { stage: answers.bloom },
-        });
-        saved++;
-      }
-      if (answers.fruit !== null) {
-        const payload: Record<string, unknown> = { load: answers.fruit };
-        for (const m of FRUIT_METRIC_CATALOG) {
-          const raw = metrics[m.key];
-          if (raw !== undefined && raw !== '' && !Number.isNaN(Number(raw))) {
-            const value = Number(raw);
-            // Sugar is stored canonically as °Bx; when the user works in
-            // SG, keep the entered SG alongside the converted Brix.
-            if (m.key === 'brix' && settings.sugarUnit === 'sg') {
-              payload.brix = Math.round(sgToBrix(value) * 10) / 10;
-              payload.sg = value;
-            } else {
-              payload[m.key] = value;
-            }
-          }
-        }
-        await createTreeEvent(current.tree_id, {
-          event_type: 'fruit_check',
-          detail: `Load ${answers.fruit}/5`,
-          changes: payload,
-        });
-        saved++;
-      }
-      if (noteText && !noteUsed) {
-        await createTreeEvent(current.tree_id, { event_type: 'observation', detail: noteText });
-        saved++;
-      }
-      if (saved > 0) {
-        setRecorded((n) => n + saved);
-        const inspected = answers.health || answers.bloom || answers.fruit !== null;
-        if (inspected) setDone((prev) => new Set(prev).add(current.tree_id));
-      }
-      advance();
-    } catch (err) {
-      toast.error(
-        err instanceof Error ? `Save failed: ${err.message}` : 'Save failed — try again',
-      );
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  /** True when every chosen inspection has an answer (reads the ref). */
-  const refComplete = () => {
-    const a = answersRef.current;
-    return (
-      (!chosen.has('health') || a.health !== null) &&
-      (!chosen.has('bloom') || a.bloom !== null) &&
-      (!chosen.has('fruit') || a.fruit !== null)
-    );
-  };
-
-  /** An inspection answer landed — auto-save when everything chosen is
-   *  in. Stressed trees and detailed fruit metrics wait for the button
-   *  so there is room to pick a key issue, type a note, or enter values. */
-  const maybeComplete = () => {
-    if (refComplete() && !detailedFruit && answersRef.current.health !== 'stressed') {
-      void saveAll();
-    }
-  };
-
-  const pickHealth = (status: TreeStatus) => {
-    answersRef.current.health = status;
-    setHealthChoice(status);
-    if (status !== 'stressed') setStressReason(null);
-    maybeComplete();
-  };
-
-  const pickBloom = (stage: string) => {
-    answersRef.current.bloom = stage;
-    setBloomChoice(stage);
-    maybeComplete();
-  };
-
-  const pickFruit = (load: number) => {
-    answersRef.current.fruit = load;
-    setFruitLoad(load);
-    maybeComplete();
-  };
-
-  const hasAnything =
-    healthChoice !== null || bloomChoice !== null || fruitLoad !== null || note.trim() !== '';
-
-  // Photo taken mid-walk: records an observation event carrying the
-  // image (with the note text if one is typed). Does not auto-advance —
-  // a photo usually precedes a status tap on the same tree.
-  const savePhoto = async (url: string) => {
-    try {
-      await createTreeEvent(current.tree_id, {
-        event_type: 'observation',
-        detail: note.trim() || undefined,
-        photo_url: url,
-      });
-      setRecorded((n) => n + 1);
-      setNote('');
-    } catch {
-      /* upload succeeded but event failed — photo remains in Blob */
-    }
-  };
-
-  const enabledMetrics = FRUIT_METRIC_CATALOG.filter((m) =>
-    settings.fruitMetrics.includes(m.key)
-  );
-  const sectionLabel = (label: string, done: boolean) => (
-    <p className="text-[11px] font-semibold tracking-wide text-bark uppercase flex items-center gap-1">
-      {label}
-      {done && <Check size={12} aria-hidden className="text-canopy-600" />}
-    </p>
-  );
 
   return (
     <Sheet
@@ -659,175 +466,35 @@ export default function WalkMode({
       }
       onBack={index > 0 && !busy ? () => setIndex((i) => i - 1) : undefined}
     >
-      <div className="space-y-3 px-4 pb-2">
-        {/* ── Health ── */}
-        {chosen.has('health') && (
-          <div className="space-y-1.5">
-            {chosen.size > 1 && sectionLabel('Health', healthChoice !== null)}
-            <div className="grid grid-cols-3 gap-2">
-              <TapButton
-                color={STATUS_COLORS.healthy}
-                selected={healthChoice === 'healthy'}
-                onClick={() => pickHealth('healthy')}
-                disabled={busy}
-              >
-                Healthy
-              </TapButton>
-              <TapButton
-                color={STATUS_COLORS.stressed}
-                selected={healthChoice === 'stressed'}
-                onClick={() => pickHealth('stressed')}
-                disabled={busy}
-              >
-                Stressed
-              </TapButton>
-              <TapButton
-                color={STATUS_COLORS.dead}
-                selected={healthChoice === 'dead'}
-                onClick={() => pickHealth('dead')}
-                disabled={busy}
-              >
-                Dead
-              </TapButton>
-            </div>
-            {healthChoice === 'stressed' && (
-              <div className="space-y-1">
-                <p className="text-[11px] font-medium text-bark">Key issue (tap to highlight)</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {STRESS_REASONS.map((r) => {
-                    const on = stressReason === r;
-                    return (
-                      <button
-                        key={r}
-                        onClick={() => setStressReason(on ? null : r)}
-                        aria-pressed={on}
-                        disabled={busy}
-                        className={`px-3 py-2 rounded-lg text-sm font-medium border active:scale-[0.97] disabled:opacity-50 ${
-                          on
-                            ? 'bg-canopy-700 border-canopy-700 text-white ring-2 ring-canopy-600 ring-offset-1'
-                            : 'border-line text-ink bg-paper hover:bg-canopy-50'
-                        }`}
-                      >
-                        {r}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
+      {/* The same form the tree panel's "Inspect" opens — one code path,
+          one set of events. Keyed per tree so entries never carry over. */}
+      <InspectionEntry
+        key={current.tree_id}
+        tree={current}
+        settings={settings}
+        inspections={chosen}
+        detailedFruit={detailedFruit}
+        autoSave
+        recordLabel="Record & next"
+        onSetStatus={onSetStatus}
+        onBusyChange={setBusy}
+        onSaved={({ saved, inspected, photo }) => {
+          if (saved > 0) setRecorded((n) => n + saved);
+          if (inspected) setDone((prev) => new Set(prev).add(current.tree_id));
+          // A photo alone stays on the tree — a status tap usually follows
+          if (!photo) advance();
+        }}
+        secondaryAction={(entryBusy) => (
+          <Button
+            variant="secondary"
+            className="h-11 flex-1"
+            onClick={advance}
+            disabled={entryBusy}
+          >
+            {atEnd ? 'Finish walk' : 'Skip'} <ChevronRight size={16} aria-hidden />
+          </Button>
         )}
-
-        {/* ── Bloom ── */}
-        {chosen.has('bloom') && (
-          <div className="space-y-1.5">
-            {chosen.size > 1 && sectionLabel('Bloom', bloomChoice !== null)}
-            <div className="flex flex-wrap gap-1.5">
-              {bloomStagesFor(settings).map((stage) => (
-                <button
-                  key={stage}
-                  onClick={() => pickBloom(stage)}
-                  disabled={busy}
-                  className={`px-3 py-2.5 rounded-lg text-sm font-medium active:scale-[0.97] disabled:opacity-50 ${
-                    bloomChoice === stage
-                      ? 'bg-canopy-700 text-white ring-2 ring-canopy-600 ring-offset-1'
-                      : 'bg-canopy-600 text-white hover:bg-canopy-700'
-                  }`}
-                >
-                  {stage}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ── Fruit ── */}
-        {chosen.has('fruit') && (
-          <div className="space-y-2">
-            {chosen.size > 1 && sectionLabel('Fruit load', fruitLoad !== null)}
-            <div className="grid grid-cols-5 gap-1.5">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <button
-                  key={n}
-                  onClick={() => pickFruit(n)}
-                  disabled={busy}
-                  className={`h-12 rounded-xl font-semibold text-base active:scale-[0.97] ${
-                    fruitLoad === n
-                      ? 'bg-canopy-600 text-white'
-                      : 'bg-paper border border-line text-ink hover:bg-canopy-50'
-                  }`}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-            <p className="text-[11px] text-bark -mt-1">Crop load: 1 = none · 5 = heavy</p>
-            {detailedFruit && enabledMetrics.length > 0 && (
-              <div className="grid grid-cols-2 gap-2">
-                {enabledMetrics.map((m) => {
-                  const asSg = m.key === 'brix' && settings.sugarUnit === 'sg';
-                  return (
-                    <label key={m.key} className="block">
-                      <span className="text-[11px] font-medium text-bark">
-                        {asSg ? 'SG (optional)' : `${m.label} (${m.unit}, optional)`}
-                      </span>
-                      <Input
-                        type="number"
-                        step={asSg ? 0.001 : m.step}
-                        inputMode="decimal"
-                        placeholder={asSg ? '1.050' : undefined}
-                        value={metrics[m.key] ?? ''}
-                        onChange={(e) =>
-                          setMetrics((prev) => ({ ...prev, [m.key]: e.target.value }))
-                        }
-                        className="h-10 mt-0.5"
-                      />
-                    </label>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── Notes: always available; saved with the tree's record ── */}
-        <Input
-          placeholder={
-            healthChoice === 'stressed'
-              ? 'Notes — what you see (optional)'
-              : 'Notes (optional) — saved with this tree'
-          }
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && hasAnything && !busy && void saveAll()}
-          disabled={busy}
-          className="h-11"
-          aria-label="Notes"
-        />
-
-        {/* Healthy/dead, bloom and fruit auto-advance once complete; this
-            button is the explicit path for stressed trees, detailed fruit
-            metrics, partial records and note-only entries. */}
-        <Button
-          className="w-full h-11"
-          onClick={() => void saveAll()}
-          disabled={busy || !hasAnything}
-        >
-          {busy ? 'Saving…' : 'Record & next'}
-        </Button>
-      </div>
-
-      {/* ── Shared secondary actions ── */}
-      <div className="flex gap-2 px-4 pb-4">
-        <PhotoButton
-          treeId={current.tree_id}
-          onUploaded={savePhoto}
-          className="h-11 px-3.5"
-        />
-        <Button variant="secondary" className="h-11 flex-1" onClick={advance} disabled={busy}>
-          {atEnd ? 'Finish walk' : 'Skip'} <ChevronRight size={16} aria-hidden />
-        </Button>
-      </div>
+      />
     </Sheet>
   );
 }
@@ -953,33 +620,6 @@ function RouteSetup({
             : `${preview.path.length} trees, one pass.`}
       </p>
     </div>
-  );
-}
-
-function TapButton({
-  color,
-  selected,
-  onClick,
-  disabled,
-  children,
-}: {
-  color: string;
-  selected?: boolean;
-  onClick: () => void;
-  disabled: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={`h-14 rounded-xl text-white font-semibold text-sm shadow-md active:scale-[0.97] disabled:opacity-50 ${
-        selected ? 'ring-2 ring-ink ring-offset-2' : ''
-      }`}
-      style={{ backgroundColor: color }}
-    >
-      {children}
-    </button>
   );
 }
 

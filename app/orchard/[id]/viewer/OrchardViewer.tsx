@@ -657,7 +657,9 @@ export default function OrchardViewer({
           tree={selectedTree}
           canEdit={canEdit}
           saving={saving}
+          walkSettings={walkSettings}
           onClose={clear}
+          onSetStatus={walkSetStatus}
           onSave={handleSave}
           onDelete={handleDelete}
           onStartMove={() => {

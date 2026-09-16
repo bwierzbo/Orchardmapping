@@ -1,8 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import type { ClientTree } from '@/lib/types';
+import type { ClientTree, TreeStatus } from '@/lib/types';
 import { TREE_STATUSES } from '@/lib/types';
+import type { WalkSettings } from '@/lib/settings';
+import { toast } from 'sonner';
+import InspectionEntry from './InspectionEntry';
 import { formatYMD } from '@/lib/dates';
 import StatusBadge, { STATUS_LABEL } from '@/components/StatusBadge';
 import TreeHistory from './TreeHistory';
@@ -18,6 +21,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+
+/** The Inspect form offers every inspection; the surveyor answers what applies. */
+const ALL_INSPECTIONS: ReadonlySet<'health' | 'bloom' | 'fruit'> = new Set([
+  'health',
+  'bloom',
+  'fruit',
+] as const);
 
 /** Suggested fruit categories; the field accepts any value. */
 const FRUIT_TYPES = [
@@ -37,26 +47,37 @@ interface TreeDetailPanelProps {
   tree: ClientTree;
   canEdit: boolean;
   saving: boolean;
+  /** Walk-survey settings (bloom scale, fruit metrics) — the Inspect form shares them. */
+  walkSettings: WalkSettings;
   onClose: () => void;
   onSave: (patch: TreeUpdateInput) => Promise<boolean>;
   onDelete: () => Promise<boolean>;
   onStartMove: () => void;
+  /** Status change from the Inspect form (same path as a walk). */
+  onSetStatus: (treeId: string, status: TreeStatus) => Promise<boolean>;
 }
 
 /**
- * The one tree editor: curated read view + in-place edit form.
+ * The one tree editor: curated read view + in-place edit form, plus an
+ * "Inspect" mode that is the walk survey's per-tree form for just this
+ * tree — same controls, same events — for spot checks from the map.
  * Right-side panel on desktop, bottom sheet on small screens.
  */
 export default function TreeDetailPanel({
   tree,
   canEdit,
   saving,
+  walkSettings,
   onClose,
   onSave,
   onDelete,
   onStartMove,
+  onSetStatus,
 }: TreeDetailPanelProps) {
   const [editing, setEditing] = useState(false);
+  const [inspecting, setInspecting] = useState(false);
+  const [inspectBusy, setInspectBusy] = useState(false);
+  const [historyVersion, setHistoryVersion] = useState(0);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [form, setForm] = useState<TreeUpdateInput>({});
 
@@ -173,8 +194,27 @@ export default function TreeDetailPanel({
         </button>
       </div>
 
-      <div className="overflow-y-auto px-5 py-3 flex-1">
-        {!editing ? (
+      <div className={`overflow-y-auto flex-1 ${inspecting ? 'py-3' : 'px-5 py-3'}`}>
+        {inspecting ? (
+          <InspectionEntry
+            key={tree.tree_id}
+            tree={tree}
+            settings={walkSettings}
+            inspections={ALL_INSPECTIONS}
+            detailedFruit
+            autoSave={false}
+            recordLabel="Record"
+            onSetStatus={onSetStatus}
+            onBusyChange={setInspectBusy}
+            onSaved={({ saved, photo }) => {
+              setHistoryVersion((v) => v + 1);
+              if (!photo) {
+                if (saved > 0) toast.success(`Recorded for R${tree.row_id ?? '—'} P${tree.position ?? '—'}`);
+                setInspecting(false);
+              }
+            }}
+          />
+        ) : !editing ? (
           <>
             {field('Fruit', tree.fruit_type)}
             {field('Rootstock', tree.rootstock)}
@@ -193,7 +233,12 @@ export default function TreeDetailPanel({
                 <p className="text-sm text-ink mt-0.5 whitespace-pre-wrap">{tree.notes}</p>
               </div>
             ) : null}
-            <TreeHistory key={tree.tree_id} treeId={tree.tree_id} canEdit={canEdit} />
+            <TreeHistory
+              key={tree.tree_id}
+              treeId={tree.tree_id}
+              canEdit={canEdit}
+              refreshKey={historyVersion}
+            />
           </>
         ) : (
           <div className="space-y-3">
@@ -260,7 +305,18 @@ export default function TreeDetailPanel({
       </div>
 
       <div className="px-5 py-3 border-t border-line space-y-2">
-        {!editing ? (
+        {inspecting ? (
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-bark">Same form and records as a walk survey.</span>
+            <Button
+              variant="secondary"
+              onClick={() => setInspecting(false)}
+              disabled={inspectBusy}
+            >
+              Done
+            </Button>
+          </div>
+        ) : !editing ? (
           <div className="flex items-center justify-between gap-2">
             <button
               onClick={() => navigator.clipboard?.writeText(tree.tree_id)}
@@ -276,7 +332,10 @@ export default function TreeDetailPanel({
                     Move on map
                   </Button>
                 )}
-                <Button onClick={startEdit}>Edit tree</Button>
+                <Button variant="secondary" onClick={startEdit}>
+                  Edit tree
+                </Button>
+                <Button onClick={() => setInspecting(true)}>Inspect</Button>
               </div>
             )}
           </div>
