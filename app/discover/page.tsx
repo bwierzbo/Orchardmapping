@@ -5,6 +5,7 @@ import Link from 'next/link';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { upload } from '@vercel/blob/client';
+import { downscaleImage } from '@/lib/image-resize';
 import { toast } from 'sonner';
 import { ArrowLeft, Camera, Loader2, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -194,8 +195,11 @@ export default function DiscoverPage() {
         /* no EXIF / unreadable — fall through to device GPS */
       }
 
-      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
-      const blob = await upload(`photos/discover/${Date.now()}.${ext}`, file, {
+      // Resize only AFTER the EXIF read above — re-encoding drops EXIF,
+      // and the photo's GPS is the whole point of this flow.
+      const upFile = await downscaleImage(file);
+      const ext = (upFile.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+      const blob = await upload(`photos/discover/${Date.now()}.${ext}`, upFile, {
         access: 'public',
         handleUploadUrl: '/api/photos/upload',
       });

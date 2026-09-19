@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import {
   fetchTreeEvents,
@@ -196,10 +197,13 @@ export default function TreeHistory({
               ) : null}
               {e.photo_url && (
                 <a href={e.photo_url} target="_blank" rel="noreferrer" className="block mt-1">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
+                  {/* next/image so the optimizer serves a 56 px WebP instead
+                      of the multi-megabyte original for a thumbnail */}
+                  <Image
                     src={e.photo_url}
                     alt="Event photo"
+                    width={56}
+                    height={56}
                     className="h-14 w-14 rounded-md object-cover border border-line hover:opacity-90"
                   />
                 </a>

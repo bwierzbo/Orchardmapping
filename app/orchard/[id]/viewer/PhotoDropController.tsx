@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import { upload } from '@vercel/blob/client';
+import { downscaleImage } from '@/lib/image-resize';
 import { toast } from 'sonner';
 import { Camera, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -50,6 +51,7 @@ export default function PhotoDropController({
     if (!map) return;
     setBusy(true);
     try {
+      file = await downscaleImage(file);
       const ext =
         (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
       const blob = await upload(`photos/drops/${Date.now()}.${ext}`, file, {
