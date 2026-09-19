@@ -32,6 +32,23 @@ import { serializeTree } from '@/lib/serialize';
 import { toYMD } from '@/lib/dates';
 import { TRPCError } from '@trpc/server';
 import { listAreas, insertArea, updateArea, deleteArea, AREA_KINDS } from '@/lib/db/areas';
+import {
+  listMaterials,
+  getMaterial,
+  getProgramMode,
+  setProgramMode,
+  listApplications,
+  applicationHistory,
+  insertApplication,
+  deleteApplication,
+} from '@/lib/db/spray';
+import {
+  PROGRAM_MODES,
+  evaluateApplication,
+  availableMaterials,
+  recommendFor,
+  hasBlocker,
+} from '@/lib/spray-rules';
 import { parseBoundary } from '@/lib/orchard-boundary';
 
 /**
@@ -340,6 +357,130 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         const deleted = await deleteArea(input.id);
         if (!deleted) throw new TRPCError({ code: 'NOT_FOUND', message: 'Area not found' });
+        return { success: true };
+      }),
+  }),
+
+  /**
+   * Spray / IPM. The rules engine is the point: the same library reads
+   * differently depending on the orchard's program mode, and an
+   * application is checked against history before it is recorded.
+   */
+  spray: router({
+    /** Library scoped to this orchard's program mode, plus the mode itself. */
+    materials: publicProcedure
+      .input(z.object({ orchardId: z.string().min(1) }))
+      .query(async ({ input }) => {
+        const [library, mode] = await Promise.all([
+          listMaterials(),
+          getProgramMode(input.orchardId),
+        ]);
+        return { mode, materials: availableMaterials(library, mode), all: library };
+      }),
+
+    /** What to reach for against a target, best-fit first. */
+    recommend: publicProcedure
+      .input(z.object({ orchardId: z.string().min(1), target: z.string().min(1) }))
+      .query(async ({ input }) => {
+        const [library, mode] = await Promise.all([
+          listMaterials(),
+          getProgramMode(input.orchardId),
+        ]);
+        return { mode, options: recommendFor(library, input.target, mode) };
+      }),
+
+    applications: publicProcedure
+      .input(z.object({ orchardId: z.string().min(1), limit: z.number().int().min(1).max(500).optional() }))
+      .query(async ({ input }) => listApplications(input.orchardId, input.limit ?? 100)),
+
+    /** Dry run — what would this application trigger? Drives the live
+     *  warnings in the form before anything is saved. */
+    check: publicProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          materialId: z.number().int().positive(),
+          appliedAt: z.string(),
+        }),
+      )
+      .query(async ({ input }) => {
+        const [material, mode, history, library] = await Promise.all([
+          getMaterial(input.materialId),
+          getProgramMode(input.orchardId),
+          applicationHistory(input.orchardId),
+          listMaterials(),
+        ]);
+        if (!material) throw new TRPCError({ code: 'NOT_FOUND', message: 'Material not found' });
+        const findings = evaluateApplication({
+          material,
+          appliedAt: new Date(input.appliedAt),
+          mode,
+          history,
+          library,
+        });
+        return { findings, blocked: hasBlocker(findings) };
+      }),
+
+    record: protectedProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          materialId: z.number().int().positive(),
+          appliedAt: z.string(),
+          target: z.string().max(120).optional(),
+          rateValue: z.number().nonnegative().optional(),
+          rateUnit: z.string().max(40).optional(),
+          areaDescription: z.string().max(240).optional(),
+          applicator: z.string().max(120).optional(),
+          applicatorLicense: z.string().max(60).optional(),
+          airTempF: z.number().optional(),
+          windMph: z.number().nonnegative().optional(),
+          conditions: z.string().max(240).optional(),
+          notes: z.string().max(2000).optional(),
+        }),
+      )
+      .mutation(async ({ input, ctx }) => {
+        const [material, mode, history, library] = await Promise.all([
+          getMaterial(input.materialId),
+          getProgramMode(input.orchardId),
+          applicationHistory(input.orchardId),
+          listMaterials(),
+        ]);
+        if (!material) throw new TRPCError({ code: 'NOT_FOUND', message: 'Material not found' });
+        const findings = evaluateApplication({
+          material,
+          appliedAt: new Date(input.appliedAt),
+          mode,
+          history,
+          library,
+        });
+        // Certified-organic compliance is the one hard stop; everything
+        // else is the operator's call and is recorded with the warning.
+        if (hasBlocker(findings)) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: findings.find((f) => f.level === 'blocked')!.message,
+          });
+        }
+        const application = await insertApplication({
+          ...input,
+          createdBy: ctx.userId ?? null,
+        });
+        return { application, findings };
+      }),
+
+    setMode: protectedProcedure
+      .input(z.object({ orchardId: z.string().min(1), mode: z.enum(PROGRAM_MODES) }))
+      .mutation(async ({ input }) => {
+        await setProgramMode(input.orchardId, input.mode);
+        return { success: true, mode: input.mode };
+      }),
+
+    deleteApplication: protectedProcedure
+      .input(z.object({ id: z.number().int().positive() }))
+      .mutation(async ({ input }) => {
+        const ok = await deleteApplication(input.id);
+        if (!ok) throw new TRPCError({ code: 'NOT_FOUND', message: 'Application not found' });
         return { success: true };
       }),
   }),
