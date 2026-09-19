@@ -1,4 +1,5 @@
-import { type PhenologyMark, type PhenologyStage, stageDate } from './phenology';
+import { type PhenologyMark, type PhenologyStage, seasonOf, stageDate } from './phenology';
+import type { TrapCatch } from './traps';
 
 /**
  * Turning a program into dates.
@@ -194,6 +195,8 @@ export interface ResolveInput {
    *  suggested material, applied inside the step's window, completes it
    *  — recording the spray IS recording the work. */
   applications?: readonly MaterialApplication[];
+  /** Trap counts, which is how a threshold step learns it is live. */
+  trapCatches?: readonly TrapCatch[];
 }
 
 /**
@@ -344,17 +347,35 @@ export function resolveStep(step: ProgramStep, input: ResolveInput): ResolvedSte
       };
     }
 
-    case 'threshold':
-      return {
-        step,
-        status: 'monitor',
-        start: null,
-        end: null,
-        why: `On evidence: ${t.count}+ per ${stageWords(t.trap)}`,
-        daysUntil: null,
-        lastDoneOn: null,
-        dueAgainOn: null,
-      };
+    case 'threshold': {
+      // The FIRST qualifying catch of the season opens the step, and it
+      // stays open from there. Once the flight has started it does not
+      // un-start: what closes the step is doing the work, and for a
+      // material that has to be maintained, repeatDays brings it back.
+      const first = [...(input.trapCatches ?? [])]
+        .filter(
+          (c) =>
+            c.trapType === t.trap && c.count >= t.count && seasonOf(c.countedOn) === season
+        )
+        .sort((a, b) => a.countedOn.localeCompare(b.countedOn))[0];
+
+      if (!first) {
+        return {
+          step,
+          status: 'monitor',
+          start: null,
+          end: null,
+          why: `Watching the traps · acts on ${t.count}+ per ${stageWords(t.trap)}`,
+          daysUntil: null,
+          lastDoneOn: null,
+          dueAgainOn: null,
+        };
+      }
+      return openEnded(
+        first.countedOn,
+        `${first.count} caught per ${stageWords(t.trap)} on ${first.countedOn}`
+      );
+    }
   }
 }
 

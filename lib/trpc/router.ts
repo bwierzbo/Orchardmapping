@@ -44,6 +44,8 @@ import {
 } from '@/lib/db/spray';
 import { listMarks, markStage, unmarkStage } from '@/lib/db/phenology';
 import { completeStep, uncompleteStep } from '@/lib/db/program';
+import { addTrap, recordCount, retireTrap } from '@/lib/db/traps';
+import { TRAP_TYPES } from '@/lib/traps';
 import { PHENOLOGY_STAGES } from '@/lib/phenology';
 import {
   listPests,
@@ -614,6 +616,70 @@ export const appRouter = router({
         const ok = await uncompleteStep(input.orchardId, input.stepKey, input.completedOn);
         if (!ok) throw new TRPCError({ code: 'NOT_FOUND', message: 'Completion not found' });
         return { success: true };
+      }),
+  }),
+
+  /**
+   * Monitoring traps. A count is what turns a threshold step in the
+   * program from a standing watch into a job, so this is the entry
+   * point for the summer half of the year.
+   */
+  trap: router({
+    add: protectedProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          trapType: z.enum(TRAP_TYPES),
+          label: z.string().min(1).max(80),
+          locationNote: z.string().max(200).optional(),
+          deployedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        }),
+      )
+      .mutation(async ({ input, ctx }) => {
+        const id = await addTrap({ ...input, createdBy: ctx.userId });
+        return { id };
+      }),
+
+    retire: protectedProcedure
+      .input(
+        z.object({
+          id: z.number().int().positive(),
+          removedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        const ok = await retireTrap(input.id, input.removedOn);
+        if (!ok) throw new TRPCError({ code: 'NOT_FOUND', message: 'Trap not found or already down' });
+        return { success: true };
+      }),
+
+    /** The weekly round arrives as one submission, not one per trap. */
+    recordCounts: protectedProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          countedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          entries: z
+            .array(
+              z.object({
+                trapId: z.number().int().positive(),
+                count: z.number().int().min(0).max(10_000),
+              }),
+            )
+            .min(1)
+            .max(100),
+        }),
+      )
+      .mutation(async ({ input, ctx }) => {
+        for (const e of input.entries) {
+          await recordCount({
+            trapId: e.trapId,
+            countedOn: input.countedOn,
+            count: e.count,
+            createdBy: ctx.userId,
+          });
+        }
+        return { recorded: input.entries.length };
       }),
   }),
 });

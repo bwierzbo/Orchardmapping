@@ -1,5 +1,6 @@
 import { listProgramSteps, listCompletions } from './program';
 import { applicationHistory } from './spray';
+import { seasonCatches } from './traps';
 import { listMarks } from './phenology';
 import { getHours } from './weather';
 import { ddCrossingDates } from '../gdd';
@@ -21,13 +22,14 @@ export async function resolveSchedule(
 ): Promise<ResolvedStep[]> {
   const season = seasonOf(asOfYmd);
 
-  const [steps, marks, completions, sprays] = await Promise.all([
+  const [steps, marks, completions, sprays, trapCatches] = await Promise.all([
     listProgramSteps(),
     listMarks(orchardId),
     listCompletions(orchardId, season).catch(() => []),
     // A recorded spray completes the step that called for it, so the
     // work is never entered twice. 400 days covers a wrapped window.
     applicationHistory(orchardId, 400).catch(() => []),
+    seasonCatches(orchardId, season).catch(() => []),
   ]);
 
   const applications: MaterialApplication[] = sprays.map((a) => ({
@@ -56,5 +58,6 @@ export async function resolveSchedule(
     ddDate: (dd) => crossed.get(dd) ?? null,
     completions,
     applications,
+    trapCatches,
   });
 }

@@ -218,14 +218,89 @@ describe('condition triggers', () => {
 });
 
 describe('threshold triggers', () => {
-  it('is always a watch — evidence, not a date', () => {
-    const r = resolveStep(
-      step({ type: 'threshold', trap: 'red_sphere', count: 1 }),
-      input('2026-07-15')
-    );
+  const kaolin = step({ type: 'threshold', trap: 'red_sphere', count: 1 }, 'kaolin', {
+    materialKey: 'kaolin',
+  });
+
+  it('is a watch while the traps are empty', () => {
+    const r = resolveStep(kaolin, input('2026-07-15'));
     expect(r.status).toBe('monitor');
     expect(r.start).toBeNull();
     expect(r.why).toContain('red sphere');
+  });
+
+  it('opens on the first qualifying catch, and says what was caught', () => {
+    const r = resolveStep(kaolin, {
+      ...input('2026-07-15'),
+      trapCatches: [{ trapType: 'red_sphere', countedOn: '2026-07-08', count: 2 }],
+    });
+    expect(r.status).toBe('due');
+    expect(r.start).toBe('2026-07-08');
+    expect(r.end).toBeNull();
+    expect(r.why).toContain('2 caught per red sphere');
+  });
+
+  it('ignores a catch below the threshold', () => {
+    const r = resolveStep(
+      step({ type: 'threshold', trap: 'red_sphere', count: 5 }, 'k2'),
+      {
+        ...input('2026-07-15'),
+        trapCatches: [{ trapType: 'red_sphere', countedOn: '2026-07-08', count: 2 }],
+      }
+    );
+    expect(r.status).toBe('monitor');
+  });
+
+  it('ignores a catch in a different trap type', () => {
+    const r = resolveStep(kaolin, {
+      ...input('2026-07-15'),
+      trapCatches: [{ trapType: 'cm_pheromone', countedOn: '2026-07-08', count: 9 }],
+    });
+    expect(r.status).toBe('monitor');
+  });
+
+  it('ignores last season\'s flight', () => {
+    const r = resolveStep(kaolin, {
+      ...input('2026-07-15'),
+      trapCatches: [{ trapType: 'red_sphere', countedOn: '2025-07-08', count: 6 }],
+    });
+    expect(r.status).toBe('monitor');
+  });
+
+  it('anchors on the FIRST catch, not the biggest or the latest', () => {
+    const r = resolveStep(kaolin, {
+      ...input('2026-08-01'),
+      trapCatches: [
+        { trapType: 'red_sphere', countedOn: '2026-07-22', count: 11 },
+        { trapType: 'red_sphere', countedOn: '2026-07-08', count: 1 },
+      ],
+    });
+    expect(r.start).toBe('2026-07-08');
+  });
+
+  it('cycles done and due again as the film needs renewing', () => {
+    const maintained = step({ type: 'threshold', trap: 'red_sphere', count: 1 }, 'kaolin', {
+      materialKey: 'kaolin',
+      repeatDays: 10,
+    });
+    const catches = [{ trapType: 'red_sphere' as const, countedOn: '2026-07-08', count: 2 }];
+    const sprayed = [{ materialKey: 'kaolin', appliedOn: '2026-07-09' }];
+
+    const fresh = resolveStep(maintained, {
+      ...input('2026-07-12'),
+      trapCatches: catches,
+      applications: sprayed,
+    });
+    expect(fresh.status).toBe('done');
+    expect(fresh.dueAgainOn).toBe('2026-07-19');
+
+    const worn = resolveStep(maintained, {
+      ...input('2026-07-25'),
+      trapCatches: catches,
+      applications: sprayed,
+    });
+    expect(worn.status).toBe('due');
+    expect(worn.lastDoneOn).toBe('2026-07-09');
   });
 });
 
@@ -345,10 +420,10 @@ describe('completion', () => {
     expect(r.lastDoneOn).toBe('2026-09-20');
   });
 
-  it('never marks a watch done', () => {
+  it('never marks a condition watch done', () => {
     const r = resolveStep(
-      step({ type: 'threshold', trap: 'red_sphere', count: 1 }, 'kaolin'),
-      { ...input('2026-07-15'), completions: [{ stepKey: 'kaolin', completedOn: '2026-07-10' }] }
+      step({ type: 'condition', kind: 'scab_infection', fromStage: 'green_tip' }, 'scab'),
+      { ...input('2026-04-15'), completions: [{ stepKey: 'scab', completedOn: '2026-04-10' }] }
     );
     expect(r.status).toBe('monitor');
   });
