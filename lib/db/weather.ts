@@ -1,5 +1,5 @@
 import { sql } from '@vercel/postgres';
-import type { HourTemp } from '../chill';
+import type { HourWeather } from '../weather-hour';
 import { fetchRecentHours, nowLocalIso } from '../openmeteo';
 
 /**
@@ -15,26 +15,44 @@ export async function latestHourTs(orchardId: string): Promise<string | null> {
   return (rows[0]?.max_ts as string | null) ?? null;
 }
 
-/** Chunked parameterized bulk insert; duplicate hours are ignored. */
-export async function insertHours(orchardId: string, hours: readonly HourTemp[]): Promise<number> {
+/**
+ * Chunked parameterized bulk upsert.
+ *
+ * A stored hour's temperature is never overwritten — ERA5 is the same
+ * value on every fetch, and treating it as immutable keeps a re-run
+ * cheap to reason about. Moisture, though, fills in over NULL: rows
+ * written before migration 023 have temperature only, so re-running the
+ * backfill with --refetch repairs the history in place.
+ *
+ * Returns the number of rows inserted or updated.
+ */
+export async function insertHours(
+  orchardId: string,
+  hours: readonly HourWeather[]
+): Promise<number> {
   const CHUNK = 500;
-  let inserted = 0;
+  const COLS = 4; // ts, temp_c, precip_mm, rh_pct
+  let written = 0;
   for (let i = 0; i < hours.length; i += CHUNK) {
     const chunk = hours.slice(i, i + CHUNK);
     const values: unknown[] = [orchardId];
     const tuples = chunk.map((h, j) => {
-      values.push(h.ts, h.tempC);
-      return `($1, $${j * 2 + 2}::timestamp, $${j * 2 + 3}::real)`;
+      values.push(h.ts, h.tempC, h.precipMm, h.rhPct);
+      const b = j * COLS + 2;
+      return `($1, $${b}::timestamp, $${b + 1}::real, $${b + 2}::real, $${b + 3}::real)`;
     });
     const res = await sql.query(
-      `INSERT INTO weather_hours (orchard_id, ts, temp_c)
+      `INSERT INTO weather_hours (orchard_id, ts, temp_c, precip_mm, rh_pct)
        VALUES ${tuples.join(', ')}
-       ON CONFLICT (orchard_id, ts) DO NOTHING`,
+       ON CONFLICT (orchard_id, ts) DO UPDATE SET
+         precip_mm = COALESCE(weather_hours.precip_mm, EXCLUDED.precip_mm),
+         rh_pct    = COALESCE(weather_hours.rh_pct, EXCLUDED.rh_pct)
+       WHERE weather_hours.precip_mm IS NULL OR weather_hours.rh_pct IS NULL`,
       values
     );
-    inserted += res.rowCount ?? 0;
+    written += res.rowCount ?? 0;
   }
-  return inserted;
+  return written;
 }
 
 /** Hours in [startYmd, endYmd] (whole local days, inclusive), ascending. */
@@ -42,16 +60,21 @@ export async function getHours(
   orchardId: string,
   startYmd: string,
   endYmd: string
-): Promise<HourTemp[]> {
+): Promise<HourWeather[]> {
   const { rows } = await sql`
-    SELECT to_char(ts, 'YYYY-MM-DD"T"HH24:MI') AS ts, temp_c
+    SELECT to_char(ts, 'YYYY-MM-DD"T"HH24:MI') AS ts, temp_c, precip_mm, rh_pct
     FROM weather_hours
     WHERE orchard_id = ${orchardId}
       AND ts >= ${`${startYmd}T00:00`}::timestamp
       AND ts < (${endYmd}::date + 1)
     ORDER BY ts
   `;
-  return rows.map((r) => ({ ts: r.ts as string, tempC: Number(r.temp_c) }));
+  return rows.map((r) => ({
+    ts: r.ts as string,
+    tempC: Number(r.temp_c),
+    precipMm: r.precip_mm == null ? null : Number(r.precip_mm),
+    rhPct: r.rh_pct == null ? null : Number(r.rh_pct),
+  }));
 }
 
 export interface PriorSeasonAggregates {

@@ -2,18 +2,25 @@ import { config } from 'dotenv';
 config({ path: '.env.local' });
 
 /**
- * One-time (idempotent) backfill of hourly temperatures for every
- * orchard, from START_YMD through the ERA5 archive horizon, then
- * topped up to now via the forecast API's past_days window.
+ * One-time (idempotent) backfill of hourly weather for every orchard,
+ * from START_YMD through the ERA5 archive horizon, then topped up to
+ * now via the forecast API's past_days window.
  *
- *   npx tsx scripts/backfill-weather.ts [start=2021-01-01]
+ *   npx tsx scripts/backfill-weather.ts [start=2021-01-01] [--refetch]
+ *
+ * Normally each orchard resumes from its newest stored hour, so a re-run
+ * is cheap. --refetch walks the whole range again from START_YMD: use it
+ * to fill precipitation and humidity into rows written before migration
+ * 023 (stored temperatures are left untouched either way).
  */
 
 import { sql } from '@vercel/postgres';
 import { fetchArchiveHours, fetchRecentHours, nowLocalIso } from '../lib/openmeteo';
 import { insertHours, latestHourTs } from '../lib/db/weather';
 
-const START_YMD = process.argv[2] ?? '2021-01-01';
+const args = process.argv.slice(2);
+const REFETCH = args.includes('--refetch');
+const START_YMD = args.find((a) => !a.startsWith('--')) ?? '2021-01-01';
 const ARCHIVE_LAG_DAYS = 7; // ERA5 publishes with a ~5-day delay
 
 async function main() {
@@ -31,7 +38,7 @@ async function main() {
       console.log(`- ${o.id}: no center coordinates, skipping`);
       continue;
     }
-    const existing = await latestHourTs(o.id as string);
+    const existing = REFETCH ? null : await latestHourTs(o.id as string);
     const start = existing && existing.slice(0, 10) > START_YMD ? existing.slice(0, 10) : START_YMD;
     console.log(`- ${o.id} (${o.name}): archive ${start} → ${archiveEnd}`);
 
@@ -44,7 +51,7 @@ async function main() {
       const hours = await fetchArchiveHours(o.lat, o.lng, chunkStart, chunkEnd);
       const inserted = await insertHours(o.id as string, hours);
       total += inserted;
-      console.log(`    ${chunkStart} → ${chunkEnd}: ${hours.length} hours fetched, ${inserted} new`);
+      console.log(`    ${chunkStart} → ${chunkEnd}: ${hours.length} hours fetched, ${inserted} written`);
       chunkStart = `${endYear + 1}-01-01`;
     }
 
@@ -52,7 +59,7 @@ async function main() {
     const recent = await fetchRecentHours(o.lat, o.lng, ARCHIVE_LAG_DAYS + 2, now);
     const recentInserted = await insertHours(o.id as string, recent);
     total += recentInserted;
-    console.log(`    recent top-up: ${recentInserted} new · total ${total} rows inserted`);
+    console.log(`    recent top-up: ${recentInserted} written · total ${total} rows written`);
   }
 }
 

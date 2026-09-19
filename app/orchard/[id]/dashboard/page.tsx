@@ -1,6 +1,7 @@
 import { cache, Suspense } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { auth } from '@clerk/nextjs/server';
 import type { Metadata } from 'next';
 import { ArrowLeft, Bug, Map as MapIcon, SprayCan } from 'lucide-react';
 import { getOrchardConfigById, getAllOrchardConfigs } from '@/lib/db/orchards';
@@ -12,6 +13,7 @@ import StatusBadge from '@/components/StatusBadge';
 import OrchardSwitcher from '../viewer/OrchardSwitcher';
 import OrchardGrid from './OrchardGrid';
 import SeasonCard from './SeasonCard';
+import StageCard from './StageCard';
 import TreeTable from './TreeTable';
 import {
   SegmentedStatusBar,
@@ -83,10 +85,11 @@ function careBucketList(b: CareBuckets) {
 
 export default async function DashboardPage({ params }: PageProps) {
   const { id } = await params;
-  const [orchard, allOrchards, dbTrees] = await Promise.all([
+  const [orchard, allOrchards, dbTrees, { userId }] = await Promise.all([
     getOrchard(id),
     getAllOrchardConfigs(),
     getTreesByOrchard(id),
+    auth(),
   ]);
   if (!orchard) notFound();
 
@@ -148,6 +151,17 @@ export default async function DashboardPage({ params }: PageProps) {
 
       <div className="max-w-6xl mx-auto px-5 py-8 space-y-6">
         <p className="survey-caption">{caption}</p>
+
+        <Suspense
+          fallback={
+            <section className="bg-surface border border-line rounded-lg shadow-xs p-5">
+              <p className="survey-caption">Season · Growth stage</p>
+              <p className="text-sm text-bark mt-2">Loading growth stage…</p>
+            </section>
+          }
+        >
+          <StageCard orchardId={orchard.id} canEdit={!!userId} />
+        </Suspense>
 
         <Suspense
           fallback={

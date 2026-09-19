@@ -42,6 +42,8 @@ import {
   insertApplication,
   deleteApplication,
 } from '@/lib/db/spray';
+import { listMarks, markStage, unmarkStage } from '@/lib/db/phenology';
+import { PHENOLOGY_STAGES } from '@/lib/phenology';
 import {
   listPests,
   getPest,
@@ -547,6 +549,37 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         const ok = await deleteObservation(input.id);
         if (!ok) throw new TRPCError({ code: 'NOT_FOUND', message: 'Observation not found' });
+        return { success: true };
+      }),
+  }),
+
+  /**
+   * Growth stages. Stage-anchored spray timing ("copper at half-inch
+   * green") can only be placed on a calendar once the orchard records
+   * when it actually got there.
+   */
+  phenology: router({
+    list: publicProcedure
+      .input(z.object({ orchardId: z.string().min(1) }))
+      .query(async ({ input }) => listMarks(input.orchardId)),
+
+    mark: protectedProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          stage: z.enum(PHENOLOGY_STAGES),
+          // Plain YYYY-MM-DD: passes to Postgres verbatim, no day-shift
+          observedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          note: z.string().max(500).optional(),
+        }),
+      )
+      .mutation(async ({ input, ctx }) => markStage({ ...input, createdBy: ctx.userId })),
+
+    unmark: protectedProcedure
+      .input(z.object({ id: z.number().int().positive() }))
+      .mutation(async ({ input }) => {
+        const ok = await unmarkStage(input.id);
+        if (!ok) throw new TRPCError({ code: 'NOT_FOUND', message: 'Mark not found' });
         return { success: true };
       }),
   }),

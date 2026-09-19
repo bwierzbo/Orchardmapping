@@ -1,33 +1,54 @@
-import type { HourTemp } from './chill';
+import type { HourWeather } from './weather-hour';
 
 /**
- * Open-Meteo hourly temperature fetchers.
+ * Open-Meteo hourly weather fetchers.
  *
  * Free, keyless, gridded to the orchard's lat/lng — which matters in
  * the Olympic rain shadow where the nearest airport station can be a
  * different climate. All requests ask for America/Los_Angeles local
  * time; timestamps come back as naive local ISO strings and are stored
  * that way (chill/GDD models bucket by local calendar day).
+ *
+ * Precipitation and humidity ride along in the same request as
+ * temperature — the disease models are wetness-driven, and asking for
+ * three variables costs no more calls than asking for one.
  */
 
 const TIMEZONE = 'America/Los_Angeles';
 
+/** The hourly variables every request asks for, in one place. */
+const HOURLY_VARS = 'temperature_2m,precipitation,relative_humidity_2m';
+
 interface OpenMeteoHourly {
-  hourly?: { time?: string[]; temperature_2m?: (number | null)[] };
+  hourly?: {
+    time?: string[];
+    temperature_2m?: (number | null)[];
+    precipitation?: (number | null)[];
+    relative_humidity_2m?: (number | null)[];
+  };
   reason?: string;
 }
 
-async function fetchHourly(url: string): Promise<HourTemp[]> {
+async function fetchHourly(url: string): Promise<HourWeather[]> {
   const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
   if (!res.ok) throw new Error(`Open-Meteo ${res.status}: ${url}`);
   const body = (await res.json()) as OpenMeteoHourly;
   const time = body.hourly?.time ?? [];
   const temp = body.hourly?.temperature_2m ?? [];
-  const out: HourTemp[] = [];
+  const precip = body.hourly?.precipitation ?? [];
+  const rh = body.hourly?.relative_humidity_2m ?? [];
+  const out: HourWeather[] = [];
   for (let i = 0; i < time.length; i++) {
     const t = temp[i];
     if (t == null) continue; // future or missing hours come back null
-    out.push({ ts: time[i], tempC: t });
+    // Moisture may be absent on an archive that predates a variable, so
+    // it degrades to null rather than dropping the whole hour.
+    out.push({
+      ts: time[i],
+      tempC: t,
+      precipMm: precip[i] ?? null,
+      rhPct: rh[i] ?? null,
+    });
   }
   return out;
 }
@@ -41,11 +62,11 @@ export async function fetchArchiveHours(
   lng: number,
   startYmd: string,
   endYmd: string
-): Promise<HourTemp[]> {
+): Promise<HourWeather[]> {
   const url =
     `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lng}` +
     `&start_date=${startYmd}&end_date=${endYmd}` +
-    `&hourly=temperature_2m&timezone=${encodeURIComponent(TIMEZONE)}`;
+    `&hourly=${HOURLY_VARS}&timezone=${encodeURIComponent(TIMEZONE)}`;
   return fetchHourly(url);
 }
 
@@ -59,11 +80,11 @@ export async function fetchRecentHours(
   lng: number,
   pastDays: number,
   nowLocalIso: string
-): Promise<HourTemp[]> {
+): Promise<HourWeather[]> {
   const days = Math.min(92, Math.max(1, Math.ceil(pastDays)));
   const url =
     `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}` +
-    `&hourly=temperature_2m&past_days=${days}&forecast_days=1` +
+    `&hourly=${HOURLY_VARS}&past_days=${days}&forecast_days=1` +
     `&timezone=${encodeURIComponent(TIMEZONE)}`;
   const hours = await fetchHourly(url);
   return hours.filter((h) => h.ts <= nowLocalIso);
