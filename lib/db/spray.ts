@@ -51,6 +51,9 @@ function decodeMaterial(row: Record<string, unknown>): SprayMaterial {
     rate_unit: (row.rate_unit as string | null) ?? null,
     targets: (row.targets as string[] | null) ?? [],
     conflicts_with: (row.conflicts_with as string[] | null) ?? [],
+    conflicts_after: (row.conflicts_after as string[] | null) ?? [],
+    conflict_after_days:
+      row.conflict_after_days == null ? null : Number(row.conflict_after_days),
     conflict_days: num(row.conflict_days),
     max_per_season: num(row.max_per_season),
     notes: (row.notes as string | null) ?? null,

@@ -23,7 +23,7 @@ export async function resolveSchedule(
   const season = seasonOf(asOfYmd);
 
   const [steps, marks, completions, sprays, trapCatches] = await Promise.all([
-    listProgramSteps(),
+    listProgramSteps(orchardId),
     listMarks(orchardId),
     listCompletions(orchardId, season).catch(() => []),
     // A recorded spray completes the step that called for it, so the

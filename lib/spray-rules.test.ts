@@ -22,8 +22,12 @@ function material(over: Partial<SprayMaterial> = {}): SprayMaterial {
     rate_high: null,
     rate_unit: null,
     targets: ['apple_scab'],
-    conflicts_with: ['horticultural_oil'],
-    conflict_days: 14,
+    // Lime sulfur has NO symmetric oil conflict: mixed with oil it is a
+    // registered bloom thinner. The hazard is one-way, and lives on oil.
+    conflicts_with: [],
+    conflict_days: null,
+    conflicts_after: [],
+    conflict_after_days: null,
     max_per_season: null,
     notes: null,
     ...over,
@@ -36,9 +40,21 @@ const OIL = material({
   name: 'Horticultural oil',
   material_type: 'insecticide',
   targets: ['aphids', 'codling_moth'],
-  conflicts_with: ['lime_sulfur', 'wettable_sulfur'],
+  conflicts_with: ['wettable_sulfur'],
   conflict_days: 14,
+  // "Do not apply oil to foliage treated with lime-sulfur" — one-way
+  conflicts_after: ['lime_sulfur'],
+  conflict_after_days: 14,
   rei_hours: 12,
+});
+
+const WETTABLE = material({
+  id: 5,
+  material_key: 'wettable_sulfur',
+  name: 'Wettable sulfur',
+  targets: ['powdery_mildew'],
+  conflicts_with: ['horticultural_oil'],
+  conflict_days: 14,
 });
 
 const COPPER = material({
@@ -64,7 +80,7 @@ const CONVENTIONAL = material({
   phi_days: 3,
 });
 
-const LIBRARY = [material(), OIL, COPPER, CONVENTIONAL];
+const LIBRARY = [material(), OIL, COPPER, CONVENTIONAL, WETTABLE];
 const MAY = new Date('2026-05-01T10:00:00Z');
 
 describe('program mode', () => {
@@ -104,38 +120,51 @@ describe('program mode', () => {
   });
 });
 
-describe('sulfur ↔ oil interval', () => {
-  const eightDaysBefore = [
+describe('wettable sulfur ↔ oil interval (symmetric)', () => {
+  // WSU: "Oil plus wettable sulfur: Either of these products applied
+  // within 14 days of one another may mark light colored cherries."
+  const oilEightDaysBefore = [
     { material_key: 'horticultural_oil', material_name: 'Horticultural oil', applied_at: '2026-04-23T10:00:00Z', applied_on: '2026-04-23' },
   ];
 
-  it('flags sulfur applied too soon after oil', () => {
+  it('flags wettable sulfur applied too soon after oil', () => {
     const f = evaluateApplication({
-      material: material(),
+      material: WETTABLE,
       appliedAt: MAY,
       mode: 'organic_practices',
-      history: eightDaysBefore,
+      history: oilEightDaysBefore,
       library: LIBRARY,
     });
     expect(f.some((x) => x.level === 'warning' && /14 days/.test(x.message))).toBe(true);
   });
 
-  it('flags the reverse order too — oil soon after sulfur', () => {
+  it('flags the reverse order too — oil soon after wettable sulfur', () => {
     const f = evaluateApplication({
       material: OIL,
       appliedAt: MAY,
       mode: 'organic_practices',
       history: [
-        { material_key: 'lime_sulfur', material_name: 'Lime sulfur', applied_at: '2026-04-25T10:00:00Z', applied_on: '2026-04-25' },
+        { material_key: 'wettable_sulfur', material_name: 'Wettable sulfur', applied_at: '2026-04-25T10:00:00Z', applied_on: '2026-04-25' },
       ],
       library: LIBRARY,
     });
     expect(f.some((x) => x.level === 'warning' && /14 days/.test(x.message))).toBe(true);
   });
 
+  it('says it once when both materials name each other', () => {
+    const f = evaluateApplication({
+      material: WETTABLE,
+      appliedAt: MAY,
+      mode: 'organic_practices',
+      history: oilEightDaysBefore,
+      library: LIBRARY,
+    });
+    expect(f.filter((x) => /14 days/.test(x.message))).toHaveLength(1);
+  });
+
   it('is quiet once the interval has passed', () => {
     const f = evaluateApplication({
-      material: material(),
+      material: WETTABLE,
       appliedAt: MAY,
       mode: 'organic_practices',
       history: [
@@ -144,6 +173,82 @@ describe('sulfur ↔ oil interval', () => {
       library: LIBRARY,
     });
     expect(f.some((x) => /14 days/.test(x.message))).toBe(false);
+  });
+});
+
+describe('lime sulfur ↔ oil (directional, not symmetric)', () => {
+  const limeSulfurYesterday = [
+    { material_key: 'lime_sulfur', material_name: 'Lime sulfur', applied_at: '2026-04-30T10:00:00Z', applied_on: '2026-04-30' },
+  ];
+  const oilYesterday = [
+    { material_key: 'horticultural_oil', material_name: 'Horticultural oil', applied_at: '2026-04-30T10:00:00Z', applied_on: '2026-04-30' },
+  ];
+
+  it('warns about OIL onto foliage that already carries lime sulfur', () => {
+    const f = evaluateApplication({
+      material: OIL,
+      appliedAt: MAY,
+      mode: 'organic_practices',
+      history: limeSulfurYesterday,
+      library: LIBRARY,
+    });
+    const warn = f.find((x) => x.level === 'warning' && /foliage still carrying/.test(x.message));
+    expect(warn).toBeDefined();
+  });
+
+  it('does not imply a citation it does not have', () => {
+    // WSU publishes no interval for this pair, so the message has to own
+    // the number as the app's own conservative default.
+    const f = evaluateApplication({
+      material: OIL,
+      appliedAt: MAY,
+      mode: 'organic_practices',
+      history: limeSulfurYesterday,
+      library: LIBRARY,
+    });
+    const warn = f.find((x) => /foliage still carrying/.test(x.message))!;
+    expect(warn.message).toMatch(/no interval is published/i);
+    expect(warn.message).toMatch(/conservative default/i);
+  });
+
+  it('says NOTHING about lime sulfur applied after oil — that is the other way round', () => {
+    const f = evaluateApplication({
+      material: material(),
+      appliedAt: MAY,
+      mode: 'organic_practices',
+      history: oilYesterday,
+      library: LIBRARY,
+    });
+    expect(f.some((x) => x.level === 'warning' && /foliage|14 days/.test(x.message))).toBe(false);
+  });
+
+  it('leaves a same-day bloom tank mix alone', () => {
+    // 1-3% lime sulfur with 1-1.5% summer oil is WSU's registered bloom
+    // thinner, up to three applications. Warning on it would be wrong.
+    const sameDay = [
+      { material_key: 'lime_sulfur', material_name: 'Lime sulfur', applied_at: '2026-05-01T10:00:00Z', applied_on: '2026-05-01' },
+    ];
+    const f = evaluateApplication({
+      material: OIL,
+      appliedAt: MAY,
+      mode: 'organic_practices',
+      history: sameDay,
+      library: LIBRARY,
+    });
+    expect(f.some((x) => x.level === 'warning' && /foliage/.test(x.message))).toBe(false);
+  });
+
+  it('is quiet once the default interval has passed', () => {
+    const f = evaluateApplication({
+      material: OIL,
+      appliedAt: MAY,
+      mode: 'organic_practices',
+      history: [
+        { material_key: 'lime_sulfur', material_name: 'Lime sulfur', applied_at: '2026-04-10T10:00:00Z', applied_on: '2026-04-10' },
+      ],
+      library: LIBRARY,
+    });
+    expect(f.some((x) => /foliage/.test(x.message))).toBe(false);
   });
 });
 
@@ -193,7 +298,7 @@ describe('availability and recommendation', () => {
   it('hides non-OMRI material from a certified orchard', () => {
     const list = availableMaterials(LIBRARY, 'certified_organic');
     expect(list.some((m) => m.material_key === 'malathion')).toBe(false);
-    expect(list.length).toBe(3);
+    expect(list.length).toBe(LIBRARY.filter((m) => m.omri_listed).length);
   });
 
   it('ranks OMRI first in organic modes', () => {

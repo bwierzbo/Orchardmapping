@@ -31,16 +31,58 @@ function decode(row: Record<string, unknown>): ProgramStep {
   };
 }
 
-/** Active steps, in program order. */
-export async function listProgramSteps(): Promise<ProgramStep[]> {
+/**
+ * The steps this orchard runs, in program order.
+ *
+ * program_steps is global — regional agronomy, the same for every
+ * orchard on this coast — while whether a given orchard WANTS a step is
+ * local. A missing settings row means enabled, so the override table
+ * only ever holds deliberate opt-outs.
+ */
+export async function listProgramSteps(orchardId: string): Promise<ProgramStep[]> {
   const { rows } = await sql`
-    SELECT key, title, detail, category, pest_key, material_key,
-           trigger_spec, repeat_days, sort_order
-    FROM program_steps
-    WHERE is_active
-    ORDER BY sort_order, key
+    SELECT s.key, s.title, s.detail, s.category, s.pest_key, s.material_key,
+           s.trigger_spec, s.repeat_days, s.sort_order
+    FROM program_steps s
+    LEFT JOIN orchard_step_settings o
+      ON o.step_key = s.key AND o.orchard_id = ${orchardId}
+    WHERE s.is_active AND COALESCE(o.enabled, TRUE)
+    ORDER BY s.sort_order, s.key
   `;
   return rows.map(decode);
+}
+
+export interface ProgramStepChoice extends ProgramStep {
+  enabled: boolean;
+}
+
+/** Every step with its on/off state — what the settings UI lists. */
+export async function listAllProgramSteps(orchardId: string): Promise<ProgramStepChoice[]> {
+  const { rows } = await sql`
+    SELECT s.key, s.title, s.detail, s.category, s.pest_key, s.material_key,
+           s.trigger_spec, s.repeat_days, s.sort_order,
+           COALESCE(o.enabled, TRUE) AS enabled
+    FROM program_steps s
+    LEFT JOIN orchard_step_settings o
+      ON o.step_key = s.key AND o.orchard_id = ${orchardId}
+    WHERE s.is_active
+    ORDER BY s.sort_order, s.key
+  `;
+  return rows.map((r) => ({ ...decode(r), enabled: Boolean(r.enabled) }));
+}
+
+/** Turn a step on or off for one orchard. */
+export async function setStepEnabled(
+  orchardId: string,
+  stepKey: string,
+  enabled: boolean
+): Promise<void> {
+  await sql`
+    INSERT INTO orchard_step_settings (orchard_id, step_key, enabled)
+    VALUES (${orchardId}, ${stepKey}, ${enabled})
+    ON CONFLICT (orchard_id, step_key)
+    DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = NOW()
+  `;
 }
 
 /**

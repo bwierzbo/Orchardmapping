@@ -5,6 +5,7 @@ import { auth } from '@clerk/nextjs/server';
 import { ArrowLeft, CalendarRange } from 'lucide-react';
 import { getOrchardConfigById } from '@/lib/db/orchards';
 import { resolveSchedule } from '@/lib/db/schedule';
+import { listAllProgramSteps } from '@/lib/db/program';
 import { listMarks } from '@/lib/db/phenology';
 import { getHours } from '@/lib/db/weather';
 import { milestoneDates } from '@/lib/gdd';
@@ -13,6 +14,7 @@ import { nowLocalIso } from '@/lib/openmeteo';
 import { formatYMD } from '@/lib/dates';
 import type { StepStatus } from '@/lib/ipm-schedule';
 import SeasonTimeline, { type TimelineMarker } from './SeasonTimeline';
+import StepToggle from './StepToggle';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,11 +48,15 @@ export default async function ProgramPage({ params }: PageProps) {
   const today = nowLocalIso().slice(0, 10);
   const season = seasonOf(today);
 
-  const [schedule, marks, hours] = await Promise.all([
+  const [schedule, marks, hours, allSteps] = await Promise.all([
     resolveSchedule(orchard.id, today).catch(() => []),
     listMarks(orchard.id).catch(() => []),
     getHours(orchard.id, `${season}-01-01`, today).catch(() => []),
+    // Every step, switched off ones included — the timeline shows the
+    // plan, this list is where the plan gets decided.
+    listAllProgramSteps(orchard.id).catch(() => []),
   ]);
+  const resolvedByKey = new Map(schedule.map((r) => [r.step.key, r]));
 
   // Two kinds of anchor the program hangs off, on one rail: stages the
   // orchard was observed to reach, and heat totals it accumulated.
@@ -137,37 +143,66 @@ export default async function ProgramPage({ params }: PageProps) {
         )}
 
         <section className="bg-surface border border-line rounded-lg p-4">
-          <h2 className="font-display text-base text-ink mb-2">Every step</h2>
+          <h2 className="font-display text-base text-ink">Every step</h2>
+          <p className="text-xs text-bark mt-0.5 mb-2">
+            Switch off anything this orchard doesn&apos;t run. It drops out of the
+            chart and the due list, and keeps its history for whenever you switch it
+            back on.
+          </p>
           <ul className="divide-y divide-line">
-            {schedule.map((r) => (
-              <li key={r.step.key} className="py-2.5">
-                <div className="flex flex-wrap items-baseline gap-x-2">
-                  <span className="text-ink font-medium">{r.step.title}</span>
-                  <span className="font-mono text-[10px] uppercase tracking-widest text-bark">
-                    {STATUS_LABEL[r.status]}
-                  </span>
-                  {r.start && (
-                    <span className="font-mono text-[11px] text-bark">
-                      {formatYMD(r.start)} → {r.end ? formatYMD(r.end) : 'open'}
-                    </span>
+            {allSteps.map((step) => {
+              const r = resolvedByKey.get(step.key);
+              return (
+                <li
+                  key={step.key}
+                  className={`py-2.5 flex items-start gap-3 ${step.enabled ? '' : 'opacity-55'}`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-baseline gap-x-2">
+                      <span className="text-ink font-medium">{step.title}</span>
+                      {r ? (
+                        <span className="font-mono text-[10px] uppercase tracking-widest text-bark">
+                          {STATUS_LABEL[r.status]}
+                        </span>
+                      ) : (
+                        <span className="font-mono text-[10px] uppercase tracking-widest text-bark">
+                          Not running
+                        </span>
+                      )}
+                      {r?.start && (
+                        <span className="font-mono text-[11px] text-bark">
+                          {formatYMD(r.start)} → {r.end ? formatYMD(r.end) : 'open'}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-bark mt-0.5">{step.detail}</p>
+                    {r && (
+                      <p className="survey-caption mt-1">
+                        {r.why}
+                        {r.lastDoneOn && ` · last done ${formatYMD(r.lastDoneOn)}`}
+                        {r.dueAgainOn && r.status === 'done' && ` · again ${formatYMD(r.dueAgainOn)}`}
+                      </p>
+                    )}
+                    {step.pestKey && (
+                      <Link
+                        href={`/orchard/${orchard.id}/pests/${step.pestKey}`}
+                        className="text-xs text-canopy-700 dark:text-canopy-100 hover:underline"
+                      >
+                        What this is for →
+                      </Link>
+                    )}
+                  </div>
+                  {userId && (
+                    <StepToggle
+                      orchardId={orchard.id}
+                      stepKey={step.key}
+                      enabled={step.enabled}
+                      title={step.title}
+                    />
                   )}
-                </div>
-                <p className="text-xs text-bark mt-0.5">{r.step.detail}</p>
-                <p className="survey-caption mt-1">
-                  {r.why}
-                  {r.lastDoneOn && ` · last done ${formatYMD(r.lastDoneOn)}`}
-                  {r.dueAgainOn && r.status === 'done' && ` · again ${formatYMD(r.dueAgainOn)}`}
-                </p>
-                {r.step.pestKey && (
-                  <Link
-                    href={`/orchard/${orchard.id}/pests/${r.step.pestKey}`}
-                    className="text-xs text-canopy-700 dark:text-canopy-100 hover:underline"
-                  >
-                    What this is for →
-                  </Link>
-                )}
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
         </section>
       </div>

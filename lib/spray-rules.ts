@@ -43,8 +43,18 @@ export interface SprayMaterial {
   rate_high: number | null;
   rate_unit: string | null;
   targets: string[];
+  /** Must not be applied within conflict_days of these, in EITHER order. */
   conflicts_with: string[];
   conflict_days: number | null;
+  /**
+   * Must not be applied AFTER these, within conflict_after_days —
+   * one-way, unlike conflicts_with. Oil onto foliage already carrying
+   * lime sulfur is the case this exists for: mixing the two is a
+   * registered bloom thinner, but following one with the other is not
+   * the same operation.
+   */
+  conflicts_after: string[];
+  conflict_after_days: number | null;
   max_per_season: number | null;
   notes: string | null;
 }
@@ -96,9 +106,6 @@ export function evaluateApplication(args: {
 }): Finding[] {
   const { material, appliedAt, mode, history, library = [] } = args;
   const findings: Finding[] = [];
-  const nameFor = (key: string) =>
-    library.find((m) => m.material_key === key)?.name ?? key;
-
   // ---- program scope ----
   if (!material.omri_listed) {
     if (mode === 'certified_organic') {
@@ -140,6 +147,9 @@ export function evaluateApplication(args: {
     if (!prior.material_key || !material.material_key) continue;
     const priorMaterial = library.find((m) => m.material_key === prior.material_key);
     if (!priorMaterial?.conflicts_with.includes(material.material_key)) continue;
+    // When both rows name each other — as sulfur and oil do — the loop
+    // above has already said it. One fact, one warning.
+    if (material.conflicts_with.includes(prior.material_key)) continue;
     const days = priorMaterial.conflict_days ?? 0;
     if (days <= 0) continue;
     const gap = daysBetween(appliedAt, new Date(prior.applied_at));
@@ -147,6 +157,33 @@ export function evaluateApplication(args: {
       findings.push({
         level: 'warning',
         message: `${prior.material_name} was applied ${gap.toFixed(0)} days ago and needs ${days} days before ${material.name}.`,
+      });
+    }
+  }
+
+  // ---- directional conflicts (this material AFTER another) ----
+  //
+  // WSU's Fruit and Leaf Injury guide says only "do not apply oil to
+  // foliage treated with lime-sulfur" and attaches no interval, so the
+  // number here is this app's conservative default. The message says so
+  // rather than implying a citation it does not have.
+  const afterDays = material.conflict_after_days ?? 0;
+  if (material.conflicts_after.length > 0 && afterDays > 0) {
+    for (const prior of history) {
+      if (!prior.material_key) continue;
+      if (!material.conflicts_after.includes(prior.material_key)) continue;
+      // Signed, unlike daysBetween: the whole point is which came first.
+      const elapsedMs = appliedAt.getTime() - new Date(prior.applied_at).getTime();
+      // Under a day apart is a TANK MIX, which for lime sulfur and oil
+      // is a registered operation rather than a hazard. Nothing in the
+      // record distinguishes one pass from two on the same day, and
+      // warning on the endorsed operation is the error being fixed here.
+      if (elapsedMs < DAY_MS) continue;
+      const gap = elapsedMs / DAY_MS;
+      if (gap >= afterDays) continue;
+      findings.push({
+        level: 'warning',
+        message: `${prior.material_name} went on ${gap.toFixed(0)} day${gap.toFixed(0) === '1' ? '' : 's'} ago — do not apply ${material.name} to foliage still carrying it. No interval is published for this pair; ${afterDays} days is a conservative default, so check your ${material.name.toLowerCase()} label.`,
       });
     }
   }

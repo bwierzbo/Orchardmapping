@@ -42,7 +42,7 @@ export default async function TrapsPage({ params }: PageProps) {
   const season = seasonOf(today);
   const [traps, steps] = await Promise.all([
     listTraps(orchard.id, season).catch(() => []),
-    listProgramSteps().catch(() => []),
+    listProgramSteps(orchard.id).catch(() => []),
   ]);
 
   // The action threshold belongs to the program step, not the trap — one
