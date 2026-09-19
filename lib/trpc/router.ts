@@ -43,6 +43,14 @@ import {
   deleteApplication,
 } from '@/lib/db/spray';
 import {
+  listPests,
+  getPest,
+  listObservations,
+  insertObservation,
+  deleteObservation,
+  observationCounts,
+} from '@/lib/db/pests';
+import {
   PROGRAM_MODES,
   evaluateApplication,
   availableMaterials,
@@ -481,6 +489,64 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         const ok = await deleteApplication(input.id);
         if (!ok) throw new TRPCError({ code: 'NOT_FOUND', message: 'Application not found' });
+        return { success: true };
+      }),
+  }),
+
+  /**
+   * Pest & disease library. Entry keys are the same keys the material
+   * library targets, so an entry can answer "what treats this?" through
+   * spray.recommend without a second mapping.
+   */
+  pest: router({
+    list: publicProcedure
+      .input(z.object({ orchardId: z.string().min(1).optional() }).optional())
+      .query(async ({ input }) => {
+        const entries = await listPests();
+        const counts = input?.orchardId
+          ? await observationCounts(input.orchardId)
+          : {};
+        return { entries, counts };
+      }),
+
+    get: publicProcedure
+      .input(z.object({ key: z.string().min(1), orchardId: z.string().min(1).optional() }))
+      .query(async ({ input }) => {
+        const entry = await getPest(input.key);
+        if (!entry) throw new TRPCError({ code: 'NOT_FOUND', message: 'Entry not found' });
+        const observations = input.orchardId
+          ? await listObservations(input.orchardId, input.key)
+          : [];
+        return { entry, observations };
+      }),
+
+    observations: publicProcedure
+      .input(z.object({ orchardId: z.string().min(1), pestKey: z.string().optional() }))
+      .query(async ({ input }) => listObservations(input.orchardId, input.pestKey)),
+
+    /** Log a sighting — this is both the scouting record and the photo
+     *  that grows the orchard's own reference collection. */
+    observe: protectedProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          pestKey: z.string().min(1),
+          treeId: z.string().optional(),
+          photoUrl: z.string().url().optional(),
+          severity: z.enum(['light', 'moderate', 'severe']).optional(),
+          observedAt: z.string().optional(),
+          notes: z.string().max(2000).optional(),
+        }),
+      )
+      .mutation(async ({ input, ctx }) =>
+        insertObservation({ ...input, createdBy: ctx.userId ?? null }),
+      ),
+
+    deleteObservation: protectedProcedure
+      .input(z.object({ id: z.number().int().positive() }))
+      .mutation(async ({ input }) => {
+        const ok = await deleteObservation(input.id);
+        if (!ok) throw new TRPCError({ code: 'NOT_FOUND', message: 'Observation not found' });
         return { success: true };
       }),
   }),
