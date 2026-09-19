@@ -14,6 +14,7 @@ import OrchardSwitcher from '../viewer/OrchardSwitcher';
 import OrchardGrid from './OrchardGrid';
 import SeasonCard from './SeasonCard';
 import StageCard from './StageCard';
+import DueNowCard from './DueNowCard';
 import TreeTable from './TreeTable';
 import {
   SegmentedStatusBar,
@@ -151,6 +152,17 @@ export default async function DashboardPage({ params }: PageProps) {
 
       <div className="max-w-6xl mx-auto px-5 py-8 space-y-6">
         <p className="survey-caption">{caption}</p>
+
+        <Suspense
+          fallback={
+            <section className="bg-surface border border-line rounded-lg shadow-xs p-5">
+              <p className="survey-caption">Program · Due now</p>
+              <p className="text-sm text-bark mt-2">Working out what the program asks for…</p>
+            </section>
+          }
+        >
+          <DueNowCard orchardId={orchard.id} canEdit={!!userId} />
+        </Suspense>
 
         <Suspense
           fallback={

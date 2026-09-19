@@ -14,7 +14,7 @@ import type { HourWeather } from './weather-hour';
  * three variables costs no more calls than asking for one.
  */
 
-const TIMEZONE = 'America/Los_Angeles';
+export const TIMEZONE = 'America/Los_Angeles';
 
 /** The hourly variables every request asks for, in one place. */
 const HOURLY_VARS = 'temperature_2m,precipitation,relative_humidity_2m';

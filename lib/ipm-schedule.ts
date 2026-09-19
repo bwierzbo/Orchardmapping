@@ -88,10 +88,30 @@ export interface ProgramStep {
   /** spray_materials key this step suggests, when it suggests one. */
   materialKey: string | null;
   trigger: Trigger;
+  /** Days before a recurring step falls due again. Null = once a season.
+   *  Canker scouting is monthly; lime sulfur repeats on wetness. */
+  repeatDays: number | null;
   sortOrder: number;
 }
 
+/** A step recorded as done — explicitly, or by a matching spray. */
+export interface StepCompletion {
+  stepKey: string;
+  /** Local YYYY-MM-DD. */
+  completedOn: string;
+}
+
+/** A recorded spray, used to complete the step that called for it. */
+export interface MaterialApplication {
+  materialKey: string | null;
+  /** Local YYYY-MM-DD. */
+  appliedOn: string;
+}
+
 export type StepStatus =
+  /** Done for now: once-a-season steps stay done; recurring steps come
+   *  back when their repeat interval is up. */
+  | 'done'
   /** Window is open today. */
   | 'due'
   /** Window computed and still ahead. */
@@ -117,6 +137,10 @@ export interface ResolvedStep {
   /** Days until the window opens; negative once open or past. Null when
    *  there is no date. Sorting key for "what is coming up". */
   daysUntil: number | null;
+  /** When the step was last done this season, if it was. */
+  lastDoneOn: string | null;
+  /** For a recurring step that is done for now, when it comes back. */
+  dueAgainOn: string | null;
 }
 
 /** "half_inch_green" → "half inch green", for reasons a grower reads. */
@@ -164,20 +188,63 @@ export interface ResolveInput {
   /** Date this season's running GDD total crossed a threshold, or null
    *  if it hasn't. Supplied by lib/gdd milestoneDates over stored hours. */
   ddDate: (dd: number) => string | null;
+  /** Explicit "I did this" records for the season. */
+  completions?: readonly StepCompletion[];
+  /** Sprays recorded this season. One whose material is the step's
+   *  suggested material, applied inside the step's window, completes it
+   *  — recording the spray IS recording the work. */
+  applications?: readonly MaterialApplication[];
+}
+
+/**
+ * The most recent date this step counts as done, or null.
+ *
+ * Two sources, deliberately treated as one: an explicit completion, and
+ * a spray of the step's own material inside the step's window. A spray
+ * outside the window belongs to a different step that uses the same
+ * material — copper appears twice in the program, in autumn and at
+ * half-inch green, and one application must not tick off both.
+ */
+function lastDone(
+  step: ProgramStep,
+  window: { start: string | null; end: string | null },
+  input: ResolveInput
+): string | null {
+  let latest: string | null = null;
+  const keep = (d: string) => {
+    if (!latest || d > latest) latest = d;
+  };
+
+  for (const c of input.completions ?? []) {
+    if (c.stepKey === step.key) keep(c.completedOn);
+  }
+
+  if (step.materialKey && window.start) {
+    for (const a of input.applications ?? []) {
+      if (a.materialKey !== step.materialKey) continue;
+      if (a.appliedOn < window.start) continue;
+      if (window.end && a.appliedOn > window.end) continue;
+      keep(a.appliedOn);
+    }
+  }
+  return latest;
 }
 
 /** Place one step on the season's calendar. */
 export function resolveStep(step: ProgramStep, input: ResolveInput): ResolvedStep {
   const { season, asOfYmd, marks, ddDate } = input;
   const t = step.trigger;
-  const placed = (start: string, end: string, why: string): ResolvedStep => ({
-    step,
-    status: statusFor(start, end, asOfYmd),
-    start,
-    end,
-    why,
-    daysUntil: daysBetweenUtc(asOfYmd, start),
-  });
+  const placed = (start: string, end: string, why: string): ResolvedStep =>
+    withCompletion({
+      step,
+      status: statusFor(start, end, asOfYmd),
+      start,
+      end,
+      why,
+      daysUntil: daysBetweenUtc(asOfYmd, start),
+      lastDoneOn: null,
+      dueAgainOn: null,
+    });
   const unplaceable = (why: string): ResolvedStep => ({
     step,
     status: 'waiting',
@@ -185,16 +252,41 @@ export function resolveStep(step: ProgramStep, input: ResolveInput): ResolvedSte
     end: null,
     why,
     daysUntil: null,
+    lastDoneOn: null,
+    dueAgainOn: null,
   });
   /** Open at `start`, closing on an event that hasn't happened yet. */
-  const openEnded = (start: string, why: string): ResolvedStep => ({
-    step,
-    status: asOfYmd < start ? 'upcoming' : 'due',
-    start,
-    end: null,
-    why,
-    daysUntil: daysBetweenUtc(asOfYmd, start),
-  });
+  const openEnded = (start: string, why: string): ResolvedStep =>
+    withCompletion({
+      step,
+      status: asOfYmd < start ? 'upcoming' : 'due',
+      start,
+      end: null,
+      why,
+      daysUntil: daysBetweenUtc(asOfYmd, start),
+      lastDoneOn: null,
+      dueAgainOn: null,
+    });
+
+  /**
+   * Fold completion into a placed step. Only an OPEN step can be marked
+   * done — something upcoming or already past keeps its own status, and
+   * still reports when it was last done so the history stays visible.
+   */
+  const withCompletion = (r: ResolvedStep): ResolvedStep => {
+    const done = lastDone(step, { start: r.start, end: r.end }, input);
+    if (!done) return r;
+    const dueAgainOn = step.repeatDays ? addDays(done, step.repeatDays) : null;
+    // A recurring step comes back when its interval is up; a
+    // once-a-season step stays done for the rest of the season.
+    const stillDone = !dueAgainOn || asOfYmd < dueAgainOn;
+    return {
+      ...r,
+      status: r.status === 'due' && stillDone ? 'done' : r.status,
+      lastDoneOn: done,
+      dueAgainOn,
+    };
+  };
 
   switch (t.type) {
     case 'calendar': {
@@ -246,6 +338,9 @@ export function resolveStep(step: ProgramStep, input: ResolveInput): ResolvedSte
         end: until,
         why: live ? 'Watching conditions' : 'Outside the watch window',
         daysUntil: from ? daysBetweenUtc(asOfYmd, from) : null,
+        // A watch is never "done" — it runs until its window closes.
+        lastDoneOn: null,
+        dueAgainOn: null,
       };
     }
 
@@ -255,8 +350,10 @@ export function resolveStep(step: ProgramStep, input: ResolveInput): ResolvedSte
         status: 'monitor',
         start: null,
         end: null,
-        why: `On evidence: ${t.count}+ per ${t.trap.replace(/_/g, ' ')}`,
+        why: `On evidence: ${t.count}+ per ${stageWords(t.trap)}`,
         daysUntil: null,
+        lastDoneOn: null,
+        dueAgainOn: null,
       };
   }
 }
@@ -272,7 +369,8 @@ export function resolveProgram(input: ResolveInput): ResolvedStep[] {
     monitor: 1,
     upcoming: 2,
     waiting: 3,
-    past: 4,
+    done: 4,
+    past: 5,
   };
   return input.steps
     .map((s) => resolveStep(s, input))

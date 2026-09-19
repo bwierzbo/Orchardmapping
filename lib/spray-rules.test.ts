@@ -106,7 +106,7 @@ describe('program mode', () => {
 
 describe('sulfur ↔ oil interval', () => {
   const eightDaysBefore = [
-    { material_key: 'horticultural_oil', material_name: 'Horticultural oil', applied_at: '2026-04-23T10:00:00Z' },
+    { material_key: 'horticultural_oil', material_name: 'Horticultural oil', applied_at: '2026-04-23T10:00:00Z', applied_on: '2026-04-23' },
   ];
 
   it('flags sulfur applied too soon after oil', () => {
@@ -126,7 +126,7 @@ describe('sulfur ↔ oil interval', () => {
       appliedAt: MAY,
       mode: 'organic_practices',
       history: [
-        { material_key: 'lime_sulfur', material_name: 'Lime sulfur', applied_at: '2026-04-25T10:00:00Z' },
+        { material_key: 'lime_sulfur', material_name: 'Lime sulfur', applied_at: '2026-04-25T10:00:00Z', applied_on: '2026-04-25' },
       ],
       library: LIBRARY,
     });
@@ -139,7 +139,7 @@ describe('sulfur ↔ oil interval', () => {
       appliedAt: MAY,
       mode: 'organic_practices',
       history: [
-        { material_key: 'horticultural_oil', material_name: 'Horticultural oil', applied_at: '2026-04-01T10:00:00Z' },
+        { material_key: 'horticultural_oil', material_name: 'Horticultural oil', applied_at: '2026-04-01T10:00:00Z', applied_on: '2026-04-01' },
       ],
       library: LIBRARY,
     });
@@ -154,7 +154,7 @@ describe('per-season caps', () => {
       appliedAt: new Date('2026-11-15T10:00:00Z'),
       mode: 'organic_practices',
       history: [
-        { material_key: 'copper', material_name: 'Basic copper sulfate', applied_at: '2026-03-01T10:00:00Z' },
+        { material_key: 'copper', material_name: 'Basic copper sulfate', applied_at: '2026-03-01T10:00:00Z', applied_on: '2026-03-01' },
       ],
       library: LIBRARY,
     });
@@ -167,7 +167,7 @@ describe('per-season caps', () => {
       appliedAt: new Date('2026-11-15T10:00:00Z'),
       mode: 'organic_practices',
       history: [
-        { material_key: 'copper', material_name: 'Basic copper sulfate', applied_at: '2025-11-01T10:00:00Z' },
+        { material_key: 'copper', material_name: 'Basic copper sulfate', applied_at: '2025-11-01T10:00:00Z', applied_on: '2025-11-01' },
       ],
       library: LIBRARY,
     });

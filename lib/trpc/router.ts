@@ -43,6 +43,7 @@ import {
   deleteApplication,
 } from '@/lib/db/spray';
 import { listMarks, markStage, unmarkStage } from '@/lib/db/phenology';
+import { completeStep, uncompleteStep } from '@/lib/db/program';
 import { PHENOLOGY_STAGES } from '@/lib/phenology';
 import {
   listPests,
@@ -580,6 +581,38 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         const ok = await unmarkStage(input.id);
         if (!ok) throw new TRPCError({ code: 'NOT_FOUND', message: 'Mark not found' });
+        return { success: true };
+      }),
+  }),
+
+  /**
+   * Program step completions — the work that isn't a spray. A recorded
+   * spray completes its own step through the application history, so
+   * nothing here duplicates the spray page.
+   */
+  program: router({
+    complete: protectedProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          stepKey: z.string().min(1),
+          completedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          note: z.string().max(500).optional(),
+        }),
+      )
+      .mutation(async ({ input, ctx }) => completeStep({ ...input, createdBy: ctx.userId })),
+
+    uncomplete: protectedProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          stepKey: z.string().min(1),
+          completedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        const ok = await uncompleteStep(input.orchardId, input.stepKey, input.completedOn);
+        if (!ok) throw new TRPCError({ code: 'NOT_FOUND', message: 'Completion not found' });
         return { success: true };
       }),
   }),

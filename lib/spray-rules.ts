@@ -52,7 +52,13 @@ export interface SprayMaterial {
 export interface PriorApplication {
   material_key: string | null;
   material_name: string;
-  applied_at: string; // ISO
+  applied_at: string; // ISO instant — interval rules count from this
+  /**
+   * The same moment as an orchard-local calendar day (YYYY-MM-DD).
+   * Slicing applied_at would day-shift an evening application, since
+   * that string is UTC — see lib/dates.ts.
+   */
+  applied_on: string;
 }
 
 export type FindingLevel = 'blocked' | 'warning' | 'info';

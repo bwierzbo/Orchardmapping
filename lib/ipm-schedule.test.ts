@@ -20,7 +20,11 @@ const MARKS: PhenologyMark[] = [
 const DD: Record<number, string> = { 375: '2026-04-02', 425: '2026-04-09' };
 const ddDate = (dd: number) => DD[dd] ?? null;
 
-const step = (trigger: Trigger, key = 'k'): ProgramStep => ({
+const step = (
+  trigger: Trigger,
+  key = 'k',
+  extra: Partial<ProgramStep> = {}
+): ProgramStep => ({
   key,
   title: key,
   detail: '',
@@ -28,7 +32,9 @@ const step = (trigger: Trigger, key = 'k'): ProgramStep => ({
   pestKey: null,
   materialKey: null,
   trigger,
+  repeatDays: null,
   sortOrder: 1,
+  ...extra,
 });
 
 const input = (asOfYmd: string, steps: ProgramStep[] = []): ResolveInput => ({
@@ -243,5 +249,119 @@ describe('resolveProgram ordering', () => {
     ];
     const order = resolveProgram(input('2026-04-15', steps)).map((r) => r.step.key);
     expect(order).toEqual(['sooner', 'later']);
+  });
+});
+
+describe('completion', () => {
+  const window = { type: 'calendar', start: '09-15', end: '10-15' } as const;
+
+  it('marks an open step done from an explicit completion', () => {
+    const r = resolveStep(step(window, 'copper'), {
+      ...input('2026-09-25'),
+      completions: [{ stepKey: 'copper', completedOn: '2026-09-20' }],
+    });
+    expect(r.status).toBe('done');
+    expect(r.lastDoneOn).toBe('2026-09-20');
+    expect(r.dueAgainOn).toBeNull();
+  });
+
+  it('is untouched by a completion for a different step', () => {
+    const r = resolveStep(step(window, 'copper'), {
+      ...input('2026-09-25'),
+      completions: [{ stepKey: 'something_else', completedOn: '2026-09-20' }],
+    });
+    expect(r.status).toBe('due');
+    expect(r.lastDoneOn).toBeNull();
+  });
+
+  it('counts a recorded spray of the step material as doing the work', () => {
+    const r = resolveStep(step(window, 'copper', { materialKey: 'copper' }), {
+      ...input('2026-09-25'),
+      applications: [{ materialKey: 'copper', appliedOn: '2026-09-18' }],
+    });
+    expect(r.status).toBe('done');
+    expect(r.lastDoneOn).toBe('2026-09-18');
+  });
+
+  it('does NOT let one spray tick off another step using the same material', () => {
+    // Copper appears twice in the program — autumn, and half-inch
+    // green. The autumn application must not complete the spring step.
+    const spring = step({ type: 'phenology', stage: 'half_inch_green', windowDays: 7 }, 'copper_spring', {
+      materialKey: 'copper',
+    });
+    const r = resolveStep(spring, {
+      ...input('2026-03-30'),
+      applications: [{ materialKey: 'copper', appliedOn: '2025-09-18' }],
+    });
+    expect(r.status).toBe('due');
+    expect(r.lastDoneOn).toBeNull();
+  });
+
+  it('ignores a spray of a different material', () => {
+    const r = resolveStep(step(window, 'copper', { materialKey: 'copper' }), {
+      ...input('2026-09-25'),
+      applications: [{ materialKey: 'lime_sulfur', appliedOn: '2026-09-18' }],
+    });
+    expect(r.status).toBe('due');
+  });
+
+  it('brings a recurring step back when its interval is up', () => {
+    const scouting = step({ type: 'calendar', start: '10-01', end: '03-31' }, 'scout', {
+      repeatDays: 30,
+    });
+    const done = { completions: [{ stepKey: 'scout', completedOn: '2026-10-05' }] };
+
+    const soon = resolveStep(scouting, { ...input('2026-10-20'), ...done });
+    expect(soon.status).toBe('done');
+    expect(soon.dueAgainOn).toBe('2026-11-04');
+
+    const later = resolveStep(scouting, { ...input('2026-11-10'), ...done });
+    expect(later.status).toBe('due');
+    expect(later.lastDoneOn).toBe('2026-10-05');
+  });
+
+  it('uses the most recent of several completions', () => {
+    const scouting = step({ type: 'calendar', start: '10-01', end: '03-31' }, 'scout', {
+      repeatDays: 30,
+    });
+    const r = resolveStep(scouting, {
+      ...input('2026-12-01'),
+      completions: [
+        { stepKey: 'scout', completedOn: '2026-10-05' },
+        { stepKey: 'scout', completedOn: '2026-11-20' },
+      ],
+    });
+    expect(r.lastDoneOn).toBe('2026-11-20');
+    expect(r.status).toBe('done');
+  });
+
+  it('does not resurrect a step whose window has closed', () => {
+    const r = resolveStep(step(window, 'copper'), {
+      ...input('2026-11-01'),
+      completions: [{ stepKey: 'copper', completedOn: '2026-09-20' }],
+    });
+    // Past stays past — but the history is still reported
+    expect(r.status).toBe('past');
+    expect(r.lastDoneOn).toBe('2026-09-20');
+  });
+
+  it('never marks a watch done', () => {
+    const r = resolveStep(
+      step({ type: 'threshold', trap: 'red_sphere', count: 1 }, 'kaolin'),
+      { ...input('2026-07-15'), completions: [{ stepKey: 'kaolin', completedOn: '2026-07-10' }] }
+    );
+    expect(r.status).toBe('monitor');
+  });
+
+  it('drops done steps below what still needs doing', () => {
+    const steps = [
+      step({ type: 'calendar', start: '09-15', end: '10-15' }, 'done-one'),
+      step({ type: 'calendar', start: '09-01', end: '10-31' }, 'due-one'),
+    ];
+    const order = resolveProgram({
+      ...input('2026-09-25', steps),
+      completions: [{ stepKey: 'done-one', completedOn: '2026-09-20' }],
+    }).map((r) => r.step.key);
+    expect(order).toEqual(['due-one', 'done-one']);
   });
 });
