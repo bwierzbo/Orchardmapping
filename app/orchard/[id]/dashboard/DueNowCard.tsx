@@ -29,7 +29,15 @@ export default async function DueNowCard({
 
   return (
     <section className="bg-surface border border-line rounded-lg shadow-xs p-5">
-      <p className="survey-caption">Program · Due now</p>
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="survey-caption">Program · Due now</p>
+        <Link
+          href={`/orchard/${orchardId}/program`}
+          className="text-xs text-canopy-700 dark:text-canopy-100 hover:underline shrink-0"
+        >
+          Whole season →
+        </Link>
+      </div>
 
       {due.length === 0 && watches.length === 0 ? (
         <p className="text-sm text-bark mt-2">

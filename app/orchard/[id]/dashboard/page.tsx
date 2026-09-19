@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { auth } from '@clerk/nextjs/server';
 import type { Metadata } from 'next';
-import { ArrowLeft, Bug, Map as MapIcon, SprayCan, Target } from 'lucide-react';
+import { ArrowLeft, Bug, CalendarRange, Map as MapIcon, SprayCan, Target } from 'lucide-react';
 import { getOrchardConfigById, getAllOrchardConfigs } from '@/lib/db/orchards';
 import { getTreesByOrchard } from '@/lib/db/trees';
 import { serializeTree } from '@/lib/serialize';
@@ -124,6 +124,13 @@ export default async function DashboardPage({ params }: PageProps) {
           <div className="flex items-center gap-2 shrink-0">
             {/* The IPM pages have no other entry point — the map is chrome-free
                 by design, so the dashboard header is where they live. */}
+            <Link
+              href={`/orchard/${orchard.id}/program`}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-bark hover:text-ink rounded-lg hover:bg-canopy-50 dark:hover:bg-canopy-600/10"
+            >
+              <CalendarRange aria-hidden size={15} />
+              <span className="hidden md:inline">Program</span>
+            </Link>
             <Link
               href={`/orchard/${orchard.id}/pests`}
               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-bark hover:text-ink rounded-lg hover:bg-canopy-50 dark:hover:bg-canopy-600/10"
