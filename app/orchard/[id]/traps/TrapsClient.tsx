@@ -16,6 +16,8 @@ interface Trap {
   trapType: TrapType;
   label: string;
   locationNote: string | null;
+  lng: number | null;
+  lat: number | null;
   deployedOn: string;
   removedOn: string | null;
   lastCountedOn: string | null;
@@ -199,6 +201,7 @@ export default function TrapsClient({
                       ? `last read ${formatYMD(t.lastCountedOn)} (${t.lastCount})`
                       : 'never read'}
                     {t.seasonTotal > 0 && ` · ${t.seasonTotal} this season`}
+                    {t.lng == null && ' · not on the map yet'}
                   </p>
                 </div>
                 {canEdit && (

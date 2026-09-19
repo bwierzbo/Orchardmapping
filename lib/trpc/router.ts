@@ -44,7 +44,7 @@ import {
 } from '@/lib/db/spray';
 import { listMarks, markStage, unmarkStage } from '@/lib/db/phenology';
 import { completeStep, uncompleteStep } from '@/lib/db/program';
-import { addTrap, recordCount, retireTrap } from '@/lib/db/traps';
+import { addTrap, listTraps, moveTrap, recordCount, retireTrap } from '@/lib/db/traps';
 import { TRAP_TYPES } from '@/lib/traps';
 import { PHENOLOGY_STAGES } from '@/lib/phenology';
 import {
@@ -625,6 +625,17 @@ export const appRouter = router({
    * point for the summer half of the year.
    */
   trap: router({
+    list: publicProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          season: z.number().int().min(2000).max(2100).optional(),
+        }),
+      )
+      .query(async ({ input }) =>
+        listTraps(input.orchardId, input.season ?? new Date().getFullYear()),
+      ),
+
     add: protectedProcedure
       .input(
         z.object({
@@ -632,12 +643,29 @@ export const appRouter = router({
           trapType: z.enum(TRAP_TYPES),
           label: z.string().min(1).max(80),
           locationNote: z.string().max(200).optional(),
+          lng: z.number().min(-180).max(180).optional(),
+          lat: z.number().min(-90).max(90).optional(),
           deployedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
         }),
       )
       .mutation(async ({ input, ctx }) => {
         const id = await addTrap({ ...input, createdBy: ctx.userId });
         return { id };
+      }),
+
+    /** Place a trap on the map, or drag one already there. */
+    move: protectedProcedure
+      .input(
+        z.object({
+          id: z.number().int().positive(),
+          lng: z.number().min(-180).max(180),
+          lat: z.number().min(-90).max(90),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        const ok = await moveTrap(input.id, input.lng, input.lat);
+        if (!ok) throw new TRPCError({ code: 'NOT_FOUND', message: 'Trap not found' });
+        return { success: true };
       }),
 
     retire: protectedProcedure

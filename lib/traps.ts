@@ -59,3 +59,15 @@ export interface TrapCatch {
   countedOn: string;
   count: number;
 }
+
+/**
+ * "Sphere 1" → "Sphere 2". A round of traps goes up in one walk, so the
+ * name counts itself up between taps and the panel never has to be
+ * retyped. A name with no trailing number is left alone rather than
+ * guessed at.
+ */
+export function nextTrapLabel(label: string): string {
+  const m = /^(.*?)(\d+)(\D*)$/.exec(label);
+  if (!m) return label;
+  return `${m[1]}${Number(m[2]) + 1}${m[3]}`;
+}

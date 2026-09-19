@@ -12,6 +12,9 @@ export interface TrapRow {
   trapType: TrapType;
   label: string;
   locationNote: string | null;
+  /** WGS84. Null until the trap has been placed on the map. */
+  lng: number | null;
+  lat: number | null;
   deployedOn: string;
   removedOn: string | null;
   /** Most recent count, for the "is this trap being read?" question. */
@@ -29,6 +32,9 @@ function decodeTrap(row: Record<string, unknown>): TrapRow {
     trapType,
     label: String(row.label),
     locationNote: (row.location_note as string | null) ?? null,
+    // NUMERIC comes back as a string — see lib/db/decode.ts
+    lng: row.lng == null ? null : Number(row.lng),
+    lat: row.lat == null ? null : Number(row.lat),
     deployedOn: String(row.deployed_on),
     removedOn: (row.removed_on as string | null) ?? null,
     lastCountedOn: (row.last_counted_on as string | null) ?? null,
@@ -40,7 +46,7 @@ function decodeTrap(row: Record<string, unknown>): TrapRow {
 /** Traps for an orchard, with this season's totals folded in. */
 export async function listTraps(orchardId: string, season: number): Promise<TrapRow[]> {
   const { rows } = await sql`
-    SELECT t.id, t.trap_type, t.label, t.location_note,
+    SELECT t.id, t.trap_type, t.label, t.location_note, t.lng, t.lat,
            to_char(t.deployed_on, 'YYYY-MM-DD') AS deployed_on,
            to_char(t.removed_on, 'YYYY-MM-DD') AS removed_on,
            to_char(last.counted_on, 'YYYY-MM-DD') AS last_counted_on,
@@ -126,18 +132,30 @@ export async function addTrap(input: {
   trapType: TrapType;
   label: string;
   locationNote?: string | null;
+  lng?: number | null;
+  lat?: number | null;
   deployedOn: string;
   createdBy?: string | null;
 }): Promise<number> {
   const { rows } = await sql`
-    INSERT INTO traps (orchard_id, trap_type, label, location_note, deployed_on, created_by)
+    INSERT INTO traps (orchard_id, trap_type, label, location_note, lng, lat, deployed_on, created_by)
     VALUES (
       ${input.orchardId}, ${input.trapType}, ${input.label},
-      ${input.locationNote ?? null}, ${input.deployedOn}::date, ${input.createdBy ?? null}
+      ${input.locationNote ?? null}, ${input.lng ?? null}, ${input.lat ?? null},
+      ${input.deployedOn}::date, ${input.createdBy ?? null}
     )
     RETURNING id
   `;
   return Number(rows[0].id);
+}
+
+/** Drop a trap on the map, or drag one that was already there. */
+export async function moveTrap(id: number, lng: number, lat: number): Promise<boolean> {
+  const { rowCount } = await sql`
+    UPDATE traps SET lng = ${lng}, lat = ${lat}, updated_at = NOW()
+    WHERE id = ${id}
+  `;
+  return (rowCount ?? 0) > 0;
 }
 
 /** Take a trap down — kept, not deleted, so its season stays readable. */
