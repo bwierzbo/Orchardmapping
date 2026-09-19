@@ -14,6 +14,7 @@ import {
   type SprayApplicationView,
 } from '@/lib/api/spray';
 import type { Finding, SprayMaterial } from '@/lib/spray-rules';
+import type { SprayTarget } from '@/lib/db/spray';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -24,29 +25,20 @@ import {
   type ProgramMode,
 } from '@/lib/spray-rules';
 
-/** Targets the seeded library covers, in the order they matter here. */
-const TARGETS: { key: string; label: string }[] = [
-  { key: 'apple_anthracnose', label: 'Apple anthracnose' },
-  { key: 'apple_scab', label: 'Apple scab' },
-  { key: 'european_canker', label: 'European canker' },
-  { key: 'powdery_mildew', label: 'Powdery mildew' },
-  { key: 'phytophthora', label: 'Phytophthora (root/crown rot)' },
-  { key: 'apple_maggot', label: 'Apple maggot' },
-  { key: 'codling_moth', label: 'Codling moth' },
-  { key: 'leafrollers', label: 'Leafrollers' },
-  { key: 'apple_ermine_moth', label: 'Apple ermine moth' },
-  { key: 'aphids', label: 'Aphids (rosy / green)' },
-  { key: 'woolly_apple_aphid', label: 'Woolly apple aphid' },
-  { key: 'mites', label: 'Mites' },
-];
-
 function localNow() {
   const d = new Date();
   const p = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-export default function SprayClient({ orchardId }: { orchardId: string }) {
+export default function SprayClient({
+  orchardId,
+  targets,
+}: {
+  orchardId: string;
+  /** From pest_library, via the page — see listSprayTargets(). */
+  targets: SprayTarget[];
+}) {
   // form fields
   const [target, setTarget] = useState('');
   const [materialId, setMaterialId] = useState<number | null>(null);
@@ -241,7 +233,7 @@ export default function SprayClient({ orchardId }: { orchardId: string }) {
               className="w-full h-10 px-3 bg-surface text-ink border border-line rounded-md text-sm"
             >
               <option value="">Any / not listed</option>
-              {TARGETS.map((t) => (
+              {targets.map((t) => (
                 <option key={t.key} value={t.key}>
                   {t.label}
                 </option>
@@ -272,7 +264,7 @@ export default function SprayClient({ orchardId }: { orchardId: string }) {
         {shownRecommendations.length > 0 && (
           <div className="rounded-md border border-canopy-600/30 bg-canopy-50 dark:bg-canopy-600/10 p-3">
             <p className="text-xs font-medium text-ink">
-              For {TARGETS.find((t) => t.key === target)?.label}, in order:
+              For {targets.find((t) => t.key === target)?.label}, in order:
             </p>
             <ol className="mt-1 space-y-1">
               {shownRecommendations.slice(0, 3).map((m, i) => (
@@ -424,7 +416,9 @@ export default function SprayClient({ orchardId }: { orchardId: string }) {
                     {a.target ? (
                       <span className="text-bark font-normal">
                         {' '}
-                        · {TARGETS.find((t) => t.key === a.target)?.label ?? a.target}
+                        ·{' '}
+                        {targets.find((t) => t.key === a.target)?.label ??
+                          a.target.replace(/_/g, ' ')}
                       </span>
                     ) : null}
                   </p>

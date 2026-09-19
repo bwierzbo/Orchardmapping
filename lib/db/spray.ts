@@ -210,3 +210,35 @@ export async function deleteApplication(id: number): Promise<boolean> {
   `;
   return (rowCount ?? 0) > 0;
 }
+
+export interface SprayTarget {
+  key: string;
+  label: string;
+}
+
+/**
+ * What the spray form offers as a target.
+ *
+ * Read from pest_library rather than a list in the component: the
+ * library is the vocabulary, and a hardcoded copy drifts the moment an
+ * entry is added. Narrowed to entries some material actually treats, so
+ * picking one always yields recommendations — a beneficial you would
+ * never spray, and fire blight, which is absent west of the Cascades
+ * and has nothing listed against it, stay out of the list.
+ *
+ * Ordered by the library's own prevalence ranking, so what is common
+ * here leads.
+ */
+export async function listSprayTargets(): Promise<SprayTarget[]> {
+  const { rows } = await sql`
+    SELECT l.key, l.name
+    FROM pest_library l
+    WHERE l.category <> 'beneficial'
+      AND EXISTS (
+        SELECT 1 FROM spray_materials m
+        WHERE m.is_active AND l.key = ANY (m.targets)
+      )
+    ORDER BY l.sort_order, l.name
+  `;
+  return rows.map((r) => ({ key: String(r.key), label: String(r.name) }));
+}
