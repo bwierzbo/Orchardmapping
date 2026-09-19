@@ -2,7 +2,7 @@ import { cache, Suspense } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
-import { ArrowLeft, Map as MapIcon } from 'lucide-react';
+import { ArrowLeft, Bug, Map as MapIcon, SprayCan } from 'lucide-react';
 import { getOrchardConfigById, getAllOrchardConfigs } from '@/lib/db/orchards';
 import { getTreesByOrchard } from '@/lib/db/trees';
 import { serializeTree } from '@/lib/serialize';
@@ -118,6 +118,22 @@ export default async function DashboardPage({ params }: PageProps) {
             </h1>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {/* The IPM pages have no other entry point — the map is chrome-free
+                by design, so the dashboard header is where they live. */}
+            <Link
+              href={`/orchard/${orchard.id}/pests`}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-bark hover:text-ink rounded-lg hover:bg-canopy-50 dark:hover:bg-canopy-600/10"
+            >
+              <Bug aria-hidden size={15} />
+              <span className="hidden md:inline">Pests</span>
+            </Link>
+            <Link
+              href={`/orchard/${orchard.id}/spray`}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-bark hover:text-ink rounded-lg hover:bg-canopy-50 dark:hover:bg-canopy-600/10"
+            >
+              <SprayCan aria-hidden size={15} />
+              <span className="hidden md:inline">Spray</span>
+            </Link>
             <OrchardSwitcher orchards={allOrchards} currentId={orchard.id} target="dashboard" />
             <Link
               href={`/orchard/${orchard.id}`}

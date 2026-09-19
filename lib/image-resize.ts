@@ -67,3 +67,17 @@ export async function downscaleImage(
     return file; // undecodable (e.g. HEIC on desktop Safari) — send as-is
   }
 }
+
+/** Extensions /api/photos/upload will accept — anything else is sent as .jpg. */
+const UPLOADABLE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'heic'];
+
+/**
+ * The extension to give an upload path. The upload route rejects any
+ * pathname outside UPLOADABLE_EXTENSIONS, and downscaleImage may hand back
+ * the untouched original (HEIC on desktop Safari), so the name is not
+ * something callers can assume.
+ */
+export function photoExtension(file: File): string {
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  return UPLOADABLE_EXTENSIONS.includes(ext) ? ext : 'jpg';
+}

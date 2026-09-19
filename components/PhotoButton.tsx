@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { upload } from '@vercel/blob/client';
-import { downscaleImage } from '@/lib/image-resize';
+import { downscaleImage, photoExtension } from '@/lib/image-resize';
 import { Camera, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -31,9 +31,7 @@ export default function PhotoButton({
     try {
       // Shrink before upload — the field crew is usually on cellular
       file = await downscaleImage(file);
-      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
-      const safeExt = ['jpg', 'jpeg', 'png', 'webp', 'heic'].includes(ext) ? ext : 'jpg';
-      const blob = await upload(`photos/${treeId}/${Date.now()}.${safeExt}`, file, {
+      const blob = await upload(`photos/${treeId}/${Date.now()}.${photoExtension(file)}`, file, {
         access: 'public',
         handleUploadUrl: '/api/photos/upload',
       });
