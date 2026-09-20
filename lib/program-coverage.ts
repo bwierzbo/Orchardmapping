@@ -44,6 +44,8 @@ export const DELIBERATELY_UNTREATED: Record<string, string> = {
   bulls_eye_rot: 'The storage phase of anthracnose — the autumn copper and excision program is the control.',
   blue_mold: 'Handled at the press as fruit hygiene, not in the orchard.',
   tent_caterpillar: 'Episodic. Bt is held in reserve for an outbreak year rather than scheduled.',
+  rosy_apple_aphid:
+    'Owner, Sept 2026: not a problem in this block. Oil and soap both list it, so a step can be added the season it becomes one — but the control window shuts soon after petal fall, so that decision has to be made before bud break, not during.',
 };
 
 /** Prevalence levels that demand a step or a documented exemption. */
