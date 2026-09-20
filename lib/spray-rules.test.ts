@@ -320,3 +320,43 @@ describe('availability and recommendation', () => {
     expect(ranked[0].material_key).toBe('lime_sulfur');
   });
 });
+
+describe('pre-harvest interval reporting', () => {
+  it('dates the interval when one is recorded', () => {
+    const f = evaluateApplication({
+      material: material({ phi_days: 7 }),
+      appliedAt: MAY,
+      mode: 'organic_practices',
+      history: [],
+      library: LIBRARY,
+    });
+    expect(f.some((x) => x.level === 'info' && /Pre-harvest interval 7 days/.test(x.message))).toBe(true);
+  });
+
+  it('says plainly when a material may go on the day of picking', () => {
+    const f = evaluateApplication({
+      material: material({ phi_days: 0 }),
+      appliedAt: MAY,
+      mode: 'organic_practices',
+      history: [],
+      library: LIBRARY,
+    });
+    expect(f.some((x) => /up to the day of picking/.test(x.message))).toBe(true);
+    expect(f.some((x) => /No pre-harvest interval is recorded/.test(x.message))).toBe(false);
+  });
+
+  it('warns that an UNRECORDED interval means unknown, not zero', () => {
+    // Copper is the live case: its PHI varies by formulation, and this
+    // orchard's late cider varieties are on the tree when it goes on.
+    const f = evaluateApplication({
+      material: material({ phi_days: null }),
+      appliedAt: MAY,
+      mode: 'organic_practices',
+      history: [],
+      library: LIBRARY,
+    });
+    const warn = f.find((x) => /No pre-harvest interval is recorded/.test(x.message));
+    expect(warn?.level).toBe('warning');
+    expect(warn?.message).toMatch(/unknown, not zero/);
+  });
+});
