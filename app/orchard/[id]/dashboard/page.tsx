@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { auth } from '@clerk/nextjs/server';
 import type { Metadata } from 'next';
-import { ArrowLeft, Bug, CalendarRange, Map as MapIcon, SprayCan, Target } from 'lucide-react';
+import { ArrowLeft, Bug, CalendarRange, FlaskConical, Map as MapIcon, SprayCan, Target } from 'lucide-react';
 import { getOrchardConfigById, getAllOrchardConfigs } from '@/lib/db/orchards';
 import { getTreesByOrchard } from '@/lib/db/trees';
 import { serializeTree } from '@/lib/serialize';
@@ -154,6 +154,13 @@ export default async function DashboardPage({ params }: PageProps) {
             >
               <Target aria-hidden size={15} />
               Traps
+            </Link>
+            <Link
+              href={`/orchard/${orchard.id}/nutrition`}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-bark hover:text-ink rounded-lg hover:bg-canopy-50 dark:hover:bg-canopy-600/10 whitespace-nowrap"
+            >
+              <FlaskConical aria-hidden size={15} />
+              Nutrition
             </Link>
             <Link
               href={`/orchard/${orchard.id}/spray`}

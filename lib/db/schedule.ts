@@ -2,6 +2,7 @@ import { listProgramSteps, listCompletions } from './program';
 import { applicationHistory } from './spray';
 import { seasonCatches } from './traps';
 import { listPostures, listMaterialKickback } from './posture';
+import { listTissueTests, listSoilTests } from './nutrition';
 import { infectionPeriods } from '../scab';
 import { listMarks } from './phenology';
 import { getHours } from './weather';
@@ -44,6 +45,22 @@ export async function resolveSchedule(
       listPostures(orchardId).catch(() => []),
       listMaterialKickback().catch(() => []),
     ]);
+
+  /**
+   * A recorded lab result completes the step that asked for the sample,
+   * the same way a recorded spray completes the step that called for
+   * it. Without this the app nags you to take a sample whose results
+   * are already entered — which is the fastest way to teach someone to
+   * ignore the due list.
+   */
+  const [tissue, soil] = await Promise.all([
+    listTissueTests(orchardId).catch(() => []),
+    listSoilTests(orchardId).catch(() => []),
+  ]);
+  const labCompletions = [
+    ...tissue.map((t) => ({ stepKey: 'leaf_tissue_sample', completedOn: t.sampledOn })),
+    ...soil.map((t) => ({ stepKey: 'soil_test', completedOn: t.sampledOn })),
+  ];
   const kickbackBy = new Map(kickback.map((k) => [k.materialKey, k.postInfectionHours]));
 
   const applications: MaterialApplication[] = sprays.map((a) => ({
@@ -121,7 +138,7 @@ export async function resolveSchedule(
     marks: marks.map((m) => ({ stage: m.stage, observedOn: m.observedOn })),
     ddDate: (trigger, biofix) =>
       crossings.get(modelKey(trigger, biofix))?.get(trigger.dd) ?? null,
-    completions,
+    completions: [...completions, ...labCompletions],
     applications,
     trapCatches,
   });
