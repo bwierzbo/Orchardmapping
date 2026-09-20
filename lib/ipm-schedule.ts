@@ -112,6 +112,13 @@ export interface ThresholdTrigger {
   type: 'threshold';
   trap: string;
   count: number;
+  /**
+   * Days after the last qualifying catch before the step goes quiet
+   * again. Without this a step opened by one catch in July was still
+   * demanding a spray in late September, long after the flight ended
+   * and the traps had gone back to zero.
+   */
+  staleAfterDays?: number;
 }
 
 export type Trigger =
@@ -297,8 +304,28 @@ function lastDone(
   return latest;
 }
 
+/**
+ * Evidence dated after the as-of date has not happened yet.
+ *
+ * The live app always asks about today, so this never bit in normal
+ * use — but every retrospective view was wrong: replaying April showed
+ * a step completed by a July spray and a trap threshold tripped by a
+ * catch three months in the future. Filtering here rather than in the
+ * caller makes it true for every caller.
+ */
+function asOf<T>(rows: readonly T[] | undefined, date: (row: T) => string, asOfYmd: string): T[] {
+  return (rows ?? []).filter((r) => date(r).slice(0, 10) <= asOfYmd);
+}
+
 /** Place one step on the season's calendar. */
-export function resolveStep(step: ProgramStep, input: ResolveInput): ResolvedStep {
+export function resolveStep(step: ProgramStep, rawInput: ResolveInput): ResolvedStep {
+  const input: ResolveInput = {
+    ...rawInput,
+    completions: asOf(rawInput.completions, (c) => c.completedOn, rawInput.asOfYmd),
+    applications: asOf(rawInput.applications, (a) => a.appliedOn, rawInput.asOfYmd),
+    trapCatches: asOf(rawInput.trapCatches, (c) => c.countedOn, rawInput.asOfYmd),
+    infectionEvents: asOf(rawInput.infectionEvents, (e) => e.startTs, rawInput.asOfYmd),
+  };
   const { season, asOfYmd, marks, ddDate } = input;
   const t = step.trigger;
   const placed = (start: string, end: string, why: string): ResolvedStep =>
@@ -484,9 +511,11 @@ export function resolveStep(step: ProgramStep, input: ResolveInput): ResolvedSte
         const deadline = kickbackDeadline(past.startTs, kick);
         const left = hoursRemaining(deadline, input.nowTs ?? `${asOfYmd}T12:00`);
         if (left < 0) {
+          // The window on THAT event closed; the watch itself has not.
+          // Marking it past here stopped it watching for the rest of the
+          // season after the first missed event, silently.
           return watching(
-            `${past.severity} infection on ${past.startTs.slice(0, 10)} — the ${kick} h window closed`,
-            'past'
+            `Watching — the ${kick} h window on the ${past.startTs.slice(0, 10)} infection has closed`
           );
         }
         return {
@@ -509,12 +538,28 @@ export function resolveStep(step: ProgramStep, input: ResolveInput): ResolvedSte
       // stays open from there. Once the flight has started it does not
       // un-start: what closes the step is doing the work, and for a
       // material that has to be maintained, repeatDays brings it back.
-      const first = [...(input.trapCatches ?? [])]
+      const qualifying = [...(input.trapCatches ?? [])]
         .filter(
           (c) =>
             c.trapType === t.trap && c.count >= t.count && seasonOf(c.countedOn) === season
         )
-        .sort((a, b) => a.countedOn.localeCompare(b.countedOn))[0];
+        .sort((a, b) => a.countedOn.localeCompare(b.countedOn));
+      const first = qualifying[0];
+      const latest = qualifying[qualifying.length - 1];
+
+      // Pressure that stopped weeks ago is not pressure now.
+      if (latest && daysBetweenUtc(latest.countedOn, asOfYmd) > (t.staleAfterDays ?? 21)) {
+        return {
+          step,
+          status: 'monitor',
+          start: null,
+          end: null,
+          why: `Quiet since ${latest.countedOn} — watching the traps again`,
+          daysUntil: null,
+          lastDoneOn: null,
+          dueAgainOn: null,
+        };
+      }
 
       if (!first) {
         return {

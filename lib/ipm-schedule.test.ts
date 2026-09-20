@@ -509,3 +509,142 @@ describe('biofix degree-day triggers', () => {
     expect(r.why).toMatch(/base 50°F from Jan 1/);
   });
 });
+
+describe('evidence from the future (regression)', () => {
+  // Found by replaying a simulated season: asking about April showed a
+  // step completed by a July spray, and a trap threshold tripped by a
+  // catch three months ahead. The live app always asks about today, so
+  // it never bit in use — but every retrospective view was wrong.
+  const kaolin = step({ type: 'threshold', trap: 'red_sphere', count: 1 }, 'maggot', {
+    materialKey: 'kaolin',
+  });
+
+  it('ignores a trap catch dated after the as-of date', () => {
+    const r = resolveStep(kaolin, {
+      ...input('2026-04-15'),
+      trapCatches: [{ trapType: 'red_sphere', countedOn: '2026-07-05', count: 3 }],
+    });
+    expect(r.status).toBe('monitor');
+    expect(r.why).not.toMatch(/2026-07-05/);
+  });
+
+  it('ignores a completion dated after the as-of date', () => {
+    const r = resolveStep(step({ type: 'calendar', start: '01-01', end: '12-31' }, 'x'), {
+      ...input('2026-04-15'),
+      completions: [{ stepKey: 'x', completedOn: '2026-07-16' }],
+    });
+    expect(r.status).toBe('due');
+    expect(r.lastDoneOn).toBeNull();
+  });
+
+  it('ignores a spray dated after the as-of date', () => {
+    const r = resolveStep(
+      step({ type: 'calendar', start: '01-01', end: '12-31' }, 'x', { materialKey: 'copper' }),
+      {
+        ...input('2026-04-15'),
+        applications: [{ materialKey: 'copper', appliedOn: '2026-07-16' }],
+      }
+    );
+    expect(r.status).toBe('due');
+    expect(r.lastDoneOn).toBeNull();
+  });
+
+  it('still counts evidence up to and including the as-of date', () => {
+    const r = resolveStep(kaolin, {
+      ...input('2026-07-05'),
+      trapCatches: [{ trapType: 'red_sphere', countedOn: '2026-07-05', count: 3 }],
+    });
+    expect(r.status).toBe('due');
+  });
+});
+
+describe('a threshold step goes quiet when the flight does (regression)', () => {
+  const kaolin = step({ type: 'threshold', trap: 'red_sphere', count: 1 }, 'maggot', {
+    materialKey: 'kaolin',
+  });
+  const julyCatch = [{ trapType: 'red_sphere' as const, countedOn: '2026-07-05', count: 3 }];
+
+  it('stays open while the catch is recent', () => {
+    expect(resolveStep(kaolin, { ...input('2026-07-20'), trapCatches: julyCatch }).status)
+      .toBe('due');
+  });
+
+  it('returns to watching once the catches stop', () => {
+    // One catch in July was still demanding a spray in late September,
+    // long after the traps had gone back to zero.
+    const r = resolveStep(kaolin, { ...input('2026-09-20'), trapCatches: julyCatch });
+    expect(r.status).toBe('monitor');
+    expect(r.why).toMatch(/Quiet since 2026-07-05/);
+  });
+
+  it('honours an explicit staleness window', () => {
+    const impatient = step(
+      { type: 'threshold', trap: 'red_sphere', count: 1, staleAfterDays: 7 },
+      'k2'
+    );
+    expect(resolveStep(impatient, { ...input('2026-07-20'), trapCatches: julyCatch }).status)
+      .toBe('monitor');
+  });
+});
+
+describe('a closed kickback window does not end the watch (regression)', () => {
+  // Marking the watch 'past' when one event's window closed stopped it
+  // watching for the rest of the season, silently — so a scab watch
+  // that missed its first event in March saw nothing in April or May.
+  const watch = step(
+    { type: 'condition', kind: 'scab_infection', fromStage: 'green_tip', untilStage: 'petal_fall' },
+    'scab_watch',
+    { pestKey: 'apple_scab', materialKey: 'lime_sulfur' }
+  );
+  const react = [{ pestKey: 'apple_scab', posture: 'react' as const, minSeverity: 'moderate' as const }];
+  const kickbackHours = () => 48;
+
+  it('is due inside the window', () => {
+    const r = resolveStep(watch, {
+      ...input('2026-04-12'),
+      postures: react,
+      kickbackHours,
+      nowTs: '2026-04-12T08:00',
+      infectionEvents: [
+        { startTs: '2026-04-11T02:00', endTs: '2026-04-12T06:00', severity: 'moderate' },
+      ],
+    });
+    expect(r.status).toBe('due');
+    expect(r.why).toMatch(/left to act/);
+  });
+
+  it('goes back to WATCHING once that window closes, not to past', () => {
+    const r = resolveStep(watch, {
+      ...input('2026-04-20'),
+      postures: react,
+      kickbackHours,
+      nowTs: '2026-04-20T08:00',
+      infectionEvents: [
+        { startTs: '2026-04-11T02:00', endTs: '2026-04-12T06:00', severity: 'moderate' },
+      ],
+    });
+    expect(r.status).toBe('monitor');
+    expect(r.why).toMatch(/Watching/);
+  });
+
+  it('picks up a later event after an earlier one was missed', () => {
+    const r = resolveStep(watch, {
+      ...input('2026-05-02'),
+      postures: react,
+      kickbackHours,
+      nowTs: '2026-05-02T08:00',
+      infectionEvents: [
+        { startTs: '2026-03-16T02:00', endTs: '2026-03-18T06:00', severity: 'severe' },
+        { startTs: '2026-05-01T20:00', endTs: '2026-05-02T10:00', severity: 'moderate' },
+      ],
+    });
+    expect(r.status).toBe('due');
+    expect(r.why).toMatch(/2026-05-01/);
+  });
+
+  it('only truly ends when the stage window closes', () => {
+    const r = resolveStep(watch, { ...input('2026-06-20'), postures: react, kickbackHours });
+    expect(r.status).toBe('past');
+    expect(r.why).toMatch(/Outside the watch window/);
+  });
+});
