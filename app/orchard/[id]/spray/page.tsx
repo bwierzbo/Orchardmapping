@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { ArrowLeft, SprayCan } from 'lucide-react';
 import { getOrchardConfigById } from '@/lib/db/orchards';
+import { listSprayTargets } from '@/lib/db/spray';
 import SprayClient from './SprayClient';
 
 // Live DB data; never prerender at build time
@@ -20,7 +21,11 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function SprayPage({ params }: PageProps) {
   const { id } = await params;
-  const orchard = await getOrchardConfigById(id).catch(() => null);
+  const [orchard, targets] = await Promise.all([
+    getOrchardConfigById(id).catch(() => null),
+    // The pest library is the vocabulary; the form must not keep its own
+    listSprayTargets().catch(() => []),
+  ]);
   if (!orchard) notFound();
 
   return (
@@ -42,7 +47,7 @@ export default async function SprayPage({ params }: PageProps) {
           for. The material list and its warnings follow the program you pick below.
         </p>
 
-        <SprayClient orchardId={orchard.id} />
+        <SprayClient orchardId={orchard.id} targets={targets} />
       </div>
     </main>
   );
