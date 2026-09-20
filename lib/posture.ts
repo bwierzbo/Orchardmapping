@@ -64,7 +64,7 @@ export interface PestPosture {
    * last season, which is a judgement this orchard's own observation
    * log can inform.
    */
-  minSeverity?: 'light' | 'moderate' | 'severe';
+  minSeverity?: 'minimal' | 'light' | 'moderate' | 'severe';
   /** Stage window the posture applies within, when it is seasonal. */
   fromStage?: PhenologyStage;
   untilStage?: PhenologyStage;

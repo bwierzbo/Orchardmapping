@@ -265,7 +265,7 @@ export interface ResolveInput {
 export interface InfectionWindow {
   startTs: string;
   endTs: string;
-  severity: 'light' | 'moderate' | 'severe';
+  severity: 'minimal' | 'light' | 'moderate' | 'severe';
   /** True for an event the forecast says is coming, not one that ran. */
   forecast?: boolean;
 }
@@ -467,7 +467,7 @@ export function resolveStep(step: ProgramStep, rawInput: ResolveInput): Resolved
         return watching('Not treating this — recorded as a decision', 'past');
       }
 
-      const rank = { light: 1, moderate: 2, severe: 3 } as const;
+      const rank = { minimal: 1, light: 2, moderate: 3, severe: 4 } as const;
       const floor = rank[posture?.minSeverity ?? 'moderate'];
       const inWindow = (input.infectionEvents ?? []).filter(
         (e) =>

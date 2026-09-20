@@ -25,40 +25,60 @@ import { cToF } from './gdd';
  * biggest improvement available.
  */
 
-/** Hours of wetness needed at a mean temperature, revised Mills. */
+/**
+ * Hours of wetness needed at a mean temperature.
+ *
+ * light / moderate / severe are the Low / Moderate / High infection
+ * columns of the Jones revision of Mills' original table.
+ *
+ * `minimum` is separate and MORE CONSERVATIVE: the threshold NEWA
+ * actually operates on, from MacHardy and Gadoury's 1989 revision,
+ * which found ascospores need about three hours less than Mills
+ * allowed. At 61-75°F that is 6 hours against the 9 at which a light
+ * infection is counted, and at 39°F it is 28 against roughly 34.
+ *
+ * The distinction matters operationally: a model that only reports
+ * light-and-above stays quiet through events a running system would
+ * call. It is exposed as its own severity rather than folded into
+ * 'light', because they answer different questions — "could infection
+ * have occurred at all" and "was it enough to produce noticeable
+ * lesions".
+ */
 interface MillsRow {
   /** Mean temperature over the wet period, °F. */
   tempF: number;
+  /** NEWA / MacHardy-Gadoury minimum for any infection. */
+  minimum: number;
   light: number;
   moderate: number;
   severe: number;
 }
 
 const MILLS: MillsRow[] = [
-  { tempF: 78, light: 13, moderate: 17, severe: 26 },
-  { tempF: 77, light: 11, moderate: 14, severe: 21 },
-  { tempF: 76, light: 9.5, moderate: 12, severe: 19 },
-  { tempF: 66, light: 9, moderate: 12, severe: 19 },
-  { tempF: 61, light: 9, moderate: 13, severe: 20 },
-  { tempF: 60, light: 9.5, moderate: 13, severe: 20 },
-  { tempF: 59, light: 10, moderate: 13, severe: 21 },
-  { tempF: 58, light: 10, moderate: 14, severe: 21 },
-  { tempF: 56, light: 11, moderate: 15, severe: 22 },
-  { tempF: 55, light: 11, moderate: 16, severe: 24 },
-  { tempF: 54, light: 11.5, moderate: 16, severe: 24 },
-  { tempF: 53, light: 12, moderate: 17, severe: 26 },
-  { tempF: 52, light: 12, moderate: 18, severe: 26 },
-  { tempF: 51, light: 13, moderate: 18, severe: 27 },
-  { tempF: 50, light: 14, moderate: 19, severe: 29 },
-  { tempF: 49, light: 14.5, moderate: 20, severe: 30 },
-  { tempF: 48, light: 15, moderate: 20, severe: 30 },
-  { tempF: 47, light: 17, moderate: 23, severe: 35 },
-  { tempF: 46, light: 19, moderate: 26, severe: 39 },
-  { tempF: 45, light: 20, moderate: 27, severe: 41 },
-  { tempF: 44, light: 22, moderate: 30, severe: 45 },
-  { tempF: 43, light: 25, moderate: 34, severe: 51 },
-  { tempF: 42, light: 30, moderate: 40, severe: 60 },
-  { tempF: 33, light: 41, moderate: 55, severe: 80 },
+  { tempF: 78, minimum: 10, light: 13, moderate: 17, severe: 26 },
+  { tempF: 77, minimum: 8, light: 11, moderate: 14, severe: 21 },
+  { tempF: 76, minimum: 6, light: 9.5, moderate: 12, severe: 19 },
+  { tempF: 66, minimum: 6, light: 9, moderate: 12, severe: 18 },
+  { tempF: 61, minimum: 6, light: 9, moderate: 13, severe: 20 },
+  { tempF: 60, minimum: 6.5, light: 9.5, moderate: 13, severe: 20 },
+  { tempF: 59, minimum: 7, light: 10, moderate: 13, severe: 21 },
+  { tempF: 58, minimum: 7, light: 10, moderate: 14, severe: 21 },
+  { tempF: 56, minimum: 8, light: 11, moderate: 15, severe: 22 },
+  { tempF: 55, minimum: 8, light: 11, moderate: 16, severe: 24 },
+  { tempF: 54, minimum: 8.5, light: 11.5, moderate: 16, severe: 24 },
+  { tempF: 53, minimum: 9, light: 12, moderate: 17, severe: 26 },
+  { tempF: 52, minimum: 9, light: 12, moderate: 18, severe: 26 },
+  { tempF: 51, minimum: 10, light: 13, moderate: 18, severe: 27 },
+  { tempF: 50, minimum: 11, light: 14, moderate: 19, severe: 29 },
+  { tempF: 49, minimum: 11.5, light: 14.5, moderate: 20, severe: 30 },
+  { tempF: 48, minimum: 12, light: 15, moderate: 20, severe: 30 },
+  { tempF: 47, minimum: 14, light: 17, moderate: 23, severe: 35 },
+  { tempF: 46, minimum: 16, light: 19, moderate: 26, severe: 39 },
+  { tempF: 45, minimum: 17, light: 20, moderate: 27, severe: 41 },
+  { tempF: 44, minimum: 19, light: 22, moderate: 30, severe: 45 },
+  { tempF: 43, minimum: 22, light: 25, moderate: 34, severe: 51 },
+  { tempF: 42, minimum: 27, light: 30, moderate: 40, severe: 60 },
+  { tempF: 33, minimum: 38, light: 41, moderate: 55, severe: 80 },
 ];
 
 /** Below this, infection is not considered possible. */
@@ -78,6 +98,7 @@ export function millsRequirement(tempF: number): MillsRow | null {
     const mix = (a: number, b: number) => a + (b - a) * f;
     return {
       tempF,
+      minimum: mix(lo.minimum, hi.minimum),
       light: mix(lo.light, hi.light),
       moderate: mix(lo.moderate, hi.moderate),
       severe: mix(lo.severe, hi.severe),
@@ -150,7 +171,7 @@ export function isWetHour(h: HourWeather, options: WetnessOptions = {}): boolean
   return false;
 }
 
-export type InfectionSeverity = 'none' | 'light' | 'moderate' | 'severe';
+export type InfectionSeverity = 'none' | 'minimal' | 'light' | 'moderate' | 'severe';
 
 export interface WetPeriod {
   /** Local timestamps, "YYYY-MM-DDTHH:mm". */
@@ -173,7 +194,10 @@ function severityFor(wetHours: number, meanTempF: number): {
   if (wetHours >= req.severe) return { severity: 'severe', hoursToNext: null };
   if (wetHours >= req.moderate) return { severity: 'moderate', hoursToNext: req.severe - wetHours };
   if (wetHours >= req.light) return { severity: 'light', hoursToNext: req.moderate - wetHours };
-  return { severity: 'none', hoursToNext: req.light - wetHours };
+  // The NEWA operating threshold: infection was possible, even if it
+  // would not show as a noticeable crop of lesions.
+  if (wetHours >= req.minimum) return { severity: 'minimal', hoursToNext: req.light - wetHours };
+  return { severity: 'none', hoursToNext: req.minimum - wetHours };
 }
 
 /**
@@ -238,7 +262,7 @@ export function infectionPeriods(
   options: WetnessOptions = {}
 ): WetPeriod[] {
   const rank: Record<InfectionSeverity, number> = {
-    none: 0, light: 1, moderate: 2, severe: 3,
+    none: 0, minimal: 1, light: 2, moderate: 3, severe: 4,
   };
   return findWetPeriods(hours, options).filter(
     (p) => rank[p.severity] >= rank[minSeverity]

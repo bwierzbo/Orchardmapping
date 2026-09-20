@@ -19,7 +19,7 @@ function decode(row: Record<string, unknown>): PestPosture {
   return {
     pestKey: String(row.pest_key),
     posture: posture as Posture,
-    minSeverity: (['light', 'moderate', 'severe'].includes(min)
+    minSeverity: (['minimal', 'light', 'moderate', 'severe'].includes(min)
       ? min
       : 'moderate') as PestPosture['minSeverity'],
   };

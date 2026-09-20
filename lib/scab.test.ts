@@ -28,6 +28,25 @@ function hours(
 }
 
 describe('millsRequirement', () => {
+  it('matches the published table at 61-75°F', () => {
+    // NEWA minimum 6, low 9, moderate 12, high 18. The minimum is the
+    // threshold a running system actually operates on and is three
+    // hours below "light" — a model reporting only light-and-above
+    // stays quiet through events NEWA would call.
+    const r = millsRequirement(66)!;
+    expect(r.minimum).toBeCloseTo(6, 1);
+    expect(r.light).toBeCloseTo(9, 1);
+    expect(r.moderate).toBeCloseTo(12, 1);
+    expect(r.severe).toBeCloseTo(18, 1);
+  });
+
+  it('orders minimum below light at every temperature', () => {
+    for (const t of [35, 45, 50, 55, 60, 70, 78]) {
+      const r = millsRequirement(t)!;
+      expect(r.minimum).toBeLessThan(r.light);
+    }
+  });
+
   it('needs fewer wet hours as it warms', () => {
     const cool = millsRequirement(45)!;
     const warm = millsRequirement(60)!;
@@ -104,6 +123,17 @@ describe('findWetPeriods', () => {
     const p = findWetPeriods(hours('2026-04-10T00:00', 5, 50, { wet: true }));
     expect(p[0].severity).toBe('none');
     expect(infectionPeriods(hours('2026-04-10T00:00', 5, 50, { wet: true }))).toEqual([]);
+  });
+
+  it('calls a MINIMAL infection between the NEWA threshold and light', () => {
+    // 12 h at 50°F: past the 11 h minimum, short of the 14 h that
+    // counts as a light infection.
+    const p = findWetPeriods(hours('2026-04-10T00:00', 12, 50, { wet: true }));
+    expect(p[0].severity).toBe('minimal');
+    expect(infectionPeriods(p.length ? hours('2026-04-10T00:00', 12, 50, { wet: true }) : [], 'minimal'))
+      .toHaveLength(1);
+    expect(infectionPeriods(hours('2026-04-10T00:00', 12, 50, { wet: true }), 'light'))
+      .toHaveLength(0);
   });
 
   it('bridges a short dry gap rather than splitting the period', () => {
