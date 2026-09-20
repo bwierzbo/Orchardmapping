@@ -1,5 +1,10 @@
 import { sql } from '@vercel/postgres';
 import type { HourWeather } from '../weather-hour';
+import {
+  resolveHours,
+  type SourcedHour,
+  type WeatherSourceMeta,
+} from '../weather-source';
 import { fetchRecentHours, nowLocalIso } from '../openmeteo';
 
 /**
@@ -28,23 +33,25 @@ export async function latestHourTs(orchardId: string): Promise<string | null> {
  */
 export async function insertHours(
   orchardId: string,
-  hours: readonly HourWeather[]
+  hours: readonly HourWeather[],
+  /** Which source these came from. Rows are kept side by side. */
+  source = 'openmeteo'
 ): Promise<number> {
   const CHUNK = 500;
-  const COLS = 5; // ts, temp_c, precip_mm, rh_pct, leaf_wetness_pct
+  const COLS = 6; // ts, temp_c, precip_mm, rh_pct, leaf_wetness_pct, source
   let written = 0;
   for (let i = 0; i < hours.length; i += CHUNK) {
     const chunk = hours.slice(i, i + CHUNK);
     const values: unknown[] = [orchardId];
     const tuples = chunk.map((h, j) => {
-      values.push(h.ts, h.tempC, h.precipMm, h.rhPct, h.leafWetnessPct);
+      values.push(h.ts, h.tempC, h.precipMm, h.rhPct, h.leafWetnessPct, source);
       const b = j * COLS + 2;
-      return `($1, $${b}::timestamp, $${b + 1}::real, $${b + 2}::real, $${b + 3}::real, $${b + 4}::real)`;
+      return `($1, $${b}::timestamp, $${b + 1}::real, $${b + 2}::real, $${b + 3}::real, $${b + 4}::real, $${b + 5})`;
     });
     const res = await sql.query(
-      `INSERT INTO weather_hours (orchard_id, ts, temp_c, precip_mm, rh_pct, leaf_wetness_pct)
+      `INSERT INTO weather_hours (orchard_id, ts, temp_c, precip_mm, rh_pct, leaf_wetness_pct, source)
        VALUES ${tuples.join(', ')}
-       ON CONFLICT (orchard_id, ts) DO UPDATE SET
+       ON CONFLICT (orchard_id, ts, source) DO UPDATE SET
          precip_mm        = COALESCE(weather_hours.precip_mm, EXCLUDED.precip_mm),
          rh_pct           = COALESCE(weather_hours.rh_pct, EXCLUDED.rh_pct),
          leaf_wetness_pct = COALESCE(weather_hours.leaf_wetness_pct, EXCLUDED.leaf_wetness_pct)
@@ -59,27 +66,61 @@ export async function insertHours(
 }
 
 /** Hours in [startYmd, endYmd] (whole local days, inclusive), ascending. */
+/** The sources serving an orchard, best first. */
+export async function listWeatherSources(orchardId: string): Promise<WeatherSourceMeta[]> {
+  const { rows } = await sql`
+    SELECT source, kind, label, priority, measures_leaf_wetness, enabled
+    FROM weather_sources WHERE orchard_id = ${orchardId}
+    ORDER BY priority
+  `;
+  return rows.map((r) => ({
+    source: String(r.source),
+    kind: String(r.kind) as WeatherSourceMeta['kind'],
+    label: String(r.label),
+    priority: Number(r.priority),
+    measuresLeafWetness: Boolean(r.measures_leaf_wetness),
+    enabled: Boolean(r.enabled),
+  }));
+}
+
+/**
+ * Hours in [startYmd, endYmd], resolved across every source.
+ *
+ * Each FIELD comes from the highest-priority source that has it, so a
+ * station whose rain gauge failed still supplies its temperature, and a
+ * station with no leaf wetness sensor does not blank the field. See
+ * lib/weather-source.ts for why that is per-field rather than per-row.
+ */
 export async function getHours(
   orchardId: string,
   startYmd: string,
   endYmd: string
 ): Promise<HourWeather[]> {
-  const { rows } = await sql`
-    SELECT to_char(ts, 'YYYY-MM-DD"T"HH24:MI') AS ts,
-           temp_c, precip_mm, rh_pct, leaf_wetness_pct
-    FROM weather_hours
-    WHERE orchard_id = ${orchardId}
-      AND ts >= ${`${startYmd}T00:00`}::timestamp
-      AND ts < (${endYmd}::date + 1)
-    ORDER BY ts
-  `;
-  return rows.map((r) => ({
+  const [{ rows }, sources] = await Promise.all([
+    sql`
+      SELECT to_char(ts, 'YYYY-MM-DD"T"HH24:MI') AS ts,
+             temp_c, precip_mm, rh_pct, leaf_wetness_pct, source
+      FROM weather_hours
+      WHERE orchard_id = ${orchardId}
+        AND ts >= ${`${startYmd}T00:00`}::timestamp
+        AND ts < (${endYmd}::date + 1)
+      ORDER BY ts
+    `,
+    listWeatherSources(orchardId),
+  ]);
+
+  const candidates: SourcedHour[] = rows.map((r) => ({
     ts: r.ts as string,
     tempC: Number(r.temp_c),
     precipMm: r.precip_mm == null ? null : Number(r.precip_mm),
     rhPct: r.rh_pct == null ? null : Number(r.rh_pct),
     leafWetnessPct: r.leaf_wetness_pct == null ? null : Number(r.leaf_wetness_pct),
+    source: String(r.source),
   }));
+
+  // Resolved hours carry provenance; callers that only want the weather
+  // can ignore it, and it costs nothing to leave attached.
+  return resolveHours(candidates, sources);
 }
 
 export interface PriorSeasonAggregates {
