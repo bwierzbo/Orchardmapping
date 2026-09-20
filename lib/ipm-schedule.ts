@@ -1,5 +1,6 @@
 import { type PhenologyMark, type PhenologyStage, seasonOf, stageDate } from './phenology';
 import type { TrapCatch } from './traps';
+import { hoursRemaining, kickbackDeadline, type PestPosture } from './posture';
 
 /**
  * Turning a program into dates.
@@ -241,6 +242,25 @@ export interface ResolveInput {
   applications?: readonly MaterialApplication[];
   /** Trap counts, which is how a threshold step learns it is live. */
   trapCatches?: readonly TrapCatch[];
+  /** How this orchard has chosen to answer each pest. */
+  postures?: readonly PestPosture[];
+  /**
+   * Infection events from the disease model, observed and forecast.
+   * A condition step is only actionable because of these.
+   */
+  infectionEvents?: readonly InfectionWindow[];
+  /** Hours a material still works after infection starts, or null. */
+  kickbackHours?: (materialKey: string) => number | null;
+  /** Local "YYYY-MM-DDTHH:mm" — needed to count down a kickback window. */
+  nowTs?: string;
+}
+
+export interface InfectionWindow {
+  startTs: string;
+  endTs: string;
+  severity: 'light' | 'moderate' | 'severe';
+  /** True for an event the forecast says is coming, not one that ran. */
+  forecast?: boolean;
 }
 
 /**
@@ -394,17 +414,94 @@ export function resolveStep(step: ProgramStep, input: ResolveInput): ResolvedSte
       }
       const until = t.untilStage ? stageDate(marks, t.untilStage, season) : null;
       const live = (!from || asOfYmd >= from) && (!until || asOfYmd <= until);
-      return {
+      const watching = (why: string, status: StepStatus = 'monitor'): ResolvedStep => ({
         step,
-        status: live ? 'monitor' : from && asOfYmd < from ? 'upcoming' : 'past',
+        status,
         start: from,
         end: until,
-        why: live ? 'Watching conditions' : 'Outside the watch window',
+        why,
         daysUntil: from ? daysBetweenUtc(asOfYmd, from) : null,
-        // A watch is never "done" — it runs until its window closes.
         lastDoneOn: null,
         dueAgainOn: null,
-      };
+      });
+
+      if (!live) {
+        return watching(
+          'Outside the watch window',
+          from && asOfYmd < from ? 'upcoming' : 'past'
+        );
+      }
+
+      // The posture decides what a watch DOES when conditions occur.
+      const posture = step.pestKey
+        ? input.postures?.find((p) => p.pestKey === step.pestKey)
+        : undefined;
+      if (posture?.posture === 'off') {
+        return watching('Not treating this — recorded as a decision', 'past');
+      }
+
+      const rank = { light: 1, moderate: 2, severe: 3 } as const;
+      const floor = rank[posture?.minSeverity ?? 'moderate'];
+      const inWindow = (input.infectionEvents ?? []).filter(
+        (e) =>
+          rank[e.severity] >= floor &&
+          e.startTs.slice(0, 10) >= (from ?? '0000-00-00') &&
+          (!until || e.startTs.slice(0, 10) <= until)
+      );
+
+      // PROTECT: the next forecast event is the deadline to be covered.
+      if (posture?.posture === 'protect') {
+        const ahead = inWindow
+          .filter((e) => e.forecast && e.startTs.slice(0, 10) >= asOfYmd)
+          .sort((a, b) => a.startTs.localeCompare(b.startTs))[0];
+        if (!ahead) return watching('Watching the forecast — nothing coming yet');
+        return {
+          ...watching(`${ahead.severity} infection forecast for ${ahead.startTs.slice(0, 10)} — be covered before it`),
+          status: 'due',
+        };
+      }
+
+      // REACT: an event has run; the material's kickback sets the clock.
+      if (posture?.posture === 'react') {
+        const past = inWindow
+          .filter((e) => !e.forecast && e.startTs.slice(0, 10) <= asOfYmd)
+          .sort((a, b) => b.startTs.localeCompare(a.startTs))[0];
+        if (!past) return watching('Watching for an infection period');
+        // Two different failures, and conflating them misleads: a step
+        // with no material assigned has nothing to time, which is not
+        // the same as a material that cannot work after infection.
+        if (!step.materialKey) {
+          return watching(
+            `${past.severity} infection on ${past.startTs.slice(0, 10)} — no material is set on this step, so there is nothing to time`
+          );
+        }
+        const kick = input.kickbackHours?.(step.materialKey) ?? null;
+        if (kick === null) {
+          return watching(
+            `${past.severity} infection on ${past.startTs.slice(0, 10)} — ${stageWords(step.materialKey)} has no post-infection activity, so reacting cannot work. Protect ahead instead.`
+          );
+        }
+        const deadline = kickbackDeadline(past.startTs, kick);
+        const left = hoursRemaining(deadline, input.nowTs ?? `${asOfYmd}T12:00`);
+        if (left < 0) {
+          return watching(
+            `${past.severity} infection on ${past.startTs.slice(0, 10)} — the ${kick} h window closed`,
+            'past'
+          );
+        }
+        return {
+          ...watching(`${past.severity} infection began ${past.startTs.slice(0, 10)} — ${Math.floor(left)} h left to act`),
+          status: 'due',
+        };
+      }
+
+      // EVIDENCE, or no posture chosen: report, do not instruct.
+      const seen = inWindow.filter((e) => !e.forecast).length;
+      return watching(
+        seen > 0
+          ? `Watching conditions — ${seen} infection period${seen === 1 ? '' : 's'} so far`
+          : 'Watching conditions'
+      );
     }
 
     case 'threshold': {

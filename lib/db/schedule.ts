@@ -1,6 +1,8 @@
 import { listProgramSteps, listCompletions } from './program';
 import { applicationHistory } from './spray';
 import { seasonCatches } from './traps';
+import { listPostures, listMaterialKickback } from './posture';
+import { infectionPeriods } from '../scab';
 import { listMarks } from './phenology';
 import { getHours } from './weather';
 import { ddCrossingDates } from '../gdd';
@@ -10,6 +12,7 @@ import {
   resolveProgram,
   type DegreeDayTrigger,
   type MaterialApplication,
+  type InfectionWindow,
   type ResolvedStep,
 } from '../ipm-schedule';
 import { seasonOf } from '../phenology';
@@ -29,15 +32,19 @@ export async function resolveSchedule(
 ): Promise<ResolvedStep[]> {
   const season = seasonOf(asOfYmd);
 
-  const [steps, marks, completions, sprays, trapCatches] = await Promise.all([
-    listProgramSteps(orchardId),
-    listMarks(orchardId),
-    listCompletions(orchardId, season).catch(() => []),
-    // A recorded spray completes the step that called for it, so the
-    // work is never entered twice. 400 days covers a wrapped window.
-    applicationHistory(orchardId, 400).catch(() => []),
-    seasonCatches(orchardId, season).catch(() => []),
-  ]);
+  const [steps, marks, completions, sprays, trapCatches, postures, kickback] =
+    await Promise.all([
+      listProgramSteps(orchardId),
+      listMarks(orchardId),
+      listCompletions(orchardId, season).catch(() => []),
+      // A recorded spray completes the step that called for it, so the
+      // work is never entered twice. 400 days covers a wrapped window.
+      applicationHistory(orchardId, 400).catch(() => []),
+      seasonCatches(orchardId, season).catch(() => []),
+      listPostures(orchardId).catch(() => []),
+      listMaterialKickback().catch(() => []),
+    ]);
+  const kickbackBy = new Map(kickback.map((k) => [k.materialKey, k.postInfectionHours]));
 
   const applications: MaterialApplication[] = sprays.map((a) => ({
     materialKey: a.material_key,
@@ -87,10 +94,30 @@ export async function resolveSchedule(
     }
   }
 
+  // Infection events, for the condition steps. Only computed when a
+  // condition step exists — a programme without one should not pull a
+  // season of hours to find that out.
+  let infectionEvents: InfectionWindow[] = [];
+  if (steps.some((s) => s.trigger.type === 'condition')) {
+    const hours = await getHours(orchardId, `${season}-01-01`, asOfYmd).catch(() => []);
+    infectionEvents = infectionPeriods(hours, 'light').map((p) => ({
+      startTs: p.startTs,
+      endTs: p.endTs,
+      severity: p.severity as InfectionWindow['severity'],
+      // Everything from stored hours has already happened. Forecast
+      // events would arrive from the same model over forecast hours,
+      // which is not wired yet.
+      forecast: false,
+    }));
+  }
+
   return resolveProgram({
     steps,
     season,
     asOfYmd,
+    postures,
+    infectionEvents,
+    kickbackHours: (m) => kickbackBy.get(m) ?? null,
     marks: marks.map((m) => ({ stage: m.stage, observedOn: m.observedOn })),
     ddDate: (trigger, biofix) =>
       crossings.get(modelKey(trigger, biofix))?.get(trigger.dd) ?? null,
