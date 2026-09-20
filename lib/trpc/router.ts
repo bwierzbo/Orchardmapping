@@ -44,6 +44,7 @@ import {
 } from '@/lib/db/spray';
 import { listMarks, markStage, unmarkStage } from '@/lib/db/phenology';
 import { completeStep, setStepEnabled, uncompleteStep } from '@/lib/db/program';
+import { summariseSchedule } from '@/lib/db/schedule';
 import { addTrap, listTraps, moveTrap, recordCount, retireTrap } from '@/lib/db/traps';
 import { TRAP_TYPES } from '@/lib/traps';
 import { PHENOLOGY_STAGES } from '@/lib/phenology';
@@ -593,6 +594,11 @@ export const appRouter = router({
    * nothing here duplicates the spray page.
    */
   program: router({
+    /** What the program is asking for, small enough for the map. */
+    summary: publicProcedure
+      .input(z.object({ orchardId: z.string().min(1) }))
+      .query(async ({ input }) => summariseSchedule(input.orchardId)),
+
     /** Turn a step on or off for this orchard. Global steps are regional
      *  agronomy; whether an orchard runs one is a local decision. */
     setEnabled: protectedProcedure
