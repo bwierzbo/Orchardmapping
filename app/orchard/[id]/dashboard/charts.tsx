@@ -113,28 +113,53 @@ export function StackedBarRow({
 export function Histogram({
   buckets,
   ariaLabel,
+  threshold,
 }: {
   buckets: { label: string; count: number }[];
   ariaLabel: string;
+  /** A line across the plot, and the bars that reach it change colour.
+   *  A trap chart without its action threshold is just a shape. */
+  threshold?: { value: number; label: string };
 }) {
-  const max = Math.max(1, ...buckets.map((b) => b.count));
+  const max = Math.max(1, ...buckets.map((b) => b.count), threshold?.value ?? 0);
+  const PLOT = 72;
+  const scale = (n: number) => (n / max) * PLOT;
   return (
-    <div className="flex items-end gap-2 h-28" role="img" aria-label={ariaLabel}>
-      {buckets.map((b) => (
-        <div key={b.label} className="flex-1 flex flex-col items-center gap-1 min-w-0">
-          <span className="font-mono text-[11px] text-bark">{b.count > 0 ? b.count : ''}</span>
+    <div>
+      <div className="relative flex items-end gap-2 h-28" role="img" aria-label={ariaLabel}>
+        {threshold && (
           <div
-            title={`${b.label}: ${b.count}`}
-            className="w-full rounded-t-[4px] bg-canopy-600"
-            style={{
-              height: `${(b.count / max) * 72}px`,
-              opacity: b.count === 0 ? 0.15 : 1,
-              minHeight: '3px',
-            }}
+            aria-hidden
+            className="absolute inset-x-0 border-t border-dashed border-flag-600 pointer-events-none"
+            // Sits above the 10px label row and the 4px gap beneath the bars
+            style={{ bottom: `${scale(threshold.value) + 18}px` }}
           />
-          <span className="font-mono text-[10px] text-bark truncate max-w-full">{b.label}</span>
-        </div>
-      ))}
+        )}
+        {buckets.map((b) => {
+          const over = threshold != null && b.count >= threshold.value;
+          return (
+            <div key={b.label} className="flex-1 flex flex-col items-center gap-1 min-w-0">
+              <span className="font-mono text-[11px] text-bark">{b.count > 0 ? b.count : ''}</span>
+              <div
+                title={`${b.label}: ${b.count}`}
+                className={`w-full rounded-t-[4px] ${over ? 'bg-flag-600' : 'bg-canopy-600'}`}
+                style={{
+                  height: `${scale(b.count)}px`,
+                  opacity: b.count === 0 ? 0.15 : 1,
+                  minHeight: '3px',
+                }}
+              />
+              <span className="font-mono text-[10px] text-bark truncate max-w-full">{b.label}</span>
+            </div>
+          );
+        })}
+      </div>
+      {threshold && (
+        <p className="survey-caption mt-1">
+          <span aria-hidden className="inline-block w-3 border-t border-dashed border-flag-600 align-middle mr-1" />
+          {threshold.label}
+        </p>
+      )}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { sql } from '@vercel/postgres';
 import type { ProgramMode, SprayMaterial, PriorApplication } from '../spray-rules';
+import { TIMEZONE } from '../openmeteo';
 
 /**
  * Spray/IPM persistence: the material library, the application record,
@@ -50,6 +51,9 @@ function decodeMaterial(row: Record<string, unknown>): SprayMaterial {
     rate_unit: (row.rate_unit as string | null) ?? null,
     targets: (row.targets as string[] | null) ?? [],
     conflicts_with: (row.conflicts_with as string[] | null) ?? [],
+    conflicts_after: (row.conflicts_after as string[] | null) ?? [],
+    conflict_after_days:
+      row.conflict_after_days == null ? null : Number(row.conflict_after_days),
     conflict_days: num(row.conflict_days),
     max_per_season: num(row.max_per_season),
     notes: (row.notes as string | null) ?? null,
@@ -122,7 +126,8 @@ export async function applicationHistory(
   sinceDays = 400,
 ): Promise<PriorApplication[]> {
   const { rows } = await sql`
-    SELECT material_key, material_name, applied_at
+    SELECT material_key, material_name, applied_at,
+           to_char(applied_at AT TIME ZONE ${TIMEZONE}, 'YYYY-MM-DD') AS applied_on
     FROM spray_applications
     WHERE orchard_id = ${orchardId}
       AND deleted_at IS NULL
@@ -133,6 +138,7 @@ export async function applicationHistory(
     material_key: (r.material_key as string | null) ?? null,
     material_name: String(r.material_name),
     applied_at: new Date(r.applied_at as string).toISOString(),
+    applied_on: String(r.applied_on),
   }));
 }
 

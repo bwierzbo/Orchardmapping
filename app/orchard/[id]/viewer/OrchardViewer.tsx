@@ -30,6 +30,17 @@ import EditModePanel from './EditModePanel';
 import MapLegend from './MapLegend';
 import OrchardSwitcher from './OrchardSwitcher';
 import { useAreaLayer } from './useAreaLayer';
+import { useTrapLayer } from './useTrapLayer';
+import TrapModePanel from './TrapModePanel';
+import TrapDetailPanel from './TrapDetailPanel';
+import {
+  fetchTraps,
+  createTrap,
+  recordTrapCount,
+  retireTrap as apiRetireTrap,
+  type TrapRow,
+} from '@/lib/api/traps';
+import { nextTrapLabel, type TrapType } from '@/lib/traps';
 import AreaTools from './AreaTools';
 import PhotoDropController from './PhotoDropController';
 import MoveTreeController from './MoveTreeController';
@@ -81,6 +92,12 @@ export default function OrchardViewer({
   // Area features (garden beds, berry fields, …)
   const [areas, setAreas] = useState<OrchardArea[]>([]);
   const [areaMode, setAreaMode] = useState(false);
+  const [trapMode, setTrapMode] = useState(false);
+  const [traps, setTraps] = useState<TrapRow[]>([]);
+  const [selectedTrapId, setSelectedTrapId] = useState<number | null>(null);
+  const [trapType, setTrapType] = useState<TrapType>('red_sphere');
+  const [trapLabel, setTrapLabel] = useState('Sphere 1');
+  const [trapsPlaced, setTrapsPlaced] = useState(0);
   const [selectedAreaId, setSelectedAreaId] = useState<number | null>(null);
   const [hiddenAreaIds, setHiddenAreaIds] = useState<ReadonlySet<number>>(new Set());
   useEffect(() => {
@@ -301,6 +318,68 @@ export default function OrchardViewer({
 
   useWalkPathLayer(mapObj, mapReady, walkMode ? walkPath : null);
 
+  // ---- traps ----
+  const season = useMemo(() => new Date().getFullYear(), []);
+  const todayYmd = useMemo(() => {
+    const d = new Date();
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }, []);
+
+  const refreshTraps = useCallback(async () => {
+    try {
+      setTraps(await fetchTraps(orchard.id, season));
+    } catch {
+      // A trap-layer failure must never take the map down with it.
+    }
+  }, [orchard.id, season]);
+
+  useEffect(() => {
+    fetchTraps(orchard.id, season)
+      .then(setTraps)
+      .catch(() => {}); // map works without traps
+  }, [orchard.id, season]);
+
+  useTrapLayer(mapObj, mapReady, traps, {
+    trapMode,
+    selectedTrapId,
+    onSelect: (id) => {
+      setSelectedTrapId(id);
+      clear();
+    },
+  });
+
+  const selectedTrap = useMemo(
+    () => traps.find((t) => t.id === selectedTrapId) ?? null,
+    [traps, selectedTrapId]
+  );
+
+  const trapCount = useCallback(
+    async (count: number) => {
+      if (!selectedTrapId) return;
+      try {
+        await recordTrapCount(orchard.id, selectedTrapId, todayYmd, count);
+        await refreshTraps();
+        showToast('success', count > 0 ? `${count} recorded` : 'Recorded — nothing on it');
+      } catch (error) {
+        showToast('error', error instanceof Error ? error.message : 'Could not record the count');
+      }
+    },
+    [orchard.id, selectedTrapId, todayYmd, refreshTraps, showToast]
+  );
+
+  const trapRetire = useCallback(async () => {
+    if (!selectedTrapId) return;
+    try {
+      await apiRetireTrap(selectedTrapId, todayYmd);
+      setSelectedTrapId(null);
+      await refreshTraps();
+      showToast('success', 'Trap taken down');
+    } catch (error) {
+      showToast('error', error instanceof Error ? error.message : 'Could not take it down');
+    }
+  }, [selectedTrapId, todayYmd, refreshTraps, showToast]);
+
   useTreeLayer(mapObj, mapReady, trees, {
     editMode,
     canEdit,
@@ -314,12 +393,12 @@ export default function OrchardViewer({
   // ---- edit-mode placement clicks ----
   const placementRef = useRef({
     editMode, canEdit, row, position, autoIncrement,
-    placeVariety, placeStatus,
+    placeVariety, placeStatus, trapMode, trapType, trapLabel,
   });
   useEffect(() => {
     placementRef.current = {
       editMode, canEdit, row, position, autoIncrement,
-      placeVariety, placeStatus,
+      placeVariety, placeStatus, trapMode, trapType, trapLabel,
     };
   });
   useEffect(() => {
@@ -328,6 +407,33 @@ export default function OrchardViewer({
 
     const onClick = async (e: maplibregl.MapMouseEvent) => {
       const p = placementRef.current;
+
+      // Trap mode places traps; the trap layer claims clicks on an
+      // existing trap before this runs, so a tap can't stack one on top
+      // of another.
+      if (p.trapMode && p.canEdit) {
+        if (!p.trapLabel.trim()) {
+          showToast('warning', 'Name the trap before hanging it');
+          return;
+        }
+        try {
+          await createTrap({
+            orchardId: orchard.id,
+            trapType: p.trapType,
+            label: p.trapLabel.trim(),
+            lng: e.lngLat.lng,
+            lat: e.lngLat.lat,
+            deployedOn: todayYmd,
+          });
+          setTrapsPlaced((n) => n + 1);
+          setTrapLabel(nextTrapLabel);
+          await refreshTraps();
+        } catch (error) {
+          showToast('error', error instanceof Error ? error.message : 'Could not hang the trap');
+        }
+        return;
+      }
+
       if (!p.editMode || !p.canEdit) return;
       // Clicking an existing tree/cluster selects it instead of placing
       const layers = ['trees-circles', 'trees-clusters'].filter((l) => m.getLayer(l));
@@ -366,7 +472,7 @@ export default function OrchardViewer({
     return () => {
       m.off('click', onClick);
     };
-  }, [mapObj, create, remove, showToast]);
+  }, [mapObj, create, remove, showToast, orchard.id, todayYmd, refreshTraps]);
 
   // ---- keyboard: scoped to the viewer, single Escape owner ----
   const onKeyDown = useCallback(
@@ -376,6 +482,8 @@ export default function OrchardViewer({
       if (e.key === 'Escape') {
         if (selectedTreeId) clear();
         else if (detectMode) setDetectMode(false);
+        else if (selectedTrapId) setSelectedTrapId(null);
+        else if (trapMode) setTrapMode(false);
         else if (areaMode) {
           if (selectedAreaId !== null) setSelectedAreaId(null);
           else setAreaMode(false);
@@ -385,7 +493,10 @@ export default function OrchardViewer({
         setEditMode((v) => !v);
       }
     },
-    [selectedTreeId, clear, editMode, canEdit, areaMode, selectedAreaId, detectMode]
+    [
+      selectedTreeId, clear, editMode, canEdit, areaMode, selectedAreaId,
+      detectMode, selectedTrapId, trapMode,
+    ]
   );
 
   // ---- panel actions ----
@@ -436,7 +547,11 @@ export default function OrchardViewer({
       <div
         ref={mapContainer}
         className={`h-full w-full bg-line ${
-          editMode ? 'cursor-crosshair ring-4 ring-flag-600 ring-inset' : ''
+          editMode
+            ? 'cursor-crosshair ring-4 ring-flag-600 ring-inset'
+            : trapMode
+              ? 'cursor-crosshair ring-4 ring-canopy-600 ring-inset'
+              : ''
         }`}
       />
 
@@ -533,7 +648,7 @@ export default function OrchardViewer({
             </button>
           </>
         )}
-        {canEdit && !walkMode && !areaMode && !detectMode && (
+        {canEdit && !walkMode && !areaMode && !detectMode && !trapMode && (
           <button
             onClick={() => {
               setAreaMode(false);
@@ -548,7 +663,22 @@ export default function OrchardViewer({
             {editMode ? 'Exit Edit Mode' : 'Enter Edit Mode'}
           </button>
         )}
-        {canEdit && !walkMode && !editMode && !detectMode && (
+        {canEdit && !walkMode && !editMode && !areaMode && !detectMode && (
+          <button
+            onClick={() => {
+              setSelectedTrapId(null);
+              setTrapMode((v) => !v);
+            }}
+            className={`px-4 py-3 rounded-lg shadow-lg text-sm font-medium ${
+              trapMode
+                ? 'bg-canopy-600 text-white hover:bg-canopy-700'
+                : 'bg-surface text-ink hover:bg-canopy-50'
+            }`}
+          >
+            {trapMode ? 'Done Hanging' : 'Traps'}
+          </button>
+        )}
+        {canEdit && !walkMode && !editMode && !detectMode && !trapMode && (
           <button
             onClick={() => {
               setEditMode(false);
@@ -628,6 +758,32 @@ export default function OrchardViewer({
       )}
 
       {/* Edit-mode placement panel */}
+      {trapMode && canEdit && (
+        <TrapModePanel
+          trapType={trapType}
+          label={trapLabel}
+          placedCount={trapsPlaced}
+          onTrapTypeChange={setTrapType}
+          onLabelChange={setTrapLabel}
+          onExit={() => {
+            setTrapMode(false);
+            setTrapsPlaced(0);
+          }}
+        />
+      )}
+
+      {selectedTrap && (
+        <TrapDetailPanel
+          trap={selectedTrap}
+          orchardId={orchard.id}
+          today={todayYmd}
+          canEdit={canEdit}
+          onRecordCount={trapCount}
+          onRetire={trapRetire}
+          onClose={() => setSelectedTrapId(null)}
+        />
+      )}
+
       {editMode && canEdit && (
         <EditModePanel
           orchardId={orchard.id}

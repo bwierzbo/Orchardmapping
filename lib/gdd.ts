@@ -45,20 +45,35 @@ export interface MilestoneHit {
 }
 
 /**
- * Walk hours in time order, returning the local date each milestone
- * threshold was crossed (null when not yet reached).
+ * Walk hours in time order, returning the local date the running total
+ * crossed each threshold (null when not yet reached). One pass covers
+ * every threshold asked for, so a schedule with a dozen degree-day
+ * steps costs the same as one.
  */
-export function milestoneDates(hours: readonly HourTemp[]): MilestoneHit[] {
-  const hits: MilestoneHit[] = CM_MILESTONES.map((m) => ({ ...m, date: null }));
+export function ddCrossingDates(
+  hours: readonly HourTemp[],
+  thresholds: readonly number[]
+): Map<number, string | null> {
+  const wanted = [...new Set(thresholds)].sort((a, b) => a - b);
+  const out = new Map<number, string | null>(wanted.map((t) => [t, null]));
   let dd = 0;
   let i = 0;
   for (const h of hours) {
     dd += hourDD(h.tempC);
-    while (i < hits.length && dd >= hits[i].dd) {
-      hits[i].date = h.ts.slice(0, 10);
+    while (i < wanted.length && dd >= wanted[i]) {
+      out.set(wanted[i], h.ts.slice(0, 10));
       i++;
     }
-    if (i >= hits.length) break;
+    if (i >= wanted.length) break;
   }
-  return hits;
+  return out;
+}
+
+/** The codling moth milestones, dated against a season's hours. */
+export function milestoneDates(hours: readonly HourTemp[]): MilestoneHit[] {
+  const crossed = ddCrossingDates(
+    hours,
+    CM_MILESTONES.map((m) => m.dd)
+  );
+  return CM_MILESTONES.map((m) => ({ ...m, date: crossed.get(m.dd) ?? null }));
 }

@@ -1,8 +1,9 @@
 import { cache, Suspense } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { auth } from '@clerk/nextjs/server';
 import type { Metadata } from 'next';
-import { ArrowLeft, Bug, Map as MapIcon, SprayCan } from 'lucide-react';
+import { ArrowLeft, Bug, CalendarRange, Map as MapIcon, SprayCan, Target } from 'lucide-react';
 import { getOrchardConfigById, getAllOrchardConfigs } from '@/lib/db/orchards';
 import { getTreesByOrchard } from '@/lib/db/trees';
 import { serializeTree } from '@/lib/serialize';
@@ -12,6 +13,8 @@ import StatusBadge from '@/components/StatusBadge';
 import OrchardSwitcher from '../viewer/OrchardSwitcher';
 import OrchardGrid from './OrchardGrid';
 import SeasonCard from './SeasonCard';
+import StageCard from './StageCard';
+import DueNowCard from './DueNowCard';
 import TreeTable from './TreeTable';
 import {
   SegmentedStatusBar,
@@ -83,10 +86,11 @@ function careBucketList(b: CareBuckets) {
 
 export default async function DashboardPage({ params }: PageProps) {
   const { id } = await params;
-  const [orchard, allOrchards, dbTrees] = await Promise.all([
+  const [orchard, allOrchards, dbTrees, { userId }] = await Promise.all([
     getOrchard(id),
     getAllOrchardConfigs(),
     getTreesByOrchard(id),
+    auth(),
   ]);
   if (!orchard) notFound();
 
@@ -121,11 +125,25 @@ export default async function DashboardPage({ params }: PageProps) {
             {/* The IPM pages have no other entry point — the map is chrome-free
                 by design, so the dashboard header is where they live. */}
             <Link
+              href={`/orchard/${orchard.id}/program`}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-bark hover:text-ink rounded-lg hover:bg-canopy-50 dark:hover:bg-canopy-600/10"
+            >
+              <CalendarRange aria-hidden size={15} />
+              <span className="hidden md:inline">Program</span>
+            </Link>
+            <Link
               href={`/orchard/${orchard.id}/pests`}
               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-bark hover:text-ink rounded-lg hover:bg-canopy-50 dark:hover:bg-canopy-600/10"
             >
               <Bug aria-hidden size={15} />
               <span className="hidden md:inline">Pests</span>
+            </Link>
+            <Link
+              href={`/orchard/${orchard.id}/traps`}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-bark hover:text-ink rounded-lg hover:bg-canopy-50 dark:hover:bg-canopy-600/10"
+            >
+              <Target aria-hidden size={15} />
+              <span className="hidden md:inline">Traps</span>
             </Link>
             <Link
               href={`/orchard/${orchard.id}/spray`}
@@ -148,6 +166,28 @@ export default async function DashboardPage({ params }: PageProps) {
 
       <div className="max-w-6xl mx-auto px-5 py-8 space-y-6">
         <p className="survey-caption">{caption}</p>
+
+        <Suspense
+          fallback={
+            <section className="bg-surface border border-line rounded-lg shadow-xs p-5">
+              <p className="survey-caption">Program · Due now</p>
+              <p className="text-sm text-bark mt-2">Working out what the program asks for…</p>
+            </section>
+          }
+        >
+          <DueNowCard orchardId={orchard.id} canEdit={!!userId} />
+        </Suspense>
+
+        <Suspense
+          fallback={
+            <section className="bg-surface border border-line rounded-lg shadow-xs p-5">
+              <p className="survey-caption">Season · Growth stage</p>
+              <p className="text-sm text-bark mt-2">Loading growth stage…</p>
+            </section>
+          }
+        >
+          <StageCard orchardId={orchard.id} canEdit={!!userId} />
+        </Suspense>
 
         <Suspense
           fallback={

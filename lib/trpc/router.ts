@@ -42,6 +42,11 @@ import {
   insertApplication,
   deleteApplication,
 } from '@/lib/db/spray';
+import { listMarks, markStage, unmarkStage } from '@/lib/db/phenology';
+import { completeStep, setStepEnabled, uncompleteStep } from '@/lib/db/program';
+import { addTrap, listTraps, moveTrap, recordCount, retireTrap } from '@/lib/db/traps';
+import { TRAP_TYPES } from '@/lib/traps';
+import { PHENOLOGY_STAGES } from '@/lib/phenology';
 import {
   listPests,
   getPest,
@@ -548,6 +553,176 @@ export const appRouter = router({
         const ok = await deleteObservation(input.id);
         if (!ok) throw new TRPCError({ code: 'NOT_FOUND', message: 'Observation not found' });
         return { success: true };
+      }),
+  }),
+
+  /**
+   * Growth stages. Stage-anchored spray timing ("copper at half-inch
+   * green") can only be placed on a calendar once the orchard records
+   * when it actually got there.
+   */
+  phenology: router({
+    list: publicProcedure
+      .input(z.object({ orchardId: z.string().min(1) }))
+      .query(async ({ input }) => listMarks(input.orchardId)),
+
+    mark: protectedProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          stage: z.enum(PHENOLOGY_STAGES),
+          // Plain YYYY-MM-DD: passes to Postgres verbatim, no day-shift
+          observedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          note: z.string().max(500).optional(),
+        }),
+      )
+      .mutation(async ({ input, ctx }) => markStage({ ...input, createdBy: ctx.userId })),
+
+    unmark: protectedProcedure
+      .input(z.object({ id: z.number().int().positive() }))
+      .mutation(async ({ input }) => {
+        const ok = await unmarkStage(input.id);
+        if (!ok) throw new TRPCError({ code: 'NOT_FOUND', message: 'Mark not found' });
+        return { success: true };
+      }),
+  }),
+
+  /**
+   * Program step completions — the work that isn't a spray. A recorded
+   * spray completes its own step through the application history, so
+   * nothing here duplicates the spray page.
+   */
+  program: router({
+    /** Turn a step on or off for this orchard. Global steps are regional
+     *  agronomy; whether an orchard runs one is a local decision. */
+    setEnabled: protectedProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          stepKey: z.string().min(1),
+          enabled: z.boolean(),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        await setStepEnabled(input.orchardId, input.stepKey, input.enabled);
+        return { success: true };
+      }),
+
+    complete: protectedProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          stepKey: z.string().min(1),
+          completedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          note: z.string().max(500).optional(),
+        }),
+      )
+      .mutation(async ({ input, ctx }) => completeStep({ ...input, createdBy: ctx.userId })),
+
+    uncomplete: protectedProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          stepKey: z.string().min(1),
+          completedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        const ok = await uncompleteStep(input.orchardId, input.stepKey, input.completedOn);
+        if (!ok) throw new TRPCError({ code: 'NOT_FOUND', message: 'Completion not found' });
+        return { success: true };
+      }),
+  }),
+
+  /**
+   * Monitoring traps. A count is what turns a threshold step in the
+   * program from a standing watch into a job, so this is the entry
+   * point for the summer half of the year.
+   */
+  trap: router({
+    list: publicProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          season: z.number().int().min(2000).max(2100).optional(),
+        }),
+      )
+      .query(async ({ input }) =>
+        listTraps(input.orchardId, input.season ?? new Date().getFullYear()),
+      ),
+
+    add: protectedProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          trapType: z.enum(TRAP_TYPES),
+          label: z.string().min(1).max(80),
+          locationNote: z.string().max(200).optional(),
+          lng: z.number().min(-180).max(180).optional(),
+          lat: z.number().min(-90).max(90).optional(),
+          deployedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        }),
+      )
+      .mutation(async ({ input, ctx }) => {
+        const id = await addTrap({ ...input, createdBy: ctx.userId });
+        return { id };
+      }),
+
+    /** Place a trap on the map, or drag one already there. */
+    move: protectedProcedure
+      .input(
+        z.object({
+          id: z.number().int().positive(),
+          lng: z.number().min(-180).max(180),
+          lat: z.number().min(-90).max(90),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        const ok = await moveTrap(input.id, input.lng, input.lat);
+        if (!ok) throw new TRPCError({ code: 'NOT_FOUND', message: 'Trap not found' });
+        return { success: true };
+      }),
+
+    retire: protectedProcedure
+      .input(
+        z.object({
+          id: z.number().int().positive(),
+          removedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        const ok = await retireTrap(input.id, input.removedOn);
+        if (!ok) throw new TRPCError({ code: 'NOT_FOUND', message: 'Trap not found or already down' });
+        return { success: true };
+      }),
+
+    /** The weekly round arrives as one submission, not one per trap. */
+    recordCounts: protectedProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          countedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          entries: z
+            .array(
+              z.object({
+                trapId: z.number().int().positive(),
+                count: z.number().int().min(0).max(10_000),
+              }),
+            )
+            .min(1)
+            .max(100),
+        }),
+      )
+      .mutation(async ({ input, ctx }) => {
+        for (const e of input.entries) {
+          await recordCount({
+            trapId: e.trapId,
+            countedOn: input.countedOn,
+            count: e.count,
+            createdBy: ctx.userId,
+          });
+        }
+        return { recorded: input.entries.length };
       }),
   }),
 });
