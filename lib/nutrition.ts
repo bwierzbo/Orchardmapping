@@ -142,7 +142,7 @@ export const INTENT_NOTES: Record<FruitPurpose, IntentNote[]> = {
     {
       nutrient: 'n',
       when: ['deficient'],
-      note: 'Low leaf nitrogen usually means low juice nitrogen, and below roughly 140 mg/L of yeast-assimilable nitrogen a ferment can stick or throw hydrogen sulfide. Most apple musts already sit under that. Worth knowing BEFORE the press, since it is far easier to add nutrient to a must than to fix a stuck ferment — unless you are keeving, where low nitrogen is the method rather than the fault.',
+      note: 'Low leaf nitrogen usually means low juice nitrogen, and low juice nitrogen is what stalls a ferment or throws hydrogen sulfide. The 140 mg/L of yeast-assimilable nitrogen often quoted is a WINE standard borrowed for cider, and work on cider suggests the real requirement is higher where fungicide residues are present. Apple juice varies enormously — published values run from 27 to 574 mg/L, and one study measured 53 mg/L and called it typical — so this is a reason to MEASURE yeast-assimilable nitrogen at the press rather than a threshold to assume. Far easier to add nutrient to a must than to rescue a stuck ferment. Unless you are keeving, where low nitrogen is the method rather than the fault.',
     },
     {
       nutrient: 'n',
