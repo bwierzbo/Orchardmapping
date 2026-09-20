@@ -3,30 +3,54 @@ import type { HourTemp } from './chill';
 /**
  * Growing degree days from hourly temperatures.
  *
- * Base 50°F with an 88°F horizontal cutoff — the parameters of WSU's
- * codling moth model. Port Angeles (~48.1°N) is north of 46°N, so the
- * no-biofix variant applies: accumulate from January 1 and read
- * milestones directly off the running total.
+ * Every insect has its OWN thresholds, and using one model for all of
+ * them is how a programme mistimes everything except the pest it was
+ * written for. Codling moth accumulates base 50°F with an 88°F cutoff;
+ * Pandemis and obliquebanded leafroller run base 41°F with an 85°F
+ * cutoff — over a spring that is a difference of weeks, not days.
+ *
+ * Accumulation also starts in one of two places. Codling moth here uses
+ * the NO-BIOFIX variant, valid north of 46°N, counting from January 1.
+ * The leafroller models count from a BIOFIX: the date a pheromone trap
+ * first catches, which only the orchard's own traps can supply.
  */
 
-const BASE_F = 50;
-const CAP_F = 88;
+/** The codling moth model, and the default where none is given. */
+export const CODLING_MOTH_MODEL = { base: 50, cutoff: 88 } as const;
+
+/** Pandemis and obliquebanded leafroller (WSU). */
+export const LEAFROLLER_MODEL = { base: 41, cutoff: 85 } as const;
+
+export interface DegreeDayModel {
+  /** Lower developmental threshold, °F. */
+  base: number;
+  /** Upper horizontal cutoff, °F. */
+  cutoff: number;
+}
 
 export function cToF(c: number): number {
   return c * (9 / 5) + 32;
 }
 
-/** Degree-day contribution of a single hour. */
-function hourDD(tempC: number): number {
-  const f = Math.min(cToF(tempC), CAP_F);
-  return Math.max(0, f - BASE_F) / 24;
+/** Degree-day contribution of a single hour under a given model. */
+function hourDD(tempC: number, model: DegreeDayModel): number {
+  const f = Math.min(cToF(tempC), model.cutoff);
+  return Math.max(0, f - model.base) / 24;
 }
 
-/** Total GDD (base 50°F, cap 88°F) over the given hours. */
-export function gdd50(hours: readonly HourTemp[]): number {
+/** Total degree days over the given hours. Defaults to codling moth. */
+export function gddTotal(
+  hours: readonly HourTemp[],
+  model: DegreeDayModel = CODLING_MOTH_MODEL
+): number {
   let dd = 0;
-  for (const h of hours) dd += hourDD(h.tempC);
+  for (const h of hours) dd += hourDD(h.tempC, model);
   return dd;
+}
+
+/** Base 50°F, cutoff 88°F — kept because chill/season summaries use it. */
+export function gdd50(hours: readonly HourTemp[]): number {
+  return gddTotal(hours, CODLING_MOTH_MODEL);
 }
 
 /** WSU no-biofix codling moth milestones (°F DD from Jan 1). */
@@ -52,14 +76,18 @@ export interface MilestoneHit {
  */
 export function ddCrossingDates(
   hours: readonly HourTemp[],
-  thresholds: readonly number[]
+  thresholds: readonly number[],
+  model: DegreeDayModel = CODLING_MOTH_MODEL,
+  /** Accumulate only from this local date onward — a biofix. */
+  startYmd?: string | null
 ): Map<number, string | null> {
   const wanted = [...new Set(thresholds)].sort((a, b) => a - b);
   const out = new Map<number, string | null>(wanted.map((t) => [t, null]));
   let dd = 0;
   let i = 0;
   for (const h of hours) {
-    dd += hourDD(h.tempC);
+    if (startYmd && h.ts.slice(0, 10) < startYmd) continue;
+    dd += hourDD(h.tempC, model);
     while (i < wanted.length && dd >= wanted[i]) {
       out.set(wanted[i], h.ts.slice(0, 10));
       i++;

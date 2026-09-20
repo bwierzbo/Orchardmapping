@@ -4,7 +4,14 @@ import { seasonCatches } from './traps';
 import { listMarks } from './phenology';
 import { getHours } from './weather';
 import { ddCrossingDates } from '../gdd';
-import { resolveProgram, type MaterialApplication, type ResolvedStep } from '../ipm-schedule';
+import {
+  biofixDate,
+  ddModelOf,
+  resolveProgram,
+  type DegreeDayTrigger,
+  type MaterialApplication,
+  type ResolvedStep,
+} from '../ipm-schedule';
 import { seasonOf } from '../phenology';
 import { nowLocalIso } from '../openmeteo';
 
@@ -37,17 +44,47 @@ export async function resolveSchedule(
     appliedOn: a.applied_on,
   }));
 
-  // Only fetch weather when a degree-day step actually needs it — a
-  // program with none should not pull a year of hours to find out.
-  const thresholds = steps
-    .filter((s) => s.trigger.type === 'degree_day')
-    .map((s) => (s.trigger as { dd: number }).dd);
 
-  let crossed = new Map<number, string | null>();
-  if (thresholds.length > 0) {
-    // The no-biofix model accumulates from January 1 — see lib/gdd.ts.
+  // Only fetch weather when a degree-day step actually needs it — a
+  // programme with none should not pull a year of hours to find out.
+  const ddTriggers = steps
+    .filter((s) => s.trigger.type === 'degree_day')
+    .map((s) => s.trigger as DegreeDayTrigger);
+
+  /**
+   * One accumulation pass per distinct MODEL, not per step.
+   *
+   * Steps sharing a model and a start date share a pass, so three
+   * codling moth thresholds cost what one did. A biofix model needs its
+   * own pass because it starts from a different date — and that date
+   * comes from the orchard's own trap catches.
+   */
+  const crossings = new Map<string, Map<number, string | null>>();
+  const modelKey = (t: DegreeDayTrigger, biofix: string | null) => {
+    const m = ddModelOf(t);
+    return `${m.base}/${m.cutoff}/${biofix ?? 'jan1'}`;
+  };
+  const biofixOf = (t: DegreeDayTrigger) =>
+    t.from === 'biofix' && t.biofixTrap
+      ? biofixDate(trapCatches, t.biofixTrap, season)
+      : null;
+
+  if (ddTriggers.length > 0) {
     const hours = await getHours(orchardId, `${season}-01-01`, asOfYmd).catch(() => []);
-    crossed = ddCrossingDates(hours, thresholds);
+    const groups = new Map<string, { t: DegreeDayTrigger; biofix: string | null; dds: number[] }>();
+    for (const t of ddTriggers) {
+      const biofix = biofixOf(t);
+      // A biofix model with no biofix yet has nothing to accumulate
+      // from; the resolver reports that state rather than guessing.
+      if (t.from === 'biofix' && !biofix) continue;
+      const key = modelKey(t, biofix);
+      const g = groups.get(key) ?? { t, biofix, dds: [] };
+      g.dds.push(t.dd);
+      groups.set(key, g);
+    }
+    for (const [key, g] of groups) {
+      crossings.set(key, ddCrossingDates(hours, g.dds, ddModelOf(g.t), g.biofix));
+    }
   }
 
   return resolveProgram({
@@ -55,7 +92,8 @@ export async function resolveSchedule(
     season,
     asOfYmd,
     marks: marks.map((m) => ({ stage: m.stage, observedOn: m.observedOn })),
-    ddDate: (dd) => crossed.get(dd) ?? null,
+    ddDate: (trigger, biofix) =>
+      crossings.get(modelKey(trigger, biofix))?.get(trigger.dd) ?? null,
     completions,
     applications,
     trapCatches,

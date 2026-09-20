@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  biofixDate,
   calendarWindow,
   resolveProgram,
   resolveStep,
@@ -18,7 +19,10 @@ const MARKS: PhenologyMark[] = [
 
 /** Degree-day totals for a season that has reached 425 but not 1400. */
 const DD: Record<number, string> = { 375: '2026-04-02', 425: '2026-04-09' };
-const ddDate = (dd: number) => DD[dd] ?? null;
+/** Totals accumulated from a biofix rather than Jan 1 — reached later. */
+const BIOFIX_DD: Record<number, string> = { 435: '2026-07-20' };
+const ddDate = (t: { dd: number }, biofix: string | null) =>
+  (biofix ? BIOFIX_DD[t.dd] : DD[t.dd]) ?? null;
 
 const step = (
   trigger: Trigger,
@@ -88,7 +92,7 @@ describe('calendar triggers', () => {
 
 describe('degree-day triggers', () => {
   it('opens on the date the threshold was crossed', () => {
-    const r = resolveStep(step({ type: 'degree_day', dd: 425, model: 'gdd50_jan1' }), input('2026-04-10'));
+    const r = resolveStep(step({ type: 'degree_day', dd: 425 }), input('2026-04-10'));
     expect(r.status).toBe('due');
     expect(r.start).toBe('2026-04-09');
     expect(r.end).toBe('2026-04-16'); // default 7-day window
@@ -97,7 +101,7 @@ describe('degree-day triggers', () => {
 
   it('waits when the heat has not accumulated', () => {
     const r = resolveStep(
-      step({ type: 'degree_day', dd: 1400, model: 'gdd50_jan1' }),
+      step({ type: 'degree_day', dd: 1400 }),
       input('2026-06-01')
     );
     expect(r.status).toBe('waiting');
@@ -107,7 +111,7 @@ describe('degree-day triggers', () => {
 
   it('honours an explicit window', () => {
     const r = resolveStep(
-      step({ type: 'degree_day', dd: 375, model: 'gdd50_jan1', windowDays: 3 }),
+      step({ type: 'degree_day', dd: 375, windowDays: 3 }),
       input('2026-04-03')
     );
     expect(r.end).toBe('2026-04-05');
@@ -438,5 +442,70 @@ describe('completion', () => {
       completions: [{ stepKey: 'done-one', completedOn: '2026-09-20' }],
     }).map((r) => r.step.key);
     expect(order).toEqual(['due-one', 'done-one']);
+  });
+});
+
+describe('biofix degree-day triggers', () => {
+  const lrSummer = step(
+    {
+      type: 'degree_day',
+      dd: 435,
+      base: 41,
+      cutoff: 85,
+      from: 'biofix',
+      biofixTrap: 'leafroller_pheromone',
+      windowDays: 10,
+    },
+    'lr_gen2'
+  );
+  const caught = [
+    { trapType: 'leafroller_pheromone' as const, countedOn: '2026-05-20', count: 3 },
+    { trapType: 'leafroller_pheromone' as const, countedOn: '2026-06-02', count: 11 },
+  ];
+
+  it('cannot be placed until a trap has caught something', () => {
+    const r = resolveStep(lrSummer, input('2026-06-15'));
+    expect(r.status).toBe('waiting');
+    expect(r.why).toMatch(/first leafroller pheromone catch to set the biofix/);
+  });
+
+  it('places once the biofix exists, and names the model it used', () => {
+    const r = resolveStep(lrSummer, { ...input('2026-07-25'), trapCatches: caught });
+    expect(r.status).toBe('due');
+    expect(r.start).toBe('2026-07-20');
+    expect(r.why).toMatch(/base 41°F from biofix 2026-05-20/);
+  });
+
+  it('takes the FIRST catch as the biofix, not the biggest', () => {
+    expect(biofixDate(caught, 'leafroller_pheromone', 2026)).toBe('2026-05-20');
+    expect(biofixDate([...caught].reverse(), 'leafroller_pheromone', 2026)).toBe('2026-05-20');
+  });
+
+  it('ignores an empty trap reading — zero is not a first catch', () => {
+    const zeroFirst = [
+      { trapType: 'leafroller_pheromone' as const, countedOn: '2026-05-01', count: 0 },
+      ...caught,
+    ];
+    expect(biofixDate(zeroFirst, 'leafroller_pheromone', 2026)).toBe('2026-05-20');
+  });
+
+  it('ignores last season and other trap types', () => {
+    expect(biofixDate(caught, 'red_sphere', 2026)).toBeNull();
+    expect(biofixDate(caught, 'leafroller_pheromone', 2027)).toBeNull();
+  });
+
+  it('says which model it is waiting on when the heat is short', () => {
+    const r = resolveStep(
+      step({ type: 'degree_day', dd: 9999, base: 41, cutoff: 85 }, 'far_off'),
+      input('2026-06-01')
+    );
+    expect(r.status).toBe('waiting');
+    expect(r.why).toMatch(/base 41°F from Jan 1/);
+  });
+
+  it('still defaults to the codling moth model when none is given', () => {
+    const r = resolveStep(step({ type: 'degree_day', dd: 425 }, 'cm'), input('2026-04-10'));
+    expect(r.status).toBe('due');
+    expect(r.why).toMatch(/base 50°F from Jan 1/);
   });
 });

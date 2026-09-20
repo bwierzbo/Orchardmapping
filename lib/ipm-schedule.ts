@@ -27,17 +27,58 @@ export interface CalendarTrigger {
 }
 
 /**
- * An accumulated heat total. Only the codling moth no-biofix model is
- * implemented (GDD base 50°F from Jan 1) — see lib/gdd.ts, and note
- * that Port Angeles is north of 46°N, which is what makes the no-biofix
- * variant the correct one here.
+ * An accumulated heat total.
+ *
+ * Every insect has its own thresholds and its own starting point, and
+ * one model for all of them mistimes everything except the pest it was
+ * written for. Codling moth runs base 50°F / cutoff 88°F from January 1
+ * — the no-biofix variant, valid north of 46°N. Leafrollers run base
+ * 41°F / cutoff 85°F from a BIOFIX: the day a pheromone trap first
+ * catches, which only this orchard's own traps can supply.
  */
 export interface DegreeDayTrigger {
   type: 'degree_day';
   dd: number;
-  model: 'gdd50_jan1';
+  /** Lower developmental threshold, °F. Defaults to codling moth's 50. */
+  base?: number;
+  /** Upper horizontal cutoff, °F. Defaults to codling moth's 88. */
+  cutoff?: number;
+  /**
+   * Where accumulation starts. 'jan1' is the no-biofix variant;
+   * 'biofix' counts from the first catch on `biofixTrap`, and the step
+   * cannot be placed until that trap has caught something.
+   */
+  from?: 'jan1' | 'biofix';
+  /** Trap type whose first catch sets the biofix. */
+  biofixTrap?: string;
   /** Days the window stays open past the threshold being crossed. */
   windowDays?: number;
+}
+
+/** The model a trigger asks for, with codling moth as the default. */
+export function ddModelOf(t: DegreeDayTrigger): { base: number; cutoff: number } {
+  return { base: t.base ?? 50, cutoff: t.cutoff ?? 88 };
+}
+
+/**
+ * The first catch of the season on a trap type — the biofix.
+ *
+ * Any catch at all, not a threshold: biofix marks the start of flight,
+ * which is a different question from whether the flight is heavy enough
+ * to act on.
+ */
+export function biofixDate(
+  catches: readonly TrapCatch[],
+  trapType: string,
+  season: number
+): string | null {
+  let first: string | null = null;
+  for (const c of catches) {
+    if (c.trapType !== trapType || c.count <= 0) continue;
+    if (seasonOf(c.countedOn) !== season) continue;
+    if (!first || c.countedOn < first) first = c.countedOn;
+  }
+  return first;
 }
 
 /** Anchored to a growth stage, optionally running until a later one. */
@@ -186,9 +227,12 @@ export interface ResolveInput {
   season: number;
   asOfYmd: string;
   marks: readonly PhenologyMark[];
-  /** Date this season's running GDD total crossed a threshold, or null
-   *  if it hasn't. Supplied by lib/gdd milestoneDates over stored hours. */
-  ddDate: (dd: number) => string | null;
+  /**
+   * Date the running total for THIS trigger's model crossed its
+   * threshold, or null if it hasn't. The caller precomputes one pass per
+   * distinct model rather than one per step — see lib/db/schedule.ts.
+   */
+  ddDate: (trigger: DegreeDayTrigger, biofixYmd: string | null) => string | null;
   /** Explicit "I did this" records for the season. */
   completions?: readonly StepCompletion[];
   /** Sprays recorded this season. One whose material is the step's
@@ -298,10 +342,26 @@ export function resolveStep(step: ProgramStep, input: ResolveInput): ResolvedSte
     }
 
     case 'degree_day': {
-      const hit = ddDate(t.dd);
-      if (!hit) return unplaceable(`Waiting on ${t.dd} degree-days (base 50°F from Jan 1)`);
+      const model = ddModelOf(t);
+      let biofix: string | null = null;
+      if (t.from === 'biofix') {
+        if (!t.biofixTrap) return unplaceable('No biofix trap set for this step');
+        biofix = biofixDate(input.trapCatches ?? [], t.biofixTrap, season);
+        if (!biofix) {
+          return unplaceable(
+            `Waiting on the first ${stageWords(t.biofixTrap)} catch to set the biofix`
+          );
+        }
+      }
+      const from = biofix ? `biofix ${biofix}` : 'Jan 1';
+      const hit = ddDate(t, biofix);
+      if (!hit) {
+        return unplaceable(
+          `Waiting on ${t.dd} degree-days (base ${model.base}°F from ${from})`
+        );
+      }
       const end = addDays(hit, t.windowDays ?? 7);
-      return placed(hit, end, `${t.dd} DD reached ${hit}`);
+      return placed(hit, end, `${t.dd} DD base ${model.base}°F from ${from} — reached ${hit}`);
     }
 
     case 'phenology': {
