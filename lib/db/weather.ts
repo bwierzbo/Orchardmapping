@@ -31,23 +31,26 @@ export async function insertHours(
   hours: readonly HourWeather[]
 ): Promise<number> {
   const CHUNK = 500;
-  const COLS = 4; // ts, temp_c, precip_mm, rh_pct
+  const COLS = 5; // ts, temp_c, precip_mm, rh_pct, leaf_wetness_pct
   let written = 0;
   for (let i = 0; i < hours.length; i += CHUNK) {
     const chunk = hours.slice(i, i + CHUNK);
     const values: unknown[] = [orchardId];
     const tuples = chunk.map((h, j) => {
-      values.push(h.ts, h.tempC, h.precipMm, h.rhPct);
+      values.push(h.ts, h.tempC, h.precipMm, h.rhPct, h.leafWetnessPct);
       const b = j * COLS + 2;
-      return `($1, $${b}::timestamp, $${b + 1}::real, $${b + 2}::real, $${b + 3}::real)`;
+      return `($1, $${b}::timestamp, $${b + 1}::real, $${b + 2}::real, $${b + 3}::real, $${b + 4}::real)`;
     });
     const res = await sql.query(
-      `INSERT INTO weather_hours (orchard_id, ts, temp_c, precip_mm, rh_pct)
+      `INSERT INTO weather_hours (orchard_id, ts, temp_c, precip_mm, rh_pct, leaf_wetness_pct)
        VALUES ${tuples.join(', ')}
        ON CONFLICT (orchard_id, ts) DO UPDATE SET
-         precip_mm = COALESCE(weather_hours.precip_mm, EXCLUDED.precip_mm),
-         rh_pct    = COALESCE(weather_hours.rh_pct, EXCLUDED.rh_pct)
-       WHERE weather_hours.precip_mm IS NULL OR weather_hours.rh_pct IS NULL`,
+         precip_mm        = COALESCE(weather_hours.precip_mm, EXCLUDED.precip_mm),
+         rh_pct           = COALESCE(weather_hours.rh_pct, EXCLUDED.rh_pct),
+         leaf_wetness_pct = COALESCE(weather_hours.leaf_wetness_pct, EXCLUDED.leaf_wetness_pct)
+       WHERE weather_hours.precip_mm IS NULL
+          OR weather_hours.rh_pct IS NULL
+          OR weather_hours.leaf_wetness_pct IS NULL`,
       values
     );
     written += res.rowCount ?? 0;
@@ -62,7 +65,8 @@ export async function getHours(
   endYmd: string
 ): Promise<HourWeather[]> {
   const { rows } = await sql`
-    SELECT to_char(ts, 'YYYY-MM-DD"T"HH24:MI') AS ts, temp_c, precip_mm, rh_pct
+    SELECT to_char(ts, 'YYYY-MM-DD"T"HH24:MI') AS ts,
+           temp_c, precip_mm, rh_pct, leaf_wetness_pct
     FROM weather_hours
     WHERE orchard_id = ${orchardId}
       AND ts >= ${`${startYmd}T00:00`}::timestamp
@@ -74,6 +78,7 @@ export async function getHours(
     tempC: Number(r.temp_c),
     precipMm: r.precip_mm == null ? null : Number(r.precip_mm),
     rhPct: r.rh_pct == null ? null : Number(r.rh_pct),
+    leafWetnessPct: r.leaf_wetness_pct == null ? null : Number(r.leaf_wetness_pct),
   }));
 }
 

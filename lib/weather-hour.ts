@@ -16,9 +16,22 @@ export interface HourWeather extends HourTemp {
   precipMm: number | null;
   /** Relative humidity at the end of the hour, %. */
   rhPct: number | null;
+  /**
+   * Open-Meteo's modelled probability that leaves are wet, 0-100.
+   *
+   * A probability, not a measurement — but Mills is defined on leaf
+   * wetness rather than rainfall, and this tracks the dew-and-shade tail
+   * of a wet period that rain and humidity miss between them.
+   */
+  leafWetnessPct: number | null;
 }
 
 /** True when the hour carries the moisture fields a wetness model needs. */
 export function hasMoisture(hour: HourWeather): boolean {
   return hour.precipMm !== null && hour.rhPct !== null;
+}
+
+/** True when the hour carries the best wetness signal available. */
+export function hasLeafWetness(hour: HourWeather): boolean {
+  return hour.leafWetnessPct !== null;
 }
