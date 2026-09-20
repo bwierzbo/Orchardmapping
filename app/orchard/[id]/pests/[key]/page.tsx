@@ -8,6 +8,9 @@ import { listMaterials } from '@/lib/db/spray';
 import { getProgramMode } from '@/lib/db/spray';
 import { recommendFor, PROGRAM_MODE_LABEL, type ProgramMode } from '@/lib/spray-rules';
 import ObserveBox from './ObserveBox';
+import PosturePicker from './PosturePicker';
+import { listPostures } from '@/lib/db/posture';
+import { auth } from '@clerk/nextjs/server';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,11 +46,14 @@ export default async function PestDetailPage({ params }: PageProps) {
 
   // Same keys drive the material library, so "what treats this?" needs no
   // extra mapping — and it arrives already scoped to the program mode.
-  const [library, mode, observations] = await Promise.all([
+  const [library, mode, observations, postures, { userId }] = await Promise.all([
     listMaterials().catch(() => []),
     getProgramMode(orchard.id).catch(() => 'organic_practices' as ProgramMode),
     listObservations(orchard.id, key).catch(() => []),
+    listPostures(orchard.id).catch(() => []),
+    auth(),
   ]);
+  const posture = postures.find((p) => p.pestKey === key) ?? null;
   const options = recommendFor(library, entry.key, mode as ProgramMode);
 
   return (
@@ -106,6 +112,16 @@ export default async function PestDetailPage({ params }: PageProps) {
               Record an application →
             </Link>
           </section>
+        )}
+
+        {userId && (
+          <PosturePicker
+            orchardId={orchard.id}
+            pestKey={entry.key}
+            pestName={entry.name}
+            current={posture?.posture ?? null}
+            currentNote={posture?.note ?? null}
+          />
         )}
 
         <ObserveBox

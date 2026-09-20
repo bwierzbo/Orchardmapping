@@ -43,6 +43,8 @@ import {
   deleteApplication,
 } from '@/lib/db/spray';
 import { listMarks, markStage, unmarkStage } from '@/lib/db/phenology';
+import { clearPosture, setPosture } from '@/lib/db/posture';
+import { POSTURES } from '@/lib/posture';
 import { completeStep, setStepEnabled, uncompleteStep } from '@/lib/db/program';
 import { summariseSchedule } from '@/lib/db/schedule';
 import { recordTissueTest, recordSoilTest, setOrchardIntent } from '@/lib/db/nutrition';
@@ -555,6 +557,33 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         const ok = await deleteObservation(input.id);
         if (!ok) throw new TRPCError({ code: 'NOT_FOUND', message: 'Observation not found' });
+        return { success: true };
+      }),
+
+    /**
+     * What this orchard is doing about a pest. 'off' is a decision, and
+     * recording it is what stops the coverage check treating the pest
+     * as an oversight.
+     */
+    setPosture: protectedProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          pestKey: z.string().min(1),
+          posture: z.enum(POSTURES),
+          minSeverity: z.enum(['light', 'moderate', 'severe']).optional(),
+          note: z.string().max(500).optional(),
+        }),
+      )
+      .mutation(async ({ input, ctx }) => {
+        await setPosture({ ...input, updatedBy: ctx.userId });
+        return { success: true };
+      }),
+
+    clearPosture: protectedProcedure
+      .input(z.object({ orchardId: z.string().min(1), pestKey: z.string().min(1) }))
+      .mutation(async ({ input }) => {
+        await clearPosture(input.orchardId, input.pestKey);
         return { success: true };
       }),
   }),
