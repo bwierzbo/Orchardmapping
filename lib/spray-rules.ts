@@ -213,12 +213,25 @@ export function evaluateApplication(args: {
       ).toLocaleString()}.`,
     });
   }
-  if (material.phi_days) {
+  if (material.phi_days != null) {
     findings.push({
       level: 'info',
-      message: `Pre-harvest interval ${material.phi_days} days — do not pick before ${new Date(
-        appliedAt.getTime() + material.phi_days * DAY_MS,
-      ).toLocaleDateString()}.`,
+      message:
+        material.phi_days === 0
+          ? `No pre-harvest interval — ${material.name} may be applied up to the day of picking.`
+          : `Pre-harvest interval ${material.phi_days} days — do not pick before ${new Date(
+              appliedAt.getTime() + material.phi_days * DAY_MS,
+            ).toLocaleDateString()}.`,
+    });
+  } else {
+    // A missing PHI is not the same as no PHI, and presenting it as
+    // silence is how a grower ends up picking too soon. Copper is the
+    // case in point: its interval varies by formulation, and this
+    // orchard's late cider varieties are still hanging when the autumn
+    // copper goes on.
+    findings.push({
+      level: 'warning',
+      message: `No pre-harvest interval is recorded for ${material.name}. That means unknown, not zero — check the label before applying with fruit on the tree.`,
     });
   }
 
