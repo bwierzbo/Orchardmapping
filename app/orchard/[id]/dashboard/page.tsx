@@ -109,8 +109,8 @@ export default async function DashboardPage({ params }: PageProps) {
     <main className="min-h-screen bg-paper">
       {/* Header */}
       <header className="border-b border-line bg-surface/80 backdrop-blur-sm sticky top-0 z-40 pt-safe">
-        <div className="max-w-6xl mx-auto px-5 py-3 flex items-center justify-between gap-3">
-          <div className="min-w-0">
+        <div className="max-w-6xl mx-auto px-5 py-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <div className="min-w-0 flex-1">
             <Link
               href={`/orchard/${orchard.id}`}
               className="inline-flex items-center gap-1 text-xs text-bark hover:text-ink"
@@ -121,37 +121,50 @@ export default async function DashboardPage({ params }: PageProps) {
               {orchard.name}
             </h1>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {/* The IPM pages have no other entry point — the map is chrome-free
-                by design, so the dashboard header is where they live. */}
+
+          {/*
+            IPM navigation. Labels show at EVERY width: these were
+            icon-only below the md breakpoint, which made four unlabelled
+            glyphs the only route to the whole programme on exactly the
+            device it is read on — a phone, in the orchard. On a narrow
+            screen the row wraps to its own line rather than shedding its
+            words.
+          */}
+          <nav
+            aria-label="Orchard management"
+            className="order-last w-full sm:order-none sm:w-auto flex items-center gap-1 overflow-x-auto"
+          >
             <Link
               href={`/orchard/${orchard.id}/program`}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-bark hover:text-ink rounded-lg hover:bg-canopy-50 dark:hover:bg-canopy-600/10"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-bark hover:text-ink rounded-lg hover:bg-canopy-50 dark:hover:bg-canopy-600/10 whitespace-nowrap"
             >
               <CalendarRange aria-hidden size={15} />
-              <span className="hidden md:inline">Program</span>
+              Program
             </Link>
             <Link
               href={`/orchard/${orchard.id}/pests`}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-bark hover:text-ink rounded-lg hover:bg-canopy-50 dark:hover:bg-canopy-600/10"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-bark hover:text-ink rounded-lg hover:bg-canopy-50 dark:hover:bg-canopy-600/10 whitespace-nowrap"
             >
               <Bug aria-hidden size={15} />
-              <span className="hidden md:inline">Pests</span>
+              Pests
             </Link>
             <Link
               href={`/orchard/${orchard.id}/traps`}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-bark hover:text-ink rounded-lg hover:bg-canopy-50 dark:hover:bg-canopy-600/10"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-bark hover:text-ink rounded-lg hover:bg-canopy-50 dark:hover:bg-canopy-600/10 whitespace-nowrap"
             >
               <Target aria-hidden size={15} />
-              <span className="hidden md:inline">Traps</span>
+              Traps
             </Link>
             <Link
               href={`/orchard/${orchard.id}/spray`}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-bark hover:text-ink rounded-lg hover:bg-canopy-50 dark:hover:bg-canopy-600/10"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-bark hover:text-ink rounded-lg hover:bg-canopy-50 dark:hover:bg-canopy-600/10 whitespace-nowrap"
             >
               <SprayCan aria-hidden size={15} />
-              <span className="hidden md:inline">Spray</span>
+              Spray
             </Link>
+          </nav>
+
+          <div className="flex items-center gap-2 shrink-0">
             <OrchardSwitcher orchards={allOrchards} currentId={orchard.id} target="dashboard" />
             <Link
               href={`/orchard/${orchard.id}`}

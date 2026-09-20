@@ -61,3 +61,35 @@ export async function resolveSchedule(
     trapCatches,
   });
 }
+
+export interface ScheduleSummary {
+  /** Steps whose window is open today. */
+  due: number;
+  /** Standing watches — conditions and traps. */
+  monitor: number;
+  /** The most urgent open step, for a one-line prompt. */
+  leadTitle: string | null;
+  /** Steps that cannot be placed because a stage is unmarked. */
+  waitingOnAStage: number;
+}
+
+/**
+ * Enough of the schedule to put on the map without reading all of it.
+ *
+ * The map is the landing page and must not wait on a year of weather to
+ * paint, so this is fetched client-side after the tiles — the counts
+ * appear a moment later rather than blocking the map.
+ */
+export async function summariseSchedule(
+  orchardId: string,
+  asOfYmd?: string
+): Promise<ScheduleSummary> {
+  const steps = await resolveSchedule(orchardId, asOfYmd);
+  const due = steps.filter((s) => s.status === 'due');
+  return {
+    due: due.length,
+    monitor: steps.filter((s) => s.status === 'monitor').length,
+    leadTitle: due[0]?.step.title ?? null,
+    waitingOnAStage: steps.filter((s) => s.status === 'waiting').length,
+  };
+}

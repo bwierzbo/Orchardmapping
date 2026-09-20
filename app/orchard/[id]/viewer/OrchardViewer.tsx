@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { BarChart3 } from 'lucide-react';
+import { BarChart3, CalendarRange } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { OrchardConfig, ClientTree, TreeStatus } from '@/lib/types';
@@ -41,6 +41,7 @@ import {
   type TrapRow,
 } from '@/lib/api/traps';
 import { nextTrapLabel, type TrapType } from '@/lib/traps';
+import { fetchScheduleSummary, type ScheduleSummary } from '@/lib/api/program';
 import AreaTools from './AreaTools';
 import PhotoDropController from './PhotoDropController';
 import MoveTreeController from './MoveTreeController';
@@ -94,6 +95,7 @@ export default function OrchardViewer({
   const [areaMode, setAreaMode] = useState(false);
   const [trapMode, setTrapMode] = useState(false);
   const [traps, setTraps] = useState<TrapRow[]>([]);
+  const [scheduleSummary, setScheduleSummary] = useState<ScheduleSummary | null>(null);
   const [selectedTrapId, setSelectedTrapId] = useState<number | null>(null);
   const [trapType, setTrapType] = useState<TrapType>('red_sphere');
   const [trapLabel, setTrapLabel] = useState('Sphere 1');
@@ -340,6 +342,12 @@ export default function OrchardViewer({
       .catch(() => {}); // map works without traps
   }, [orchard.id, season]);
 
+  useEffect(() => {
+    fetchScheduleSummary(orchard.id)
+      .then(setScheduleSummary)
+      .catch(() => {}); // the chip is an extra, never a blocker
+  }, [orchard.id]);
+
   useTrapLayer(mapObj, mapReady, traps, {
     trapMode,
     selectedTrapId,
@@ -555,25 +563,60 @@ export default function OrchardViewer({
         }`}
       />
 
-      {/* Home button */}
-      <button
-        onClick={() => router.push('/')}
-        aria-label="All orchards"
-        className="absolute left-4 top-[max(1rem,env(safe-area-inset-top))] z-10 bg-surface rounded-lg shadow-lg p-2.5 hover:bg-canopy-50"
-      >
-        <svg aria-hidden className="w-5 h-5 text-ink" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-        </svg>
-      </button>
+      {/*
+        Left rail. Labelled, because the map used to hide the whole
+        dashboard — and with it the program — behind an unlabelled chart
+        icon, which is not something anyone finds by accident.
+      */}
+      <div className="absolute left-4 top-[max(1rem,env(safe-area-inset-top))] z-10 flex flex-col items-start gap-2">
+        <button
+          onClick={() => router.push('/')}
+          aria-label="All orchards"
+          className="bg-surface rounded-lg shadow-lg p-2.5 hover:bg-canopy-50"
+        >
+          <svg aria-hidden className="w-5 h-5 text-ink" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+          </svg>
+        </button>
 
-      {/* Dashboard button */}
-      <button
-        onClick={() => router.push(`/orchard/${orchard.id}/dashboard`)}
-        aria-label="Orchard dashboard"
-        className="absolute left-4 top-[calc(max(1rem,env(safe-area-inset-top))+3.25rem)] z-10 bg-surface rounded-lg shadow-lg p-2.5 hover:bg-canopy-50"
-      >
-        <BarChart3 aria-hidden size={20} className="text-ink" />
-      </button>
+        <button
+          onClick={() => router.push(`/orchard/${orchard.id}/dashboard`)}
+          title="Orchard dashboard"
+          className="inline-flex items-center gap-1.5 bg-surface rounded-lg shadow-lg px-2.5 py-2 text-sm font-medium text-ink hover:bg-canopy-50"
+        >
+          <BarChart3 aria-hidden size={18} />
+          Dashboard
+        </button>
+
+        {/*
+          What the program is asking for, on the map itself. Fetched
+          after the tiles rather than blocking them, so it appears a
+          moment late instead of holding up the map.
+        */}
+        {scheduleSummary && (
+          <button
+            onClick={() => router.push(`/orchard/${orchard.id}/program`)}
+            title={
+              scheduleSummary.leadTitle ??
+              (scheduleSummary.due > 0 ? 'Steps are open' : 'The season programme')
+            }
+            className={`inline-flex items-center gap-1.5 rounded-lg shadow-lg px-2.5 py-2 text-sm font-medium max-w-[13rem] ${
+              scheduleSummary.due > 0
+                ? 'bg-flag-600 text-white hover:bg-flag-700'
+                : 'bg-surface text-ink hover:bg-canopy-50'
+            }`}
+          >
+            <CalendarRange aria-hidden size={18} className="shrink-0" />
+            <span className="truncate">
+              {scheduleSummary.due > 0
+                ? scheduleSummary.leadTitle ?? `${scheduleSummary.due} due`
+                : scheduleSummary.monitor > 0
+                  ? `${scheduleSummary.monitor} watching`
+                  : 'Program'}
+            </span>
+          </button>
+        )}
+      </div>
 
       {/* Orchard header */}
       <div className="absolute top-[max(1rem,env(safe-area-inset-top))] left-1/2 -translate-x-1/2 bg-surface/95 backdrop-blur-sm rounded-lg shadow-lg px-4 py-2 z-10 max-w-[calc(100vw-9rem)]">
