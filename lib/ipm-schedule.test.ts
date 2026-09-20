@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  biofixDate,
   calendarWindow,
   resolveProgram,
   resolveStep,
@@ -18,7 +19,10 @@ const MARKS: PhenologyMark[] = [
 
 /** Degree-day totals for a season that has reached 425 but not 1400. */
 const DD: Record<number, string> = { 375: '2026-04-02', 425: '2026-04-09' };
-const ddDate = (dd: number) => DD[dd] ?? null;
+/** Totals accumulated from a biofix rather than Jan 1 — reached later. */
+const BIOFIX_DD: Record<number, string> = { 435: '2026-07-20' };
+const ddDate = (t: { dd: number }, biofix: string | null) =>
+  (biofix ? BIOFIX_DD[t.dd] : DD[t.dd]) ?? null;
 
 const step = (
   trigger: Trigger,
@@ -88,7 +92,7 @@ describe('calendar triggers', () => {
 
 describe('degree-day triggers', () => {
   it('opens on the date the threshold was crossed', () => {
-    const r = resolveStep(step({ type: 'degree_day', dd: 425, model: 'gdd50_jan1' }), input('2026-04-10'));
+    const r = resolveStep(step({ type: 'degree_day', dd: 425 }), input('2026-04-10'));
     expect(r.status).toBe('due');
     expect(r.start).toBe('2026-04-09');
     expect(r.end).toBe('2026-04-16'); // default 7-day window
@@ -97,7 +101,7 @@ describe('degree-day triggers', () => {
 
   it('waits when the heat has not accumulated', () => {
     const r = resolveStep(
-      step({ type: 'degree_day', dd: 1400, model: 'gdd50_jan1' }),
+      step({ type: 'degree_day', dd: 1400 }),
       input('2026-06-01')
     );
     expect(r.status).toBe('waiting');
@@ -107,7 +111,7 @@ describe('degree-day triggers', () => {
 
   it('honours an explicit window', () => {
     const r = resolveStep(
-      step({ type: 'degree_day', dd: 375, model: 'gdd50_jan1', windowDays: 3 }),
+      step({ type: 'degree_day', dd: 375, windowDays: 3 }),
       input('2026-04-03')
     );
     expect(r.end).toBe('2026-04-05');
@@ -438,5 +442,209 @@ describe('completion', () => {
       completions: [{ stepKey: 'done-one', completedOn: '2026-09-20' }],
     }).map((r) => r.step.key);
     expect(order).toEqual(['due-one', 'done-one']);
+  });
+});
+
+describe('biofix degree-day triggers', () => {
+  const lrSummer = step(
+    {
+      type: 'degree_day',
+      dd: 435,
+      base: 41,
+      cutoff: 85,
+      from: 'biofix',
+      biofixTrap: 'leafroller_pheromone',
+      windowDays: 10,
+    },
+    'lr_gen2'
+  );
+  const caught = [
+    { trapType: 'leafroller_pheromone' as const, countedOn: '2026-05-20', count: 3 },
+    { trapType: 'leafroller_pheromone' as const, countedOn: '2026-06-02', count: 11 },
+  ];
+
+  it('cannot be placed until a trap has caught something', () => {
+    const r = resolveStep(lrSummer, input('2026-06-15'));
+    expect(r.status).toBe('waiting');
+    expect(r.why).toMatch(/first leafroller pheromone catch to set the biofix/);
+  });
+
+  it('places once the biofix exists, and names the model it used', () => {
+    const r = resolveStep(lrSummer, { ...input('2026-07-25'), trapCatches: caught });
+    expect(r.status).toBe('due');
+    expect(r.start).toBe('2026-07-20');
+    expect(r.why).toMatch(/base 41°F from biofix 2026-05-20/);
+  });
+
+  it('takes the FIRST catch as the biofix, not the biggest', () => {
+    expect(biofixDate(caught, 'leafroller_pheromone', 2026)).toBe('2026-05-20');
+    expect(biofixDate([...caught].reverse(), 'leafroller_pheromone', 2026)).toBe('2026-05-20');
+  });
+
+  it('ignores an empty trap reading — zero is not a first catch', () => {
+    const zeroFirst = [
+      { trapType: 'leafroller_pheromone' as const, countedOn: '2026-05-01', count: 0 },
+      ...caught,
+    ];
+    expect(biofixDate(zeroFirst, 'leafroller_pheromone', 2026)).toBe('2026-05-20');
+  });
+
+  it('ignores last season and other trap types', () => {
+    expect(biofixDate(caught, 'red_sphere', 2026)).toBeNull();
+    expect(biofixDate(caught, 'leafroller_pheromone', 2027)).toBeNull();
+  });
+
+  it('says which model it is waiting on when the heat is short', () => {
+    const r = resolveStep(
+      step({ type: 'degree_day', dd: 9999, base: 41, cutoff: 85 }, 'far_off'),
+      input('2026-06-01')
+    );
+    expect(r.status).toBe('waiting');
+    expect(r.why).toMatch(/base 41°F from Jan 1/);
+  });
+
+  it('still defaults to the codling moth model when none is given', () => {
+    const r = resolveStep(step({ type: 'degree_day', dd: 425 }, 'cm'), input('2026-04-10'));
+    expect(r.status).toBe('due');
+    expect(r.why).toMatch(/base 50°F from Jan 1/);
+  });
+});
+
+describe('evidence from the future (regression)', () => {
+  // Found by replaying a simulated season: asking about April showed a
+  // step completed by a July spray, and a trap threshold tripped by a
+  // catch three months ahead. The live app always asks about today, so
+  // it never bit in use — but every retrospective view was wrong.
+  const kaolin = step({ type: 'threshold', trap: 'red_sphere', count: 1 }, 'maggot', {
+    materialKey: 'kaolin',
+  });
+
+  it('ignores a trap catch dated after the as-of date', () => {
+    const r = resolveStep(kaolin, {
+      ...input('2026-04-15'),
+      trapCatches: [{ trapType: 'red_sphere', countedOn: '2026-07-05', count: 3 }],
+    });
+    expect(r.status).toBe('monitor');
+    expect(r.why).not.toMatch(/2026-07-05/);
+  });
+
+  it('ignores a completion dated after the as-of date', () => {
+    const r = resolveStep(step({ type: 'calendar', start: '01-01', end: '12-31' }, 'x'), {
+      ...input('2026-04-15'),
+      completions: [{ stepKey: 'x', completedOn: '2026-07-16' }],
+    });
+    expect(r.status).toBe('due');
+    expect(r.lastDoneOn).toBeNull();
+  });
+
+  it('ignores a spray dated after the as-of date', () => {
+    const r = resolveStep(
+      step({ type: 'calendar', start: '01-01', end: '12-31' }, 'x', { materialKey: 'copper' }),
+      {
+        ...input('2026-04-15'),
+        applications: [{ materialKey: 'copper', appliedOn: '2026-07-16' }],
+      }
+    );
+    expect(r.status).toBe('due');
+    expect(r.lastDoneOn).toBeNull();
+  });
+
+  it('still counts evidence up to and including the as-of date', () => {
+    const r = resolveStep(kaolin, {
+      ...input('2026-07-05'),
+      trapCatches: [{ trapType: 'red_sphere', countedOn: '2026-07-05', count: 3 }],
+    });
+    expect(r.status).toBe('due');
+  });
+});
+
+describe('a threshold step goes quiet when the flight does (regression)', () => {
+  const kaolin = step({ type: 'threshold', trap: 'red_sphere', count: 1 }, 'maggot', {
+    materialKey: 'kaolin',
+  });
+  const julyCatch = [{ trapType: 'red_sphere' as const, countedOn: '2026-07-05', count: 3 }];
+
+  it('stays open while the catch is recent', () => {
+    expect(resolveStep(kaolin, { ...input('2026-07-20'), trapCatches: julyCatch }).status)
+      .toBe('due');
+  });
+
+  it('returns to watching once the catches stop', () => {
+    // One catch in July was still demanding a spray in late September,
+    // long after the traps had gone back to zero.
+    const r = resolveStep(kaolin, { ...input('2026-09-20'), trapCatches: julyCatch });
+    expect(r.status).toBe('monitor');
+    expect(r.why).toMatch(/Quiet since 2026-07-05/);
+  });
+
+  it('honours an explicit staleness window', () => {
+    const impatient = step(
+      { type: 'threshold', trap: 'red_sphere', count: 1, staleAfterDays: 7 },
+      'k2'
+    );
+    expect(resolveStep(impatient, { ...input('2026-07-20'), trapCatches: julyCatch }).status)
+      .toBe('monitor');
+  });
+});
+
+describe('a closed kickback window does not end the watch (regression)', () => {
+  // Marking the watch 'past' when one event's window closed stopped it
+  // watching for the rest of the season, silently — so a scab watch
+  // that missed its first event in March saw nothing in April or May.
+  const watch = step(
+    { type: 'condition', kind: 'scab_infection', fromStage: 'green_tip', untilStage: 'petal_fall' },
+    'scab_watch',
+    { pestKey: 'apple_scab', materialKey: 'lime_sulfur' }
+  );
+  const react = [{ pestKey: 'apple_scab', posture: 'react' as const, minSeverity: 'moderate' as const }];
+  const kickbackHours = () => 48;
+
+  it('is due inside the window', () => {
+    const r = resolveStep(watch, {
+      ...input('2026-04-12'),
+      postures: react,
+      kickbackHours,
+      nowTs: '2026-04-12T08:00',
+      infectionEvents: [
+        { startTs: '2026-04-11T02:00', endTs: '2026-04-12T06:00', severity: 'moderate' },
+      ],
+    });
+    expect(r.status).toBe('due');
+    expect(r.why).toMatch(/left to act/);
+  });
+
+  it('goes back to WATCHING once that window closes, not to past', () => {
+    const r = resolveStep(watch, {
+      ...input('2026-04-20'),
+      postures: react,
+      kickbackHours,
+      nowTs: '2026-04-20T08:00',
+      infectionEvents: [
+        { startTs: '2026-04-11T02:00', endTs: '2026-04-12T06:00', severity: 'moderate' },
+      ],
+    });
+    expect(r.status).toBe('monitor');
+    expect(r.why).toMatch(/Watching/);
+  });
+
+  it('picks up a later event after an earlier one was missed', () => {
+    const r = resolveStep(watch, {
+      ...input('2026-05-02'),
+      postures: react,
+      kickbackHours,
+      nowTs: '2026-05-02T08:00',
+      infectionEvents: [
+        { startTs: '2026-03-16T02:00', endTs: '2026-03-18T06:00', severity: 'severe' },
+        { startTs: '2026-05-01T20:00', endTs: '2026-05-02T10:00', severity: 'moderate' },
+      ],
+    });
+    expect(r.status).toBe('due');
+    expect(r.why).toMatch(/2026-05-01/);
+  });
+
+  it('only truly ends when the stage window closes', () => {
+    const r = resolveStep(watch, { ...input('2026-06-20'), postures: react, kickbackHours });
+    expect(r.status).toBe('past');
+    expect(r.why).toMatch(/Outside the watch window/);
   });
 });

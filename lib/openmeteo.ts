@@ -17,7 +17,8 @@ import type { HourWeather } from './weather-hour';
 export const TIMEZONE = 'America/Los_Angeles';
 
 /** The hourly variables every request asks for, in one place. */
-const HOURLY_VARS = 'temperature_2m,precipitation,relative_humidity_2m';
+const HOURLY_VARS =
+  'temperature_2m,precipitation,relative_humidity_2m,leaf_wetness_probability';
 
 interface OpenMeteoHourly {
   hourly?: {
@@ -25,6 +26,7 @@ interface OpenMeteoHourly {
     temperature_2m?: (number | null)[];
     precipitation?: (number | null)[];
     relative_humidity_2m?: (number | null)[];
+    leaf_wetness_probability?: (number | null)[];
   };
   reason?: string;
 }
@@ -37,6 +39,7 @@ async function fetchHourly(url: string): Promise<HourWeather[]> {
   const temp = body.hourly?.temperature_2m ?? [];
   const precip = body.hourly?.precipitation ?? [];
   const rh = body.hourly?.relative_humidity_2m ?? [];
+  const wet = body.hourly?.leaf_wetness_probability ?? [];
   const out: HourWeather[] = [];
   for (let i = 0; i < time.length; i++) {
     const t = temp[i];
@@ -48,6 +51,7 @@ async function fetchHourly(url: string): Promise<HourWeather[]> {
       tempC: t,
       precipMm: precip[i] ?? null,
       rhPct: rh[i] ?? null,
+      leafWetnessPct: wet[i] ?? null,
     });
   }
   return out;

@@ -19,6 +19,9 @@ export interface CoverageInputs {
   /** Materials, so "nothing treats it" is distinguishable from
    *  "something treats it and nobody scheduled that". */
   materials: readonly { material_key: string | null; targets: readonly string[] }[];
+  /** The orchard's own decisions. A pest with any posture recorded has
+   *  been thought about; one with none has not. */
+  decisions?: readonly PestDecision[];
 }
 
 export interface CoverageGap {
@@ -32,21 +35,25 @@ export interface CoverageGap {
 }
 
 /**
- * Pests the program deliberately leaves alone, each with the reason.
- * Being on this list is a decision; being absent from it and uncovered
- * is an oversight. That is the whole distinction this module draws.
+ * A recorded decision not to treat something.
+ *
+ * This used to be a constant in this file, which meant changing your
+ * mind about a pest required a developer — and it duplicated a
+ * mechanism that already existed. A posture of 'off' in
+ * orchard_pest_posture IS this, per orchard, with the reason attached.
+ *
+ * The three states matter and were previously tangled:
+ *   a posture set to anything   the orchard is managing it
+ *   a posture set to 'off'      decided against, with a reason
+ *   no posture at all           UNDECIDED — which is the only one
+ *                               this check should be flagging
  */
-export const DELIBERATELY_UNTREATED: Record<string, string> = {
-  fire_blight: 'Absent west of the Cascades — catalogued so it can be planned around, not for.',
-  sooty_blotch_flyspeck: 'Purely cosmetic and irrelevant to fermented product.',
-  european_earwig: 'Beneficial — a woolly apple aphid predator worth protecting.',
-  mites: 'Self-inflicted: flare-ups follow broad-spectrum sprays. Restraint is the control.',
-  bulls_eye_rot: 'The storage phase of anthracnose — the autumn copper and excision program is the control.',
-  blue_mold: 'Handled at the press as fruit hygiene, not in the orchard.',
-  tent_caterpillar: 'Episodic. Bt is held in reserve for an outbreak year rather than scheduled.',
-  rosy_apple_aphid:
-    'Owner, Sept 2026: not a problem in this block. Oil and soap both list it, so a step can be added the season it becomes one — but the control window shuts soon after petal fall, so that decision has to be made before bud break, not during.',
-};
+export interface PestDecision {
+  pestKey: string;
+  /** 'off' is a decision not to treat; anything else is management. */
+  posture: string;
+  note?: string | null;
+}
 
 /** Prevalence levels that demand a step or a documented exemption. */
 const DEMANDS_COVERAGE = new Set(['high', 'moderate']);
@@ -66,12 +73,16 @@ export function findCoverageGaps(input: CoverageInputs): CoverageGap[] {
     input.steps.map((s) => s.materialKey).filter((k): k is string => k !== null)
   );
 
+  // Any recorded posture means the pest has been considered, whether
+  // the answer was to treat it or deliberately not to.
+  const decided = new Set((input.decisions ?? []).map((d) => d.pestKey));
+
   const gaps: CoverageGap[] = [];
   for (const pest of input.pests) {
     if (pest.category === 'beneficial') continue;
     if (!DEMANDS_COVERAGE.has(pest.prevalence)) continue;
     if (covered.has(pest.key)) continue;
-    if (pest.key in DELIBERATELY_UNTREATED) continue;
+    if (decided.has(pest.key)) continue;
 
     const available = input.materials
       .filter((m) => m.material_key && m.targets.includes(pest.key))

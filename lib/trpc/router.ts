@@ -43,8 +43,12 @@ import {
   deleteApplication,
 } from '@/lib/db/spray';
 import { listMarks, markStage, unmarkStage } from '@/lib/db/phenology';
+import { clearPosture, setPosture } from '@/lib/db/posture';
+import { POSTURES } from '@/lib/posture';
 import { completeStep, setStepEnabled, uncompleteStep } from '@/lib/db/program';
 import { summariseSchedule } from '@/lib/db/schedule';
+import { recordTissueTest, recordSoilTest, setOrchardIntent } from '@/lib/db/nutrition';
+import { FRUIT_PURPOSES, NUTRIENTS, OPERATION_SCALES } from '@/lib/nutrition';
 import { addTrap, listTraps, moveTrap, recordCount, retireTrap } from '@/lib/db/traps';
 import { TRAP_TYPES } from '@/lib/traps';
 import { PHENOLOGY_STAGES } from '@/lib/phenology';
@@ -555,6 +559,33 @@ export const appRouter = router({
         if (!ok) throw new TRPCError({ code: 'NOT_FOUND', message: 'Observation not found' });
         return { success: true };
       }),
+
+    /**
+     * What this orchard is doing about a pest. 'off' is a decision, and
+     * recording it is what stops the coverage check treating the pest
+     * as an oversight.
+     */
+    setPosture: protectedProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          pestKey: z.string().min(1),
+          posture: z.enum(POSTURES),
+          minSeverity: z.enum(['light', 'moderate', 'severe']).optional(),
+          note: z.string().max(500).optional(),
+        }),
+      )
+      .mutation(async ({ input, ctx }) => {
+        await setPosture({ ...input, updatedBy: ctx.userId });
+        return { success: true };
+      }),
+
+    clearPosture: protectedProcedure
+      .input(z.object({ orchardId: z.string().min(1), pestKey: z.string().min(1) }))
+      .mutation(async ({ input }) => {
+        await clearPosture(input.orchardId, input.pestKey);
+        return { success: true };
+      }),
   }),
 
   /**
@@ -637,6 +668,67 @@ export const appRouter = router({
         const ok = await uncompleteStep(input.orchardId, input.stepKey, input.completedOn);
         if (!ok) throw new TRPCError({ code: 'NOT_FOUND', message: 'Completion not found' });
         return { success: true };
+      }),
+  }),
+
+  /**
+   * Nutrition: what the orchard is for, and what the lab said.
+   *
+   * The sufficiency ranges do not vary by intent — WSU is explicit that
+   * they hold irrespective of cultivar and system. Intent changes what
+   * a reading means, which is interpretation and lives in lib.
+   */
+  nutrition: router({
+    setIntent: protectedProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          fruitPurpose: z.enum(FRUIT_PURPOSES).optional(),
+          operationScale: z.enum(OPERATION_SCALES).optional(),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        await setOrchardIntent(input.orchardId, input);
+        return { success: true };
+      }),
+
+    recordTissue: protectedProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          sampledOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          sampleArea: z.string().max(200).optional(),
+          lab: z.string().max(120).optional(),
+          // Every nutrient optional: labs run different panels, and a
+          // missing value means unmeasured rather than zero.
+          values: z.record(z.enum(NUTRIENTS), z.number().min(0).max(100_000).optional()),
+          notes: z.string().max(1000).optional(),
+        }),
+      )
+      .mutation(async ({ input, ctx }) => {
+        const id = await recordTissueTest({ ...input, createdBy: ctx.userId });
+        return { id };
+      }),
+
+    recordSoil: protectedProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          sampledOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          sampleArea: z.string().max(200).optional(),
+          lab: z.string().max(120).optional(),
+          ph: z.number().min(0).max(14).optional(),
+          organicMatterPct: z.number().min(0).max(100).optional(),
+          cec: z.number().min(0).max(1000).optional(),
+          values: z
+            .record(z.enum(['p', 'k', 'ca', 'mg', 'b', 'zn', 'mn', 'cu']), z.number().min(0).optional())
+            .optional(),
+          notes: z.string().max(1000).optional(),
+        }),
+      )
+      .mutation(async ({ input, ctx }) => {
+        const id = await recordSoilTest({ ...input, createdBy: ctx.userId });
+        return { id };
       }),
   }),
 

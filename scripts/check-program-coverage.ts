@@ -15,13 +15,18 @@ import { sql } from '@vercel/postgres';
 import { listProgramSteps } from '../lib/db/program';
 import { listMaterials } from '../lib/db/spray';
 import { findCoverageGaps } from '../lib/program-coverage';
+import { listPostures } from '../lib/db/posture';
 
 const ORCHARD = process.argv[2] ?? 'finn-hall';
 
 async function main() {
   const { rows: pests } = await sql`
     SELECT key, name, category, prevalence FROM pest_library ORDER BY sort_order`;
-  const [steps, materials] = await Promise.all([listProgramSteps(ORCHARD), listMaterials()]);
+  const [steps, materials, decisions] = await Promise.all([
+    listProgramSteps(ORCHARD),
+    listMaterials(),
+    listPostures(ORCHARD),
+  ]);
 
   const gaps = findCoverageGaps({
     pests: pests.map((p) => ({
@@ -32,9 +37,13 @@ async function main() {
     })),
     steps,
     materials,
+    decisions,
   });
 
-  console.log(`${ORCHARD}: ${steps.length} active steps against ${pests.length} catalogued pests`);
+  console.log(
+    `${ORCHARD}: ${steps.length} active steps, ${decisions.length} recorded decisions, ` +
+    `against ${pests.length} catalogued pests`
+  );
   if (gaps.length === 0) {
     console.log('✓ every high- and moderate-prevalence pest has a step or a written reason');
     process.exit(0);
@@ -47,7 +56,8 @@ async function main() {
       : 'nothing in the library treats it';
     console.log(`  ${g.prevalence.padEnd(9)} ${g.name.padEnd(26)} ${mats}`);
   }
-  console.log('\nEither add a step, or add the reason to DELIBERATELY_UNTREATED.');
+  console.log('\nEither add a step, or record a posture for it — including');
+  console.log('"off", which is a decision rather than an oversight.');
   process.exit(1);
 }
 main().catch((e) => { console.error(e); process.exit(1); });

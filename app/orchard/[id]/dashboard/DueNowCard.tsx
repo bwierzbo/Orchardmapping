@@ -55,11 +55,17 @@ export default async function DueNowCard({
               />
               <div className="min-w-0 flex-1">
                 <p className="text-ink font-medium leading-snug">{r.step.title}</p>
-                <p className="text-xs text-bark mt-0.5">{r.step.detail}</p>
+                {/*
+                  The live reason leads, not the step's stock
+                  description. "8 h left to act" is the whole message;
+                  burying it under a caption — or, as it was, hiding it
+                  entirely whenever the step happened to have an end
+                  date — throws away the only part that changes.
+                */}
+                <p className="text-sm text-ink/80 mt-0.5">{r.why}</p>
+                <p className="text-xs text-bark mt-1">{r.step.detail}</p>
                 <p className="survey-caption mt-1">
-                  {r.end
-                    ? `Through ${formatYMD(r.end)}`
-                    : `Open since ${formatYMD(r.start)} · ${r.why}`}
+                  {r.end ? `Through ${formatYMD(r.end)}` : `Open since ${formatYMD(r.start)}`}
                   {r.lastDoneOn && ` · last done ${formatYMD(r.lastDoneOn)}`}
                 </p>
                 {r.step.pestKey && (
@@ -82,7 +88,9 @@ export default async function DueNowCard({
               <Eye aria-hidden size={16} className="text-bark shrink-0 mt-0.5" />
               <div className="min-w-0 flex-1">
                 <p className="text-ink leading-snug">{r.step.title}</p>
-                <p className="text-xs text-bark mt-0.5">{r.step.detail}</p>
+                {/* A watch's whole value is its CURRENT state — what it
+                    has seen — not a restatement of what it watches for. */}
+                <p className="text-sm text-ink/80 mt-0.5">{r.why}</p>
               </div>
             </li>
           ))}

@@ -1,5 +1,6 @@
 import { type PhenologyMark, type PhenologyStage, seasonOf, stageDate } from './phenology';
 import type { TrapCatch } from './traps';
+import { hoursRemaining, kickbackDeadline, type PestPosture } from './posture';
 
 /**
  * Turning a program into dates.
@@ -27,17 +28,58 @@ export interface CalendarTrigger {
 }
 
 /**
- * An accumulated heat total. Only the codling moth no-biofix model is
- * implemented (GDD base 50°F from Jan 1) — see lib/gdd.ts, and note
- * that Port Angeles is north of 46°N, which is what makes the no-biofix
- * variant the correct one here.
+ * An accumulated heat total.
+ *
+ * Every insect has its own thresholds and its own starting point, and
+ * one model for all of them mistimes everything except the pest it was
+ * written for. Codling moth runs base 50°F / cutoff 88°F from January 1
+ * — the no-biofix variant, valid north of 46°N. Leafrollers run base
+ * 41°F / cutoff 85°F from a BIOFIX: the day a pheromone trap first
+ * catches, which only this orchard's own traps can supply.
  */
 export interface DegreeDayTrigger {
   type: 'degree_day';
   dd: number;
-  model: 'gdd50_jan1';
+  /** Lower developmental threshold, °F. Defaults to codling moth's 50. */
+  base?: number;
+  /** Upper horizontal cutoff, °F. Defaults to codling moth's 88. */
+  cutoff?: number;
+  /**
+   * Where accumulation starts. 'jan1' is the no-biofix variant;
+   * 'biofix' counts from the first catch on `biofixTrap`, and the step
+   * cannot be placed until that trap has caught something.
+   */
+  from?: 'jan1' | 'biofix';
+  /** Trap type whose first catch sets the biofix. */
+  biofixTrap?: string;
   /** Days the window stays open past the threshold being crossed. */
   windowDays?: number;
+}
+
+/** The model a trigger asks for, with codling moth as the default. */
+export function ddModelOf(t: DegreeDayTrigger): { base: number; cutoff: number } {
+  return { base: t.base ?? 50, cutoff: t.cutoff ?? 88 };
+}
+
+/**
+ * The first catch of the season on a trap type — the biofix.
+ *
+ * Any catch at all, not a threshold: biofix marks the start of flight,
+ * which is a different question from whether the flight is heavy enough
+ * to act on.
+ */
+export function biofixDate(
+  catches: readonly TrapCatch[],
+  trapType: string,
+  season: number
+): string | null {
+  let first: string | null = null;
+  for (const c of catches) {
+    if (c.trapType !== trapType || c.count <= 0) continue;
+    if (seasonOf(c.countedOn) !== season) continue;
+    if (!first || c.countedOn < first) first = c.countedOn;
+  }
+  return first;
 }
 
 /** Anchored to a growth stage, optionally running until a later one. */
@@ -70,6 +112,13 @@ export interface ThresholdTrigger {
   type: 'threshold';
   trap: string;
   count: number;
+  /**
+   * Days after the last qualifying catch before the step goes quiet
+   * again. Without this a step opened by one catch in July was still
+   * demanding a spray in late September, long after the flight ended
+   * and the traps had gone back to zero.
+   */
+  staleAfterDays?: number;
 }
 
 export type Trigger =
@@ -186,9 +235,12 @@ export interface ResolveInput {
   season: number;
   asOfYmd: string;
   marks: readonly PhenologyMark[];
-  /** Date this season's running GDD total crossed a threshold, or null
-   *  if it hasn't. Supplied by lib/gdd milestoneDates over stored hours. */
-  ddDate: (dd: number) => string | null;
+  /**
+   * Date the running total for THIS trigger's model crossed its
+   * threshold, or null if it hasn't. The caller precomputes one pass per
+   * distinct model rather than one per step — see lib/db/schedule.ts.
+   */
+  ddDate: (trigger: DegreeDayTrigger, biofixYmd: string | null) => string | null;
   /** Explicit "I did this" records for the season. */
   completions?: readonly StepCompletion[];
   /** Sprays recorded this season. One whose material is the step's
@@ -197,6 +249,25 @@ export interface ResolveInput {
   applications?: readonly MaterialApplication[];
   /** Trap counts, which is how a threshold step learns it is live. */
   trapCatches?: readonly TrapCatch[];
+  /** How this orchard has chosen to answer each pest. */
+  postures?: readonly PestPosture[];
+  /**
+   * Infection events from the disease model, observed and forecast.
+   * A condition step is only actionable because of these.
+   */
+  infectionEvents?: readonly InfectionWindow[];
+  /** Hours a material still works after infection starts, or null. */
+  kickbackHours?: (materialKey: string) => number | null;
+  /** Local "YYYY-MM-DDTHH:mm" — needed to count down a kickback window. */
+  nowTs?: string;
+}
+
+export interface InfectionWindow {
+  startTs: string;
+  endTs: string;
+  severity: 'minimal' | 'light' | 'moderate' | 'severe';
+  /** True for an event the forecast says is coming, not one that ran. */
+  forecast?: boolean;
 }
 
 /**
@@ -233,8 +304,28 @@ function lastDone(
   return latest;
 }
 
+/**
+ * Evidence dated after the as-of date has not happened yet.
+ *
+ * The live app always asks about today, so this never bit in normal
+ * use — but every retrospective view was wrong: replaying April showed
+ * a step completed by a July spray and a trap threshold tripped by a
+ * catch three months in the future. Filtering here rather than in the
+ * caller makes it true for every caller.
+ */
+function asOf<T>(rows: readonly T[] | undefined, date: (row: T) => string, asOfYmd: string): T[] {
+  return (rows ?? []).filter((r) => date(r).slice(0, 10) <= asOfYmd);
+}
+
 /** Place one step on the season's calendar. */
-export function resolveStep(step: ProgramStep, input: ResolveInput): ResolvedStep {
+export function resolveStep(step: ProgramStep, rawInput: ResolveInput): ResolvedStep {
+  const input: ResolveInput = {
+    ...rawInput,
+    completions: asOf(rawInput.completions, (c) => c.completedOn, rawInput.asOfYmd),
+    applications: asOf(rawInput.applications, (a) => a.appliedOn, rawInput.asOfYmd),
+    trapCatches: asOf(rawInput.trapCatches, (c) => c.countedOn, rawInput.asOfYmd),
+    infectionEvents: asOf(rawInput.infectionEvents, (e) => e.startTs, rawInput.asOfYmd),
+  };
   const { season, asOfYmd, marks, ddDate } = input;
   const t = step.trigger;
   const placed = (start: string, end: string, why: string): ResolvedStep =>
@@ -298,10 +389,26 @@ export function resolveStep(step: ProgramStep, input: ResolveInput): ResolvedSte
     }
 
     case 'degree_day': {
-      const hit = ddDate(t.dd);
-      if (!hit) return unplaceable(`Waiting on ${t.dd} degree-days (base 50°F from Jan 1)`);
+      const model = ddModelOf(t);
+      let biofix: string | null = null;
+      if (t.from === 'biofix') {
+        if (!t.biofixTrap) return unplaceable('No biofix trap set for this step');
+        biofix = biofixDate(input.trapCatches ?? [], t.biofixTrap, season);
+        if (!biofix) {
+          return unplaceable(
+            `Waiting on the first ${stageWords(t.biofixTrap)} catch to set the biofix`
+          );
+        }
+      }
+      const from = biofix ? `biofix ${biofix}` : 'Jan 1';
+      const hit = ddDate(t, biofix);
+      if (!hit) {
+        return unplaceable(
+          `Waiting on ${t.dd} degree-days (base ${model.base}°F from ${from})`
+        );
+      }
       const end = addDays(hit, t.windowDays ?? 7);
-      return placed(hit, end, `${t.dd} DD reached ${hit}`);
+      return placed(hit, end, `${t.dd} DD base ${model.base}°F from ${from} — reached ${hit}`);
     }
 
     case 'phenology': {
@@ -334,17 +441,96 @@ export function resolveStep(step: ProgramStep, input: ResolveInput): ResolvedSte
       }
       const until = t.untilStage ? stageDate(marks, t.untilStage, season) : null;
       const live = (!from || asOfYmd >= from) && (!until || asOfYmd <= until);
-      return {
+      const watching = (why: string, status: StepStatus = 'monitor'): ResolvedStep => ({
         step,
-        status: live ? 'monitor' : from && asOfYmd < from ? 'upcoming' : 'past',
+        status,
         start: from,
         end: until,
-        why: live ? 'Watching conditions' : 'Outside the watch window',
+        why,
         daysUntil: from ? daysBetweenUtc(asOfYmd, from) : null,
-        // A watch is never "done" — it runs until its window closes.
         lastDoneOn: null,
         dueAgainOn: null,
-      };
+      });
+
+      if (!live) {
+        return watching(
+          'Outside the watch window',
+          from && asOfYmd < from ? 'upcoming' : 'past'
+        );
+      }
+
+      // The posture decides what a watch DOES when conditions occur.
+      const posture = step.pestKey
+        ? input.postures?.find((p) => p.pestKey === step.pestKey)
+        : undefined;
+      if (posture?.posture === 'off') {
+        return watching('Not treating this — recorded as a decision', 'past');
+      }
+
+      const rank = { minimal: 1, light: 2, moderate: 3, severe: 4 } as const;
+      const floor = rank[posture?.minSeverity ?? 'moderate'];
+      const inWindow = (input.infectionEvents ?? []).filter(
+        (e) =>
+          rank[e.severity] >= floor &&
+          e.startTs.slice(0, 10) >= (from ?? '0000-00-00') &&
+          (!until || e.startTs.slice(0, 10) <= until)
+      );
+
+      // PROTECT: the next forecast event is the deadline to be covered.
+      if (posture?.posture === 'protect') {
+        const ahead = inWindow
+          .filter((e) => e.forecast && e.startTs.slice(0, 10) >= asOfYmd)
+          .sort((a, b) => a.startTs.localeCompare(b.startTs))[0];
+        if (!ahead) return watching('Watching the forecast — nothing coming yet');
+        return {
+          ...watching(`${ahead.severity} infection forecast for ${ahead.startTs.slice(0, 10)} — be covered before it`),
+          status: 'due',
+        };
+      }
+
+      // REACT: an event has run; the material's kickback sets the clock.
+      if (posture?.posture === 'react') {
+        const past = inWindow
+          .filter((e) => !e.forecast && e.startTs.slice(0, 10) <= asOfYmd)
+          .sort((a, b) => b.startTs.localeCompare(a.startTs))[0];
+        if (!past) return watching('Watching for an infection period');
+        // Two different failures, and conflating them misleads: a step
+        // with no material assigned has nothing to time, which is not
+        // the same as a material that cannot work after infection.
+        if (!step.materialKey) {
+          return watching(
+            `${past.severity} infection on ${past.startTs.slice(0, 10)} — no material is set on this step, so there is nothing to time`
+          );
+        }
+        const kick = input.kickbackHours?.(step.materialKey) ?? null;
+        if (kick === null) {
+          return watching(
+            `${past.severity} infection on ${past.startTs.slice(0, 10)} — ${stageWords(step.materialKey)} has no post-infection activity, so reacting cannot work. Protect ahead instead.`
+          );
+        }
+        const deadline = kickbackDeadline(past.startTs, kick);
+        const left = hoursRemaining(deadline, input.nowTs ?? `${asOfYmd}T12:00`);
+        if (left < 0) {
+          // The window on THAT event closed; the watch itself has not.
+          // Marking it past here stopped it watching for the rest of the
+          // season after the first missed event, silently.
+          return watching(
+            `Watching — the ${kick} h window on the ${past.startTs.slice(0, 10)} infection has closed`
+          );
+        }
+        return {
+          ...watching(`${past.severity} infection began ${past.startTs.slice(0, 10)} — ${Math.floor(left)} h left to act`),
+          status: 'due',
+        };
+      }
+
+      // EVIDENCE, or no posture chosen: report, do not instruct.
+      const seen = inWindow.filter((e) => !e.forecast).length;
+      return watching(
+        seen > 0
+          ? `Watching conditions — ${seen} infection period${seen === 1 ? '' : 's'} so far`
+          : 'Watching conditions'
+      );
     }
 
     case 'threshold': {
@@ -352,12 +538,28 @@ export function resolveStep(step: ProgramStep, input: ResolveInput): ResolvedSte
       // stays open from there. Once the flight has started it does not
       // un-start: what closes the step is doing the work, and for a
       // material that has to be maintained, repeatDays brings it back.
-      const first = [...(input.trapCatches ?? [])]
+      const qualifying = [...(input.trapCatches ?? [])]
         .filter(
           (c) =>
             c.trapType === t.trap && c.count >= t.count && seasonOf(c.countedOn) === season
         )
-        .sort((a, b) => a.countedOn.localeCompare(b.countedOn))[0];
+        .sort((a, b) => a.countedOn.localeCompare(b.countedOn));
+      const first = qualifying[0];
+      const latest = qualifying[qualifying.length - 1];
+
+      // Pressure that stopped weeks ago is not pressure now.
+      if (latest && daysBetweenUtc(latest.countedOn, asOfYmd) > (t.staleAfterDays ?? 21)) {
+        return {
+          step,
+          status: 'monitor',
+          start: null,
+          end: null,
+          why: `Quiet since ${latest.countedOn} — watching the traps again`,
+          daysUntil: null,
+          lastDoneOn: null,
+          dueAgainOn: null,
+        };
+      }
 
       if (!first) {
         return {

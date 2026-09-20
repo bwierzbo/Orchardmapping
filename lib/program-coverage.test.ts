@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  DELIBERATELY_UNTREATED,
-  findCoverageGaps,
-  type CoverageInputs,
-} from './program-coverage';
+import { findCoverageGaps, type CoverageInputs } from './program-coverage';
 
 const pest = (key: string, prevalence: string, category = 'insect') => ({
   key,
@@ -49,21 +45,36 @@ describe('findCoverageGaps', () => {
     expect(gaps).toEqual([]);
   });
 
-  it('accepts a written reason, and only a written one', () => {
-    const withReason = findCoverageGaps({
+  it('accepts the ORCHARD\'s own decision not to treat something', () => {
+    const decided = findCoverageGaps({
       pests: [pest('fire_blight', 'high', 'disease')],
       steps: [],
       materials: [],
+      decisions: [{ pestKey: 'fire_blight', posture: 'off', note: 'Absent west of the Cascades' }],
     });
-    expect(withReason).toEqual([]);
-    expect(DELIBERATELY_UNTREATED.fire_blight).toMatch(/absent/i);
+    expect(decided).toEqual([]);
+  });
 
-    const withoutReason = findCoverageGaps({
+  it('counts any posture as having been considered, not just off', () => {
+    // Choosing to watch a pest is a decision too.
+    const watching = findCoverageGaps({
+      pests: [pest('apple_scab', 'high', 'disease')],
+      steps: [],
+      materials: [],
+      decisions: [{ pestKey: 'apple_scab', posture: 'evidence' }],
+    });
+    expect(watching).toEqual([]);
+  });
+
+  it('still flags a pest nobody has decided anything about', () => {
+    const undecided = findCoverageGaps({
       pests: [pest('something_new', 'high')],
       steps: [],
       materials: [],
+      decisions: [{ pestKey: 'a_different_pest', posture: 'off' }],
     });
-    expect(withoutReason).toHaveLength(1);
+    expect(undecided).toHaveLength(1);
+    expect(undecided[0].pestKey).toBe('something_new');
   });
 
   it('ignores beneficials and low-prevalence entries', () => {
