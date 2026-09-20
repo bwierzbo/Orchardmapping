@@ -18,6 +18,10 @@ import { cToF } from './gdd';
  * not as an instruction. See docs: the model provider interface in
  * lib/disease-provider.ts exists so a better source can replace it.
  *
+ * Provenance for every number in this file: lib/provenance.ts, or
+ * `npx tsx scripts/audit-provenance.ts`. The Mills values are quoted;
+ * the wetness thresholds are ours.
+ *
  * Wetness is INFERRED here, not measured, from rain and humidity. That
  * is the model's weakest joint. A measured leaf-wetness sensor — the
  * kind AgWeatherNet stations carry, reporting LW_UNITY with 0.4 defined

@@ -7,6 +7,10 @@
  * says what the tree actually took up. Both are wanted, and they are
  * read together.
  *
+ * Provenance: lib/provenance.ts. The sufficiency ranges are quoted
+ * from WSU; the YAN figure in the cider note is a WINE standard and
+ * says so.
+ *
  * ON WHY THE RANGES DO NOT VARY BY INTENT. WSU states plainly that
  * these standards are "valid irrespective of cultivar, rootstock,
  * training system, and environmental conditions". Inventing separate
