@@ -1,9 +1,10 @@
 import { Sprout } from 'lucide-react';
-import { listMarks, listVarieties, pendingRollUps } from '@/lib/db/phenology';
+import { listMarks, listVarieties, pendingRollUps, refBlooms } from '@/lib/db/phenology';
 import {
   PHENOLOGY_LABEL,
   currentStage,
   daysBetween,
+  refBloomSpread,
   remainingStages,
   seasonOf,
 } from '@/lib/phenology';
@@ -11,6 +12,7 @@ import { formatYMD } from '@/lib/dates';
 import { nowLocalIso } from '@/lib/openmeteo';
 import StageMarker from './StageMarker';
 import RollUpPrompt from './RollUpPrompt';
+import BloomSpread from './BloomSpread';
 
 /**
  * Where the block is in the season, and the control to record the next
@@ -27,12 +29,14 @@ export default async function StageCard({
 }) {
   const today = nowLocalIso().slice(0, 10);
   const season = seasonOf(today);
-  const [marks, varieties, rollUps] = await Promise.all([
+  const [marks, varieties, rollUps, blooms] = await Promise.all([
     listMarks(orchardId).catch(() => []),
     listVarieties(orchardId).catch(() => []),
     // What walk mode has seen but the programme has not been told.
     pendingRollUps(orchardId, season).catch(() => []),
+    refBlooms(orchardId).catch(() => []),
   ]);
+  const spread = refBloomSpread(blooms);
   const current = currentStage(marks, today);
   const thisSeason = marks.filter((m) => seasonOf(m.observedOn) === season);
   const remaining = remainingStages(marks, today);
@@ -94,6 +98,8 @@ export default async function StageCard({
           ))}
         </ol>
       )}
+
+      {spread && <BloomSpread spread={spread} />}
     </section>
   );
 }

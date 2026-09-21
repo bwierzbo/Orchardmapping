@@ -16,6 +16,7 @@ import {
   rollUpSuggestions,
   type PhenologyMark,
   type TreeStageObservation,
+  refBloomSpread,
 } from './phenology';
 
 const mark = (stage: string, observedOn: string) =>
@@ -355,5 +356,73 @@ describe('rollUpSuggestions', () => {
 
   it('never suggests something that has not cleared the threshold', () => {
     expect(rollUpSuggestions([{ ...rollUp, ready: false }], [], 2026)).toEqual([]);
+  });
+});
+
+describe('refBloomSpread', () => {
+  const ref = (variety: string, mmdd: string | null, trees = 1) => ({ variety, mmdd, trees });
+
+  it('measures the gap between the first and last variety to bloom', () => {
+    const s = refBloomSpread([
+      ref('Harrison', '05-16', 96),
+      ref('Golden Russet', '04-19', 20),
+      ref('Brown Snout', '05-22', 41),
+    ]);
+    expect(s).not.toBeNull();
+    expect(s!.earliest.variety).toBe('Golden Russet');
+    expect(s!.latest.variety).toBe('Brown Snout');
+    // 19 Apr to 22 May: 11 days left in April plus 22 = 33.
+    expect(s!.days).toBe(33);
+  });
+
+  it('orders varieties by bloom date, not by name or tree count', () => {
+    const s = refBloomSpread([
+      ref('Aaa Late', '05-22'),
+      ref('Zzz Early', '04-19'),
+      ref('Mmm Mid', '05-08'),
+    ]);
+    expect(s!.order.map((r) => r.variety)).toEqual(['Zzz Early', 'Mmm Mid', 'Aaa Late']);
+  });
+
+  it('keeps undated varieties out of the spread but still reports them', () => {
+    // Dabinett is a real case: 32 trees, blooms late, no trial date. It must
+    // not silently vanish, or the spread reads narrower than the block is.
+    const s = refBloomSpread([
+      ref('Golden Russet', '04-19', 20),
+      ref('Brown Snout', '05-22', 41),
+      ref('Dabinett', null, 32),
+    ]);
+    expect(s!.order).toHaveLength(2);
+    expect(s!.undated.map((r) => r.variety)).toEqual(['Dabinett']);
+    expect(s!.undated[0].trees).toBe(32);
+  });
+
+  it('returns null when fewer than two varieties are dated', () => {
+    expect(refBloomSpread([ref('Harrison', '05-16'), ref('Dabinett', null)])).toBeNull();
+    expect(refBloomSpread([])).toBeNull();
+  });
+
+  it('does not let a leap day widen the gap', () => {
+    // Computed in a non-leap year: 1 Feb to 1 Mar is 28 days, not 29.
+    expect(refBloomSpread([ref('A', '02-01'), ref('B', '03-01')])!.days).toBe(28);
+  });
+
+  it('reports a zero spread when every variety blooms the same day', () => {
+    const s = refBloomSpread([ref('A', '04-19'), ref('B', '04-19'), ref('C', '04-19')]);
+    expect(s!.days).toBe(0);
+    expect(s!.earliest.variety).toBe('A');
+  });
+});
+
+describe('refBloomSpread offsets', () => {
+  it('measures each variety from the earliest, not from Jan 1', () => {
+    const s = refBloomSpread([
+      { variety: 'Golden Russet', mmdd: '04-19', trees: 20 },
+      { variety: 'Kingston Black', mmdd: '05-12', trees: 99 },
+      { variety: 'Brown Snout', mmdd: '05-22', trees: 41 },
+    ])!;
+    expect(s.order.map((r) => r.offsetDays)).toEqual([0, 23, 33]);
+    // The last offset is the spread itself, by definition.
+    expect(s.order[s.order.length - 1].offsetDays).toBe(s.days);
   });
 });

@@ -9,6 +9,7 @@ import {
   type PhenologyStage,
   type TreeStageObservation,
   type VarietyRollUp,
+  type RefBloom,
 } from '../phenology';
 
 /**
@@ -202,4 +203,28 @@ export async function pendingRollUps(
     listMarks(orchardId),
   ]);
   return rollUpSuggestions(rollUps, marks, season);
+}
+
+/**
+ * Reference bloom dates for the varieties actually planted in this orchard,
+ * with how many trees each accounts for. Varieties with no trial date come
+ * back with mmdd null rather than being dropped — a big undated block
+ * (Dabinett, 32 trees) would otherwise make the spread look narrower than
+ * the planting really is.
+ */
+export async function refBlooms(orchardId: string): Promise<RefBloom[]> {
+  const { rows } = await sql`
+    SELECT t.variety, va.ref_bloom_mmdd, count(*)::int AS trees
+    FROM trees t
+    LEFT JOIN variety_attributes va ON va.variety = t.variety
+    WHERE t.orchard_id = ${orchardId}
+      AND t.variety IS NOT NULL AND t.variety <> ''
+    GROUP BY t.variety, va.ref_bloom_mmdd
+    ORDER BY va.ref_bloom_mmdd NULLS LAST, t.variety
+  `;
+  return rows.map((r) => ({
+    variety: String(r.variety),
+    mmdd: r.ref_bloom_mmdd === null ? null : String(r.ref_bloom_mmdd),
+    trees: Number(r.trees),
+  }));
 }

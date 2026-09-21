@@ -384,3 +384,54 @@ export function rollUpSuggestions(
     return stageOrder(r.stage) > furthest;
   });
 }
+
+/** A variety's mean bloom date at the WSU Mount Vernon trial, as MM-DD. */
+export interface RefBloom {
+  variety: string;
+  mmdd: string | null;
+  trees: number;
+}
+
+export interface RefBloomSpread {
+  earliest: RefBloom;
+  latest: RefBloom;
+  /** Days from the earliest variety's bloom to the latest. */
+  days: number;
+  /**
+   * Varieties in bloom order, earliest first, each with its offset in days
+   * from the earliest. Undated varieties are excluded.
+   */
+  order: (RefBloom & { offsetDays: number })[];
+  /** Varieties with no trial date, and how many trees they account for. */
+  undated: RefBloom[];
+}
+
+/**
+ * The bloom spread across a planting, from reference dates.
+ *
+ * This is the one question the reference data can honestly answer before
+ * anything has bloomed: whether a single stage-anchored pass can cover the
+ * whole block, or whether the early and late ends are too far apart to
+ * ever be at the same stage on the same day.
+ *
+ * The dates are WSU Mount Vernon means, not this orchard's. The spread
+ * travels better than the dates do — a warm spring moves everything
+ * forward together, so the gap between first and last is far more stable
+ * than either date on its own.
+ */
+export function refBloomSpread(refs: readonly RefBloom[]): RefBloomSpread | null {
+  const dated = refs.filter((r) => r.mmdd !== null);
+  if (dated.length < 2) return null;
+  const sorted = [...dated].sort((a, b) => a.mmdd!.localeCompare(b.mmdd!));
+  const earliest = sorted[0];
+  const latest = sorted[sorted.length - 1];
+  // A non-leap year, so 29 Feb cannot silently shift the gap by a day.
+  const from = `2001-${earliest.mmdd}`;
+  return {
+    earliest,
+    latest,
+    days: daysBetween(from, `2001-${latest.mmdd}`),
+    order: sorted.map((r) => ({ ...r, offsetDays: daysBetween(from, `2001-${r.mmdd}`) })),
+    undated: refs.filter((r) => r.mmdd === null),
+  };
+}
