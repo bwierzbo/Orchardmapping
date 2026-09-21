@@ -1,10 +1,10 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import { BarChart3, BookOpen, Camera, MapPin, Plus, Settings } from 'lucide-react';
+import { BarChart3, BookOpen, Camera, MapPin, Plus, Settings, Shield } from 'lucide-react';
 import { satellitePreviewUrl, boundarySvgPoints } from '@/lib/satellite-preview';
 import { getTreeCountsByOrchard } from '@/lib/db/trees';
 import { auth } from '@clerk/nextjs/server';
-import { memberOrchardConfigs } from '@/lib/orchard-access';
+import { memberOrchardConfigs, isGlobalAdmin } from '@/lib/orchard-access';
 import UserMenu from '@/components/UserMenu';
 import type { OrchardConfig } from '@/lib/types';
 
@@ -25,9 +25,10 @@ export default async function Home() {
   const signedIn = !!userId;
   // Only orchards you belong to. Signed out, that is none — the list used
   // to show every orchard in the database to anyone who loaded the page.
-  const [orchards, treeCounts] = await Promise.all([
+  const [orchards, treeCounts, globalAdmin] = await Promise.all([
     userId ? memberOrchardConfigs(userId) : Promise.resolve([]),
     getTreeCountsByOrchard(),
+    userId ? isGlobalAdmin(userId) : Promise.resolve(false),
   ]);
 
   // Count only the trees in orchards you belong to. Summing every count
@@ -64,6 +65,17 @@ export default async function Home() {
       title: 'Settings',
       sub: 'Scope the app to your operation',
     },
+    // Only the few people who run the system see this at all.
+    ...(globalAdmin
+      ? [
+          {
+            href: '/access',
+            icon: Shield,
+            title: 'Access',
+            sub: 'Who can reach which orchards, across the whole system',
+          },
+        ]
+      : []),
   ];
 
   return (

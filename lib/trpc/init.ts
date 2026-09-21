@@ -2,7 +2,7 @@ import { initTRPC, TRPCError } from '@trpc/server';
 import { auth } from '@clerk/nextjs/server';
 import { sql } from '@vercel/postgres';
 import superjson from 'superjson';
-import { orchardRole, roleAtLeast, type OrchardRole } from '@/lib/orchard-access';
+import { orchardRole, roleAtLeast, isGlobalAdmin, type OrchardRole } from '@/lib/orchard-access';
 
 /**
  * tRPC foundation, mirroring CiderPilot's packages/api/src/trpc.ts.
@@ -33,6 +33,22 @@ export const publicProcedure = t.procedure;
 export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
   if (!ctx.userId) {
     throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Please sign in.' });
+  }
+  return next({ ctx: { userId: ctx.userId } });
+});
+
+/**
+ * The handful of people who run the whole system (migration 051).
+ *
+ * NOT_FOUND rather than FORBIDDEN on purpose: the access console should
+ * not confirm its own existence to someone who may not use it.
+ */
+export const globalAdminProcedure = t.procedure.use(async ({ ctx, next }) => {
+  if (!ctx.userId) {
+    throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Please sign in.' });
+  }
+  if (!(await isGlobalAdmin(ctx.userId))) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Not found.' });
   }
   return next({ ctx: { userId: ctx.userId } });
 });
