@@ -70,6 +70,8 @@ export interface ClientTree {
   tree_id: string;
   /** The human-facing number within the orchard ("Tree 142"). */
   tree_no?: number | null;
+  /** The address-shaped id this tree had before migration 049, if any. */
+  legacy_tree_id?: string | null;
   orchard_id: string;
   name?: string | null;
   variety?: string | null;
