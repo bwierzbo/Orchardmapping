@@ -27,6 +27,9 @@ import {
   type WalkSettings,
 } from '@/lib/settings';
 import EditModePanel from './EditModePanel';
+import TreeGridEditor from './TreeGridEditor';
+import { useLasso, type Ring } from './useLasso';
+import { treesInRing, applyLasso, type LassoMode } from '@/lib/lasso';
 import MapLegend from './MapLegend';
 import OrchardSwitcher from './OrchardSwitcher';
 import { useAreaLayer } from './useAreaLayer';
@@ -156,6 +159,30 @@ export default function OrchardViewer({
 
   // Edit ("marking") mode
   const [editMode, setEditMode] = useState(false);
+
+  // Lasso selection: circle a group of trees, then edit them together.
+  const [lassoMode, setLassoMode] = useState<LassoMode | null>(null);
+  const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set());
+  const [gridOpen, setGridOpen] = useState(false);
+
+  const handleLasso = useCallback(
+    (ring: Ring) => {
+      const mode = lassoMode ?? 'replace';
+      const hits = treesInRing(trees, ring);
+      setPicked((prev) => applyLasso(prev, hits, mode));
+      if (hits.length === 0 && mode === 'replace') {
+        showToast('info', 'No trees inside that shape');
+      }
+      // One trace, one selection: drop back out so the map pans again.
+      setLassoMode(null);
+    },
+    [trees, lassoMode, showToast]
+  );
+
+  const clearPicked = useCallback(() => {
+    setPicked(new Set());
+    setLassoMode(null);
+  }, []);
   const [row, setRowState] = useState('');
   const [position, setPosition] = useState('1');
   const [autoIncrement, setAutoIncrement] = useState(true);
@@ -388,8 +415,11 @@ export default function OrchardViewer({
     }
   }, [selectedTrapId, todayYmd, refreshTraps, showToast]);
 
+  useLasso(mapObj, mapReady, lassoMode !== null, handleLasso);
+
   useTreeLayer(mapObj, mapReady, trees, {
     editMode,
+    multiSelected: picked,
     canEdit,
     statusFilter: activeStatuses.size === TREE_STATUSES.length ? null : activeStatuses,
     selectedTreeId,
@@ -488,7 +518,11 @@ export default function OrchardViewer({
       const tag = (e.target as HTMLElement).tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (e.key === 'Escape') {
-        if (selectedTreeId) clear();
+        // Back out of the lasso one step at a time: stop drawing first,
+        // then drop the selection.
+        if (lassoMode !== null) setLassoMode(null);
+        else if (picked.size > 0) clearPicked();
+        else if (selectedTreeId) clear();
         else if (detectMode) setDetectMode(false);
         else if (selectedTrapId) setSelectedTrapId(null);
         else if (trapMode) setTrapMode(false);
@@ -503,7 +537,7 @@ export default function OrchardViewer({
     },
     [
       selectedTreeId, clear, editMode, canEdit, areaMode, selectedAreaId,
-      detectMode, selectedTrapId, trapMode,
+      detectMode, selectedTrapId, trapMode, lassoMode, picked, clearPicked,
     ]
   );
 
@@ -684,6 +718,12 @@ export default function OrchardViewer({
               Walk Survey
             </button>
             <button
+              onClick={() => setLassoMode('replace')}
+              className="px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-surface text-ink hover:bg-canopy-50"
+            >
+              Select Trees
+            </button>
+            <button
               onClick={() => setGroupActionOpen(true)}
               className="px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-surface text-ink hover:bg-canopy-50"
             >
@@ -770,6 +810,63 @@ export default function OrchardViewer({
         onSaved={refresh}
         onExit={() => setDetectMode(false)}
       />
+
+      {/* Lasso: what to do, and what has been picked */}
+      {lassoMode !== null && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-lg shadow-lg bg-ink/85 text-paper text-xs font-medium pointer-events-none">
+          {lassoMode === 'replace'
+            ? 'Draw a circle around the trees you want'
+            : lassoMode === 'add'
+              ? 'Draw around trees to add to the selection'
+              : 'Draw around trees to take out of the selection'}
+        </div>
+      )}
+
+      {picked.size > 0 && !gridOpen && (
+        <div className="absolute bottom-[max(6.5rem,calc(env(safe-area-inset-bottom)+6.5rem))] left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 px-2 py-1.5 rounded-lg shadow-lg bg-surface border border-line">
+          <span className="px-2 text-sm font-medium text-ink whitespace-nowrap">
+            {picked.size} {picked.size === 1 ? 'tree' : 'trees'}
+          </span>
+          <button
+            onClick={() => setGridOpen(true)}
+            className="px-3 py-1.5 rounded-md text-sm font-medium bg-canopy-600 text-white hover:bg-canopy-700"
+          >
+            Edit
+          </button>
+          <button
+            onClick={() => setLassoMode('add')}
+            className="px-2 py-1.5 rounded-md text-xs font-medium text-ink hover:bg-canopy-50"
+            title="Circle more trees to add them"
+          >
+            + Add
+          </button>
+          <button
+            onClick={() => setLassoMode('subtract')}
+            className="px-2 py-1.5 rounded-md text-xs font-medium text-ink hover:bg-canopy-50"
+            title="Circle trees to take them out"
+          >
+            − Remove
+          </button>
+          <button
+            onClick={clearPicked}
+            className="px-2 py-1.5 rounded-md text-xs font-medium text-bark hover:bg-canopy-50"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
+      {gridOpen && (
+        <TreeGridEditor
+          orchardId={orchard.id}
+          trees={trees}
+          selectedIds={picked}
+          onClose={() => setGridOpen(false)}
+          onSaved={() => {
+            void refresh();
+          }}
+        />
+      )}
 
       {/* Group action dialog */}
       {groupActionOpen && (

@@ -36,6 +36,8 @@ interface Options extends TreeLayerCallbacks {
   canEdit: boolean;
   statusFilter: ReadonlySet<TreeStatus> | null;
   selectedTreeId: string | null;
+  /** Trees picked out with the lasso, painted as a group. */
+  multiSelected?: ReadonlySet<string> | null;
   walkProgress?: WalkProgressSets | null;
 }
 
@@ -52,6 +54,7 @@ export function useTreeLayer(
 ) {
   const { editMode, canEdit, statusFilter, selectedTreeId, onSelect, onMove } = options;
   const walkProgress = options.walkProgress ?? null;
+  const multiSelected = options.multiSelected ?? null;
 
   // Refs so map handlers see fresh values without re-binding
   const stateRef = useRef({ editMode, canEdit, trees, onSelect, onMove });
@@ -117,6 +120,7 @@ export function useTreeLayer(
         'circle-radius': [
           'case',
           ['boolean', ['feature-state', 'selected'], false], 10,
+          ['boolean', ['feature-state', 'picked'], false], 9,
           ['boolean', ['feature-state', 'hover'], false], 9,
           7,
         ],
@@ -131,6 +135,7 @@ export function useTreeLayer(
         'circle-stroke-color': [
           'case',
           ['boolean', ['feature-state', 'selected'], false], '#D9481C',
+          ['boolean', ['feature-state', 'picked'], false], '#D9481C',
           ['==', ['coalesce', ['feature-state', 'walk'], ''], 'todo'], '#14211A',
           ['==', ['coalesce', ['feature-state', 'walk'], ''], 'done'], '#2F6B3F',
           '#ffffff',
@@ -138,6 +143,7 @@ export function useTreeLayer(
         'circle-stroke-width': [
           'case',
           ['boolean', ['feature-state', 'selected'], false], 3,
+          ['boolean', ['feature-state', 'picked'], false], 3,
           ['==', ['coalesce', ['feature-state', 'walk'], ''], 'todo'], 2.5,
           2,
         ],
@@ -369,6 +375,23 @@ export function useTreeLayer(
       }
     }
   }, [map, mapReady, selectedTreeId, trees]);
+
+  // Lasso selection feature-state sync, same shape as walk progress
+  // below: clear what was marked last time, then mark the current set.
+  const pickedMarkedRef = useRef<number[]>([]);
+  useEffect(() => {
+    if (!mapReady || !map || !map.getSource(SOURCE_ID)) return;
+    for (const id of pickedMarkedRef.current) {
+      map.setFeatureState({ source: SOURCE_ID, id }, { picked: false });
+    }
+    pickedMarkedRef.current = [];
+    if (!multiSelected || multiSelected.size === 0) return;
+    for (const t of trees) {
+      if (!multiSelected.has(t.tree_id)) continue;
+      map.setFeatureState({ source: SOURCE_ID, id: t.id }, { picked: true });
+      pickedMarkedRef.current.push(t.id);
+    }
+  }, [map, mapReady, multiSelected, trees]);
 
   // Walk-progress feature-state sync: clear what was marked last time,
   // then mark the current done/todo sets. setData() keeps feature-state,

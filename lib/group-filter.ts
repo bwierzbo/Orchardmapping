@@ -7,6 +7,12 @@ import { normalizeRowId } from './address';
  * (so an empty filter selects the whole orchard).
  */
 export interface GroupFilter {
+  /**
+   * An explicit selection — what a lasso on the map produces. Unlike the
+   * other dimensions this names trees outright, so it survives the trees
+   * being moved or renamed afterwards.
+   */
+  treeIds?: string[];
   rows?: string[];
   varieties?: string[];
   statuses?: string[];
@@ -15,6 +21,9 @@ export interface GroupFilter {
 }
 
 export function matchesFilter(tree: ClientTree, filter: GroupFilter): boolean {
+  if (filter.treeIds?.length) {
+    if (!filter.treeIds.includes(tree.tree_id)) return false;
+  }
   if (filter.rows?.length) {
     const row = tree.row_id ? normalizeRowId(tree.row_id) : null;
     if (!row || !filter.rows.map(normalizeRowId).includes(row)) return false;
@@ -41,6 +50,11 @@ export function filterTrees(trees: ClientTree[], filter: GroupFilter): ClientTre
 /** Human summary of a filter for the group-action record and undo list. */
 export function describeFilter(filter: GroupFilter): string {
   const parts: string[] = [];
+  if (filter.treeIds?.length) {
+    parts.push(
+      filter.treeIds.length === 1 ? '1 selected tree' : `${filter.treeIds.length} selected trees`
+    );
+  }
   if (filter.rows?.length) parts.push(`rows ${filter.rows.join(', ')}`);
   if (filter.varieties?.length) parts.push(filter.varieties.join(', '));
   if (filter.statuses?.length) parts.push(`status: ${filter.statuses.join('/')}`);

@@ -9,6 +9,8 @@ import { STATUS_COLORS } from '@/lib/trees-geojson';
 import StatusBadge, { STATUS_LABEL } from '@/components/StatusBadge';
 import { formatYMD } from '@/lib/dates';
 import { normalizeRowId } from '@/lib/address';
+import { useRouter } from 'next/navigation';
+import TreeGridEditor from '../viewer/TreeGridEditor';
 import { comparePositions } from '@/lib/position';
 
 type SortKey =
@@ -79,6 +81,9 @@ export default function TreeTable({
   const [statusFilter, setStatusFilter] = useState<Set<TreeStatus>>(() => new Set(TREE_STATUSES));
   const [varietyFilter, setVarietyFilter] = useState('');
   const [search, setSearch] = useState('');
+  const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set());
+  const [gridOpen, setGridOpen] = useState(false);
+  const router = useRouter();
 
   const varieties = useMemo(() => {
     const set = new Set<string>();
@@ -149,8 +154,60 @@ export default function TreeTable({
 
   const dash = <span className="text-bark/50">—</span>;
 
+  const allVisiblePicked = visible.length > 0 && visible.every((t) => picked.has(t.tree_id));
+
+  function toggleTree(treeId: string) {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(treeId)) next.delete(treeId);
+      else next.add(treeId);
+      return next;
+    });
+  }
+
+  /** Tick the header box to take everything the filters currently show. */
+  function toggleAllVisible() {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      for (const t of visible) {
+        if (allVisiblePicked) next.delete(t.tree_id);
+        else next.add(t.tree_id);
+      }
+      return next;
+    });
+  }
+
   return (
     <div>
+      {gridOpen && (
+        <TreeGridEditor
+          orchardId={orchardId}
+          trees={trees}
+          selectedIds={picked}
+          onClose={() => setGridOpen(false)}
+          onSaved={() => router.refresh()}
+        />
+      )}
+
+      {picked.size > 0 && (
+        <div className="sticky top-2 z-20 mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-surface border border-line shadow-sm">
+          <span className="text-sm font-medium text-ink">
+            {picked.size} {picked.size === 1 ? 'tree' : 'trees'} selected
+          </span>
+          <button
+            onClick={() => setGridOpen(true)}
+            className="px-3 py-1.5 rounded-md text-sm font-medium bg-canopy-600 text-white hover:bg-canopy-700"
+          >
+            Edit together
+          </button>
+          <button
+            onClick={() => setPicked(new Set())}
+            className="px-2 py-1.5 rounded-md text-xs font-medium text-bark hover:bg-canopy-50"
+          >
+            Clear
+          </button>
+        </div>
+      )}
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2 mb-3">
         {TREE_STATUSES.filter((s) => statusCounts[s] > 0).map((s) => {
@@ -204,6 +261,15 @@ export default function TreeTable({
         <table className="w-full text-xs">
           <thead className="bg-paper">
             <tr className="text-left text-bark">
+              <th scope="col" className="pl-3 pr-1 py-2 font-medium w-8">
+                <input
+                  type="checkbox"
+                  checked={allVisiblePicked}
+                  onChange={toggleAllVisible}
+                  aria-label="Select every tree the filters show"
+                  className="align-middle accent-canopy-600"
+                />
+              </th>
               <th scope="col" className="px-3 py-2 font-medium">
                 Tree
               </th>
@@ -239,7 +305,19 @@ export default function TreeTable({
           </thead>
           <tbody className="divide-y divide-line text-ink">
             {visible.map((t) => (
-              <tr key={t.tree_id} className="hover:bg-canopy-50/50">
+              <tr
+                key={t.tree_id}
+                className={picked.has(t.tree_id) ? 'bg-canopy-50' : 'hover:bg-canopy-50/50'}
+              >
+                <td className="pl-3 pr-1 py-1.5">
+                  <input
+                    type="checkbox"
+                    checked={picked.has(t.tree_id)}
+                    onChange={() => toggleTree(t.tree_id)}
+                    aria-label={`Select tree ${t.tree_no ?? t.tree_id}`}
+                    className="align-middle accent-canopy-600"
+                  />
+                </td>
                 <td className="px-3 py-1.5 whitespace-nowrap">
                   <Link
                     href={`/orchard/${orchardId}?tree=${encodeURIComponent(t.tree_id)}`}

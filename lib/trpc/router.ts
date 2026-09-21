@@ -50,6 +50,7 @@ import {
 } from '@/lib/db/tree-events';
 import { serializeTree } from '@/lib/serialize';
 import { formatAddress } from '@/lib/address';
+import { applyTreeEdits } from '@/lib/db/group-actions';
 import { toYMD } from '@/lib/dates';
 import { TRPCError } from '@trpc/server';
 import { listAreas, insertArea, updateArea, deleteArea, AREA_KINDS } from '@/lib/db/areas';
@@ -345,6 +346,54 @@ export const appRouter = router({
         );
         if (!r.ok) throw new TRPCError({ code: 'BAD_REQUEST', message: r.reason });
         return r;
+      }),
+
+    /**
+     * Save a grid of per-tree edits as one action.
+     *
+     * Different trees get different values, which neither group actions
+     * (one field, one value, whole filter) nor the bulk import (matched
+     * by address, no history) could express. Lands as a single entry in
+     * the activity list, a diff on each tree's own history, and one undo.
+     */
+    editMany: orchardOperatorProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          edits: z
+            .array(
+              z.object({
+                treeId: z.string().min(1),
+                fields: z.record(z.string(), z.string().nullable()),
+              })
+            )
+            .min(1)
+            .max(5000),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        // Same field rules the single-tree editor uses
+        for (const edit of input.edits) {
+          const validation = validateTreeUpdate(edit.fields as Partial<TreeRowData>);
+          if (!validation.isValid) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: formatValidationErrors(validation.errors).join('; '),
+            });
+          }
+        }
+        try {
+          return await applyTreeEdits(input.orchardId, input.edits, ctx.userId);
+        } catch (error) {
+          const status = (error as { status?: number }).status;
+          if (status === 409) {
+            throw new TRPCError({ code: 'CONFLICT', message: (error as Error).message });
+          }
+          if (status === 400) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: (error as Error).message });
+          }
+          throw error;
+        }
       }),
 
     logEvent: treeOperatorProcedure
