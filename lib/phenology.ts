@@ -256,3 +256,131 @@ export function onePassWindow(
     unplaced: [...unplaced],
   };
 }
+
+/**
+ * Turning per-tree observations into a variety's growth stage.
+ *
+ * Walk mode has always recorded a bloom stage per tree, and until now it
+ * fed nothing — you could mark fifty trees and the programme would
+ * still say it was waiting on green tip. Recording as you walk is more
+ * natural than remembering to mark from a dashboard, so the walk should
+ * be what drives the programme.
+ *
+ * The rule is the published one: a stage belongs to a group when most
+ * of the group is there. Full bloom is defined as 70 to 80% of blossoms
+ * open, so 75% of observed trees is the threshold here, and trees you
+ * have not looked at are not counted against it — an unobserved tree is
+ * unknown, not behind.
+ */
+
+/** The label walk mode stores, mapped to a stage key. */
+export function stageFromLabel(label: string): PhenologyStage | null {
+  const key = label.trim().toLowerCase().replace(/[\s-]+/g, '_');
+  return isPhenologyStage(key) ? key : null;
+}
+
+export interface TreeStageObservation {
+  treeId: string;
+  variety: string | null;
+  stage: PhenologyStage;
+  observedOn: string;
+}
+
+export interface VarietyRollUp {
+  variety: string;
+  /** The stage most of the observed trees have reached. */
+  stage: PhenologyStage;
+  /** Trees at that stage or beyond. */
+  atOrPast: number;
+  /** Trees looked at this season. */
+  observed: number;
+  share: number;
+  /** The date the group crossed the threshold — the latest of the
+   *  observations that got it there, not the first sighting. */
+  reachedOn: string;
+  /** True once the share clears the threshold. */
+  ready: boolean;
+}
+
+/** 70-80% is the published convention; 75 sits in the middle. */
+export const ROLLUP_THRESHOLD = 0.75;
+
+/**
+ * What each variety's trees say, given one observation per tree — the
+ * most advanced stage seen on each, since a tree does not go backwards.
+ */
+export function rollUpFromTrees(
+  observations: readonly TreeStageObservation[],
+  season: number,
+  threshold = ROLLUP_THRESHOLD
+): VarietyRollUp[] {
+  const latestPerTree = new Map<string, TreeStageObservation>();
+  for (const o of observations) {
+    if (seasonOf(o.observedOn) !== season || !o.variety) continue;
+    const held = latestPerTree.get(o.treeId);
+    // A tree does not go backwards; keep the most advanced sighting.
+    if (!held || stageOrder(o.stage) > stageOrder(held.stage)) {
+      latestPerTree.set(o.treeId, o);
+    }
+  }
+
+  const byVariety = new Map<string, TreeStageObservation[]>();
+  for (const o of latestPerTree.values()) {
+    const list = byVariety.get(o.variety!) ?? [];
+    list.push(o);
+    byVariety.set(o.variety!, list);
+  }
+
+  const out: VarietyRollUp[] = [];
+  for (const [variety, trees] of byVariety) {
+    const observed = trees.length;
+    // The furthest stage that still has enough trees at or past it.
+    let best: VarietyRollUp | null = null;
+    for (const stage of PHENOLOGY_STAGES) {
+      const at = trees.filter((t) => stageOrder(t.stage) >= stageOrder(stage));
+      if (at.length === 0) continue;
+      const share = at.length / observed;
+      const reachedOn = at
+        .map((t) => t.observedOn)
+        .sort()
+        .at(-1)!;
+      const candidate: VarietyRollUp = {
+        variety,
+        stage,
+        atOrPast: at.length,
+        observed,
+        share,
+        reachedOn,
+        ready: share >= threshold,
+      };
+      // Prefer the furthest stage that still clears the threshold;
+      // fall back to the furthest reached at all.
+      if (candidate.ready) best = candidate;
+      else if (!best) best = candidate;
+    }
+    if (best) out.push(best);
+  }
+  return out.sort((a, b) => a.variety.localeCompare(b.variety));
+}
+
+/**
+ * Roll-ups worth acting on: a variety whose trees have moved past what
+ * the programme currently believes, and by enough to call it.
+ */
+export function rollUpSuggestions(
+  rollUps: readonly VarietyRollUp[],
+  marks: readonly PhenologyMark[],
+  season: number
+): VarietyRollUp[] {
+  return rollUps.filter((r) => {
+    if (!r.ready) return false;
+    const marked = marks.filter(
+      (m) => seasonOf(m.observedOn) === season && (m.scopeValue ?? null) === r.variety
+    );
+    const furthest = marked.reduce(
+      (acc, m) => Math.max(acc, stageOrder(m.stage)),
+      -1
+    );
+    return stageOrder(r.stage) > furthest;
+  });
+}

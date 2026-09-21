@@ -2,8 +2,13 @@ import { sql } from '@vercel/postgres';
 import {
   isPhenologyStage,
   PHENOLOGY_SCOPES,
+  rollUpFromTrees,
+  rollUpSuggestions,
+  stageFromLabel,
   type PhenologyScope,
   type PhenologyStage,
+  type TreeStageObservation,
+  type VarietyRollUp,
 } from '../phenology';
 
 /**
@@ -147,4 +152,54 @@ export async function listVarieties(orchardId: string): Promise<string[]> {
 export async function unmarkStage(id: number): Promise<boolean> {
   const { rowCount } = await sql`DELETE FROM phenology_marks WHERE id = ${id}`;
   return (rowCount ?? 0) > 0;
+}
+
+/**
+ * What walk mode has seen, rolled up by variety.
+ *
+ * Bloom stages have been recorded per tree since long before the
+ * programme existed, and fed nothing — you could mark fifty trees and
+ * still be told the app was waiting on green tip. Recording as you walk
+ * is more natural than remembering to mark from a dashboard, so this
+ * makes the walk drive the programme rather than sit beside it.
+ */
+export async function varietyRollUps(
+  orchardId: string,
+  season: number
+): Promise<VarietyRollUp[]> {
+  const { rows } = await sql`
+    SELECT e.tree_id, t.variety, e.detail,
+           to_char(e.event_date, 'YYYY-MM-DD') AS observed_on
+    FROM tree_events e
+    JOIN trees t ON t.tree_id = e.tree_id
+    WHERE e.orchard_id = ${orchardId}
+      AND e.event_type = 'bloom'
+      AND e.undone_at IS NULL
+      AND date_part('year', e.event_date) = ${season}
+      AND t.variety IS NOT NULL
+    ORDER BY e.event_date
+  `;
+  const observations: TreeStageObservation[] = rows.flatMap((r) => {
+    const stage = stageFromLabel(String(r.detail ?? ''));
+    if (!stage) return [];
+    return [{
+      treeId: String(r.tree_id),
+      variety: String(r.variety),
+      stage,
+      observedOn: String(r.observed_on),
+    }];
+  });
+  return rollUpFromTrees(observations, season);
+}
+
+/** Roll-ups the programme has not been told about yet. */
+export async function pendingRollUps(
+  orchardId: string,
+  season: number
+): Promise<VarietyRollUp[]> {
+  const [rollUps, marks] = await Promise.all([
+    varietyRollUps(orchardId, season),
+    listMarks(orchardId),
+  ]);
+  return rollUpSuggestions(rollUps, marks, season);
 }
