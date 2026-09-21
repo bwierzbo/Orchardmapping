@@ -27,6 +27,7 @@ import {
   deleteTree,
   checkDuplicateRowPosition,
   TreeInsertData,
+  readdressTree,
 } from '@/lib/db/trees';
 import { diffTreeChanges } from '@/lib/db/tree-events';
 import {
@@ -318,6 +319,28 @@ export const appRouter = router({
         }
         return { success: true };
       }),
+    /**
+     * Move a tree to a different row/position.
+     *
+     * Separate from `update` because it is not a field edit: the address
+     * is the tree's id, so this rewrites the id and every reference to
+     * it. `update` deliberately ignores row_id and position for exactly
+     * that reason.
+     */
+    readdress: treeOperatorProcedure
+      .input(
+        z.object({
+          treeId: z.string().min(1),
+          rowId: z.string().trim().min(1).max(50),
+          position: z.string().trim().min(1).max(50),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const r = await readdressTree(input.treeId, input.rowId, input.position);
+        if (!r.ok) throw new TRPCError({ code: 'BAD_REQUEST', message: r.reason });
+        return r;
+      }),
+
     logEvent: treeOperatorProcedure
       .input(
         z.object({

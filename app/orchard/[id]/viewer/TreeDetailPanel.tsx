@@ -10,6 +10,7 @@ import { recordInspectionInSavedWalk } from '@/lib/api/walk-progress';
 import { formatYMD } from '@/lib/dates';
 import StatusBadge, { STATUS_LABEL } from '@/components/StatusBadge';
 import TreeHistory from './TreeHistory';
+import ReaddressControl from './ReaddressControl';
 import type { TreeUpdateInput } from '@/lib/api/trees';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -162,9 +163,18 @@ export default function TreeDetailPanel({
     >
       <div className="flex items-start justify-between px-5 pt-4 pb-3 border-b border-line">
         <div>
-          <p className="font-mono text-xs text-bark tracking-wide">
-            R{tree.row_id ?? '—'} · P{tree.position ?? '—'}
-          </p>
+          {canEdit ? (
+            <ReaddressControl
+              treeId={tree.tree_id}
+              rowId={tree.row_id ?? null}
+              position={tree.position ?? null}
+              onMoved={() => window.location.reload()}
+            />
+          ) : (
+            <p className="font-mono text-xs text-bark tracking-wide">
+              R{tree.row_id ?? '—'} · P{tree.position ?? '—'}
+            </p>
+          )}
           <h2 className="text-lg font-semibold text-ink">
             {tree.variety ? (
               <a

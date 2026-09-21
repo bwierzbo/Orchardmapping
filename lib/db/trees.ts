@@ -1,4 +1,4 @@
-import { sql } from '@vercel/postgres';
+import { sql, db } from '@vercel/postgres';
 import { buildUpdateSet } from './sql-helpers';
 import { toNumOrUndefined } from './decode';
 import { normalizePosition, positionIdPart, rowIdPart } from '../position';
@@ -416,4 +416,89 @@ export async function bulkUpsertTrees(
   }
 
   return { created, updated, errors: [] };
+}
+
+/** Tables that carry a tree_id as a plain string, with nothing cascading. */
+const TREE_ID_REFERENCES = ['tree_events', 'tree_health_logs', 'pest_observations'] as const;
+
+export type ReaddressResult =
+  | { ok: true; treeId: string; previousTreeId: string; movedReferences: number }
+  | { ok: false; reason: string };
+
+/**
+ * Move a tree to a different row/position.
+ *
+ * This is not a field update. A tree's id encodes its address
+ * (`orchard-R08-P014`), so changing the address changes the id — and the
+ * id is referenced as a bare string by three other tables with no foreign
+ * key to cascade it. A plain UPDATE on trees would leave that history
+ * pointing at an id nothing answers to.
+ *
+ * So: rewrite the row, the id, and every reference, in one transaction.
+ * The address is the tree's identity here, which is exactly why moving
+ * one has to be deliberate rather than a form field.
+ */
+export async function readdressTree(
+  treeId: string,
+  rowId: string,
+  position: string
+): Promise<ReaddressResult> {
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+
+    const { rows: found } = await client.query(
+      'SELECT orchard_id, row_id, position FROM trees WHERE tree_id = $1 FOR UPDATE',
+      [treeId]
+    );
+    if (found.length === 0) {
+      await client.query('ROLLBACK');
+      return { ok: false, reason: 'Tree not found.' };
+    }
+    const orchardId = String(found[0].orchard_id);
+    const nextRow = normalizeRowId(rowId);
+    const nextTreeId = generateTreeId(orchardId, nextRow, position);
+
+    if (nextTreeId === treeId) {
+      await client.query('ROLLBACK');
+      return { ok: false, reason: 'That is already this tree’s address.' };
+    }
+
+    // Two trees cannot share an address, because the address is the id.
+    const { rows: clash } = await client.query(
+      'SELECT tree_id FROM trees WHERE tree_id = $1',
+      [nextTreeId]
+    );
+    if (clash.length > 0) {
+      await client.query('ROLLBACK');
+      return {
+        ok: false,
+        reason: `Row ${nextRow} position ${position} is already taken. Move that tree first, or pick another position.`,
+      };
+    }
+
+    await client.query(
+      `UPDATE trees SET tree_id = $1, row_id = $2, position = $3,
+         updated_at = CURRENT_TIMESTAMP
+       WHERE tree_id = $4`,
+      [nextTreeId, nextRow, String(position), treeId]
+    );
+
+    let movedReferences = 0;
+    for (const table of TREE_ID_REFERENCES) {
+      const { rowCount } = await client.query(
+        `UPDATE ${table} SET tree_id = $1 WHERE tree_id = $2`,
+        [nextTreeId, treeId]
+      );
+      movedReferences += rowCount ?? 0;
+    }
+
+    await client.query('COMMIT');
+    return { ok: true, treeId: nextTreeId, previousTreeId: treeId, movedReferences };
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
 }
