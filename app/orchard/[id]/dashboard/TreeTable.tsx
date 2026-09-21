@@ -8,10 +8,11 @@ import { TREE_STATUSES } from '@/lib/types';
 import { STATUS_COLORS } from '@/lib/trees-geojson';
 import StatusBadge, { STATUS_LABEL } from '@/components/StatusBadge';
 import { formatYMD } from '@/lib/dates';
-import { normalizeRowId } from '@/lib/row-id';
+import { normalizeRowId } from '@/lib/address';
 import { comparePositions } from '@/lib/position';
 
 type SortKey =
+  | 'block'
   | 'row'
   | 'position'
   | 'variety'
@@ -30,6 +31,7 @@ interface Column {
 }
 
 const COLUMNS: Column[] = [
+  { key: 'block', label: 'Block' },
   { key: 'row', label: 'Row' },
   { key: 'position', label: 'Pos', numeric: true },
   { key: 'variety', label: 'Variety' },
@@ -54,6 +56,8 @@ function rowCompare(a: string | null, b: string | null): number {
 
 function sortValue(tree: ClientTree, key: SortKey): string | number | null {
   switch (key) {
+    case 'block':
+      return tree.block_id ?? null;
     case 'row':
       return tree.row_id ? normalizeRowId(tree.row_id) : null;
     case 'status':
@@ -94,7 +98,8 @@ export default function TreeTable({
       if (!statusFilter.has(t.status)) return false;
       if (varietyFilter && (t.variety?.trim() ?? '') !== varietyFilter) return false;
       if (q) {
-        const hay = `${t.tree_id} ${t.variety ?? ''} ${t.notes ?? ''}`.toLowerCase();
+        const hay =
+          `${t.tree_no ?? ''} ${t.tree_id} ${t.block_id ?? ''} ${t.variety ?? ''} ${t.notes ?? ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -241,9 +246,10 @@ export default function TreeTable({
                     className="font-mono text-canopy-600 hover:text-canopy-700"
                     title="View on map"
                   >
-                    {t.tree_id}
+                    {t.tree_no != null ? t.tree_no : t.tree_id}
                   </Link>
                 </td>
+                <td className="px-3 py-1.5">{t.block_id?.trim() || dash}</td>
                 <td className="px-3 py-1.5 font-mono">{t.row_id ?? dash}</td>
                 <td className="px-3 py-1.5 font-mono">{t.position ?? dash}</td>
                 <td className="px-3 py-1.5">{t.variety?.trim() || dash}</td>

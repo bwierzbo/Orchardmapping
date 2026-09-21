@@ -17,9 +17,25 @@ import {
   index,
 } from 'drizzle-orm/pg-core';
 
+/** A grower or operation; one site may hold several orchards. */
+export const sites = pgTable('sites', {
+  id: text('id').primaryKey(),
+  /** Short permanent code baked into every tree id at this site: "OBC". */
+  code: text('code').notNull().unique(),
+  name: text('name').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const orchards = pgTable('orchards', {
   id: varchar('id', { length: 50 }).primaryKey(),
   name: varchar('name', { length: 200 }).notNull(),
+  siteId: text('site_id')
+    .notNull()
+    .references(() => sites.id),
+  /** Ordinal within the site ("001"). Permanent: it is part of every tree id. */
+  code: text('code').notNull(),
+  /** Next tree number to hand out; only ever increases. */
+  nextTreeNo: integer('next_tree_no').notNull().default(1),
   location: varchar('location', { length: 300 }),
   description: text('description'),
   centerLat: decimal('center_lat', { precision: 10, scale: 8 }),
@@ -45,18 +61,25 @@ export const trees = pgTable(
   'trees',
   {
     id: serial('id').primaryKey(),
+    /** Permanent and opaque (OBC-001-0142); never derived from the address. */
     treeId: varchar('tree_id', { length: 100 }).notNull(),
+    /** Human-facing number within the orchard, matching the id's tail. */
+    treeNo: integer('tree_no'),
+    /** The address-shaped id this tree carried before migration 049. */
+    legacyTreeId: text('legacy_tree_id'),
     orchardId: varchar('orchard_id', { length: 50 })
       .notNull()
       .references(() => orchards.id, { onDelete: 'cascade' }),
     name: varchar('name', { length: 200 }),
     variety: varchar('variety', { length: 100 }),
+    fruitType: text('fruit_type'),
     status: varchar('status', { length: 20 }).default('healthy'),
     plantedDate: date('planted_date'),
+    // The address: every part optional and freely editable (migration 049).
     blockId: varchar('block_id', { length: 50 }),
     rowId: varchar('row_id', { length: 50 }),
-    position: integer('position'),
-    age: decimal('age', { precision: 5, scale: 1 }),
+    position: text('position'),
+    age: integer('age'),
     height: decimal('height', { precision: 5, scale: 2 }),
     lat: decimal('lat', { precision: 10, scale: 8 }),
     lng: decimal('lng', { precision: 11, scale: 8 }),
@@ -72,7 +95,9 @@ export const trees = pgTable(
   },
   (t) => [
     uniqueIndex('trees_tree_id_key').on(t.treeId),
-    uniqueIndex('trees_orchard_row_pos_uniq').on(t.orchardId, t.rowId, t.position),
+    uniqueIndex('trees_orchard_tree_no_uniq').on(t.orchardId, t.treeNo),
+    // The real constraint is on the generated address_key column and is
+    // DEFERRABLE, which Drizzle cannot express; the SQL migration owns it.
   ]
 );
 

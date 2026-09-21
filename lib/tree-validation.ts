@@ -1,11 +1,15 @@
 /**
  * Tree validation utilities for CSV imports and data validation
  */
+import { addressKey, formatAddress, type TreeAddress } from './address';
 
 export interface TreeRowData {
-  row_id: string;
+  /** Permanent id, when a row is updating a tree that already exists. */
+  tree_id?: string;
+  /** Every part of the address is optional; a tree may be unplaced. */
+  row_id?: string | null;
   /** Free-form alphanumeric label: "5", "1N", "A3", … */
-  position: string | number;
+  position?: string | number | null;
   lat?: number;
   lng?: number;
   name?: string;
@@ -68,11 +72,22 @@ export function validateTreeRow(
 ): ValidationResult {
   const errors: ValidationError[] = [];
 
-  // Required fields
-  if (!rowData.row_id || rowData.row_id.trim() === '') {
+  // No part of the address is required -- a tree may be recorded before it
+  // is placed -- but a part that IS given has to be usable as a label.
+  const rowStr = rowData.row_id == null ? '' : String(rowData.row_id).trim();
+  if (rowStr.length > 50) {
     errors.push({
       field: 'row_id',
-      message: 'Row ID is required',
+      message: 'Row must be 50 characters or fewer',
+      row: rowNumber
+    });
+  }
+
+  const blockStr = rowData.block_id == null ? '' : String(rowData.block_id).trim();
+  if (blockStr.length > 50) {
+    errors.push({
+      field: 'block_id',
+      message: 'Block must be 50 characters or fewer',
       row: rowNumber
     });
   }
@@ -81,13 +96,7 @@ export function validateTreeRow(
     rowData.position === undefined || rowData.position === null
       ? ''
       : String(rowData.position).trim();
-  if (positionStr === '') {
-    errors.push({
-      field: 'position',
-      message: 'Position is required',
-      row: rowNumber
-    });
-  } else if (positionStr.length > 20 || !/^[A-Za-z0-9][A-Za-z0-9 ._\-\/]*$/.test(positionStr)) {
+  if (positionStr !== '' && (positionStr.length > 20 || !/^[A-Za-z0-9][A-Za-z0-9 ._\-\/]*$/.test(positionStr))) {
     errors.push({
       field: 'position',
       message:
@@ -191,18 +200,11 @@ export function validateTreeRow(
 }
 
 /**
- * Validates a partial tree update (PUT payload) — same field rules as
- * validateTreeRow, minus the row_id/position requirement.
+ * Validates a partial tree update (PUT payload). Identical to
+ * validateTreeRow now that no field is mandatory.
  */
 export function validateTreeUpdate(fields: Partial<TreeRowData>): ValidationResult {
-  const probe = validateTreeRow({ ...fields, row_id: fields.row_id ?? '_', position: fields.position ?? '1' });
-  // Drop errors for the placeholder identity fields unless the caller supplied them
-  const errors = probe.errors.filter((e) => {
-    if (e.field === 'row_id' && fields.row_id === undefined) return false;
-    if (e.field === 'position' && fields.position === undefined) return false;
-    return true;
-  });
-  return { isValid: errors.length === 0, errors };
+  return validateTreeRow(fields as TreeRowData);
 }
 
 /**
@@ -215,7 +217,7 @@ export function validateTreeUpdate(fields: Partial<TreeRowData>): ValidationResu
  */
 export function validateBulkImport(
   data: TreeRowData[],
-  existingTrees?: Array<{ row_id: string; position: string | number }>
+  existingTrees?: Array<TreeAddress>
 ): ValidationResult {
   const errors: ValidationError[] = [];
   const warnings: string[] = [];
@@ -226,30 +228,22 @@ export function validateBulkImport(
     const rowValidation = validateTreeRow(row, index + 2); // +2 because row 1 is headers, index is 0-based
     errors.push(...rowValidation.errors);
 
-    // Check for duplicates within the dataset
-    const key = `${row.row_id}-${String(row.position).trim()}`;
-    if (seen.has(key)) {
-      errors.push({
-        field: 'row_id/position',
-        message: `Duplicate entry: Row ${row.row_id}, Position ${row.position}`,
-        row: index + 2
-      });
-    } else {
-      seen.add(key);
-    }
+    // Two rows cannot claim one spot. Unplaced rows are exempt: any number
+    // of trees may be waiting to be placed.
+    const key = addressKey(row as TreeAddress);
+    if (key) {
+      if (seen.has(key)) {
+        errors.push({
+          field: 'address',
+          message: `Duplicate entry: ${formatAddress(row as TreeAddress)}`,
+          row: index + 2
+        });
+      } else {
+        seen.add(key);
+      }
 
-    // Check against existing trees
-    if (existingTrees) {
-      const existingMatch = existingTrees.find(
-        t =>
-          t.row_id === row.row_id &&
-          String(t.position).trim() === String(row.position).trim()
-      );
-
-      if (existingMatch) {
-        warnings.push(
-          `Row ${row.row_id}, Position ${row.position} already exists and will be updated`
-        );
+      if (existingTrees?.some((t) => addressKey(t) === key)) {
+        warnings.push(`${formatAddress(row as TreeAddress)} already exists and will be updated`);
       }
     }
   });
@@ -285,13 +279,13 @@ export function validateCSVHeaders(headers: string[]): ValidationResult {
   const errors: ValidationError[] = [];
   const normalizedHeaders = headers.map(h => h.toLowerCase().trim());
 
-  const requiredColumns = ['row_id', 'position'];
-  const missingColumns = requiredColumns.filter(col => !normalizedHeaders.includes(col));
-
-  if (missingColumns.length > 0) {
+  // A file needs some way to say which tree each row is about: a permanent
+  // id, or an address to place it at. Everything else is optional.
+  const identifying = ['tree_id', 'block_id', 'row_id', 'position'];
+  if (!identifying.some((col) => normalizedHeaders.includes(col))) {
     errors.push({
       field: 'headers',
-      message: `Missing required columns: ${missingColumns.join(', ')}`
+      message: `Needs a tree_id column, or an address column (${identifying.slice(1).join(', ')})`
     });
   }
 
@@ -310,8 +304,10 @@ export function validateCSVHeaders(headers: string[]): ValidationResult {
  */
 export function sanitizeTreeRow(rowData: Record<string, string>): TreeRowData {
   return {
-    row_id: rowData.row_id?.trim() || '',
-    position: rowData.position?.trim() || '',
+    tree_id: rowData.tree_id?.trim() || undefined,
+    block_id: rowData.block_id?.trim() || undefined,
+    row_id: rowData.row_id?.trim() || undefined,
+    position: rowData.position?.trim() || undefined,
     variety: rowData.variety?.trim() || undefined,
     fruit_type: rowData.fruit_type?.trim().toLowerCase() || undefined,
     status: rowData.status?.toLowerCase().trim() || undefined,

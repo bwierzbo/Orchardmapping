@@ -12,14 +12,22 @@ describe('validateTreeRow', () => {
     expect(result.isValid).toBe(true);
   });
 
-  it('requires row_id and a valid position label', () => {
-    expect(validateTreeRow({ row_id: '', position: 1 }).isValid).toBe(false);
-    expect(validateTreeRow({ row_id: '1', position: '' }).isValid).toBe(false);
+  it('no longer requires an address: a tree may be recorded before it is placed', () => {
+    expect(validateTreeRow({}).isValid).toBe(true);
+    expect(validateTreeRow({ row_id: '', position: 1 }).isValid).toBe(true);
+    expect(validateTreeRow({ row_id: '1', position: '' }).isValid).toBe(true);
+    expect(validateTreeRow({ block_id: 'Upper' }).isValid).toBe(true);
+  });
+
+  it('still rejects a position label it could not store or show', () => {
     expect(validateTreeRow({ row_id: '1', position: '!!' }).isValid).toBe(false);
     expect(validateTreeRow({ row_id: '1', position: 'x'.repeat(21) }).isValid).toBe(false);
     // Alphanumeric labels are the point of the change
     expect(validateTreeRow({ row_id: 'Espalier', position: '1N' }).isValid).toBe(true);
     expect(validateTreeRow({ row_id: 'North side', position: 'A3' }).isValid).toBe(true);
+    // Over-long block and row labels are rejected the same way
+    expect(validateTreeRow({ block_id: 'x'.repeat(51), position: '1' }).isValid).toBe(false);
+    expect(validateTreeRow({ row_id: 'x'.repeat(51), position: '1' }).isValid).toBe(false);
   });
 
   it('rejects unknown status and bad dates', () => {

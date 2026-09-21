@@ -25,9 +25,9 @@ import {
   insertTree,
   updateTree,
   deleteTree,
-  checkDuplicateRowPosition,
+
   TreeInsertData,
-  readdressTree,
+  setTreeAddress,
 } from '@/lib/db/trees';
 import { diffTreeChanges } from '@/lib/db/tree-events';
 import {
@@ -49,6 +49,7 @@ import {
   MANUAL_EVENT_TYPES,
 } from '@/lib/db/tree-events';
 import { serializeTree } from '@/lib/serialize';
+import { formatAddress } from '@/lib/address';
 import { toYMD } from '@/lib/dates';
 import { TRPCError } from '@trpc/server';
 import { listAreas, insertArea, updateArea, deleteArea, AREA_KINDS } from '@/lib/db/areas';
@@ -179,8 +180,14 @@ export const appRouter = router({
       .input(
         z.object({
           orchard_id: z.string().min(1),
-          row_id: z.string().min(1),
-          position: z.union([z.string(), z.number()]).transform((v) => String(v).trim()),
+          // The address is optional: a tree can be recorded where it
+          // stands and placed in a row later.
+          block_id: z.string().max(50).optional(),
+          row_id: z.string().max(50).optional(),
+          position: z
+            .union([z.string(), z.number()])
+            .transform((v) => String(v).trim())
+            .optional(),
           lat: z.number().optional(),
           lng: z.number().optional(),
           variety: z.string().optional(),
@@ -204,17 +211,6 @@ export const appRouter = router({
             message: formatValidationErrors(validation.errors).join('; '),
           });
         }
-        const duplicate = await checkDuplicateRowPosition(
-          input.orchard_id,
-          input.row_id,
-          input.position
-        );
-        if (duplicate) {
-          throw new TRPCError({
-            code: 'CONFLICT',
-            message: `A tree already exists at row ${input.row_id}, position ${input.position}`,
-          });
-        }
         const treeData: TreeInsertData = {
           ...input,
           // YYYY-MM-DD strings go to Postgres verbatim (never new Date())
@@ -228,7 +224,7 @@ export const appRouter = router({
             tree_id: tree.tree_id,
             orchard_id: tree.orchard_id,
             event_type: 'created',
-            detail: `${tree.variety ?? 'Unknown variety'} at R${tree.row_id ?? '?'}·P${tree.position ?? '?'}`,
+            detail: `${tree.variety ?? 'Unknown variety'} at ${formatAddress(tree)}`,
             created_by: ctx.userId,
           },
           { bestEffort: true }
@@ -243,12 +239,17 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input, ctx }) => {
-        // Same flow as REST PUT /api/trees/[id]: strip protected fields,
-        // shared validators, then the whitelisted updateTree
+        // Same flow as REST PUT /api/trees/[id]: strip the fields that are
+        // not field edits, shared validators, then the whitelisted
+        // updateTree. The address goes through tree.setAddress, which
+        // checks for a collision and logs the move.
         const {
           id: _id,
           tree_id: _treeId,
+          tree_no: _treeNo,
+          legacy_tree_id: _legacyTreeId,
           orchard_id: _orchardId,
+          block_id: _blockId,
           row_id: _rowId,
           position: _position,
           created_at: _createdAt,
@@ -310,7 +311,7 @@ export const appRouter = router({
               tree_id: input.treeId,
               orchard_id: before.orchard_id,
               event_type: 'deleted',
-              detail: `${before.variety ?? 'Unknown variety'} at R${before.row_id ?? '?'}·P${before.position ?? '?'}`,
+              detail: `${before.variety ?? 'Unknown variety'} at ${formatAddress(before)}`,
               changes: { snapshot: serializeTree(before) },
               created_by: ctx.userId,
             },
@@ -320,23 +321,28 @@ export const appRouter = router({
         return { success: true };
       }),
     /**
-     * Move a tree to a different row/position.
+     * Move a tree to a different block, row and position.
      *
-     * Separate from `update` because it is not a field edit: the address
-     * is the tree's id, so this rewrites the id and every reference to
-     * it. `update` deliberately ignores row_id and position for exactly
-     * that reason.
+     * Separate from `update` so there is one place that checks for a
+     * collision, defers the address constraint (which is what lets two
+     * trees swap in one step) and logs the move to the tree's history.
+     * An omitted part clears it: a tree can be taken out of its row.
      */
-    readdress: treeOperatorProcedure
+    setAddress: treeOperatorProcedure
       .input(
         z.object({
           treeId: z.string().min(1),
-          rowId: z.string().trim().min(1).max(50),
-          position: z.string().trim().min(1).max(50),
+          blockId: z.string().trim().max(50).nullish(),
+          rowId: z.string().trim().max(50).nullish(),
+          position: z.string().trim().max(50).nullish(),
         })
       )
-      .mutation(async ({ input }) => {
-        const r = await readdressTree(input.treeId, input.rowId, input.position);
+      .mutation(async ({ input, ctx }) => {
+        const r = await setTreeAddress(
+          input.treeId,
+          { block_id: input.blockId, row_id: input.rowId, position: input.position },
+          { actor: ctx.userId }
+        );
         if (!r.ok) throw new TRPCError({ code: 'BAD_REQUEST', message: r.reason });
         return r;
       }),

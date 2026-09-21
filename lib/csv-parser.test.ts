@@ -32,9 +32,23 @@ describe('parseTreeCSV', () => {
     expect(result.errors[0]).toMatch(/Excel/);
   });
 
-  it('reports rows with missing required fields', async () => {
-    const result = await parseTreeCSV(csvFile('row_id,position,variety\n,1,Fuji\n'));
+  it('rejects a row with nothing to match it on', async () => {
+    const result = await parseTreeCSV(csvFile('tree_id,row_id,position,variety\n,,,Fuji\n'));
     expect(result.success).toBe(false);
+    expect(result.errors[0]).toMatch(/nothing to match on/);
+  });
+
+  it('rejects a file with no identifying column at all', async () => {
+    const result = await parseTreeCSV(csvFile('variety,status\nFuji,healthy\n'));
+    expect(result.success).toBe(false);
+    expect(result.errors[0]).toMatch(/identifying column/);
+  });
+
+  it('accepts a partial address: part of an orchard may have no rows', async () => {
+    const result = await parseTreeCSV(csvFile('block,position,variety\nUpper,5,Fuji\n'));
+    expect(result.success).toBe(true);
+    expect(result.data[0]).toMatchObject({ block_id: 'Upper', position: '5' });
+    expect(result.data[0].row_id).toBeUndefined();
   });
 });
 
@@ -49,13 +63,16 @@ describe('generateTreesCSV', () => {
         status: 'healthy',
         notes: null,
       },
-      { row_id: null, position: '9', variety: 'skipped — no address' },
+      // An unplaced tree still exports: its permanent id brings it back.
+      { tree_id: 'OBC-001-0009', row_id: null, position: null, variety: 'not placed yet' },
+      { variety: 'skipped — nothing to identify it by' },
     ]);
     const text = await blob.text();
     const [header, row, ...rest] = text.split('\n');
-    expect(header.startsWith('row_id,position,lat,lng,name,variety,fruit_type,status')).toBe(true);
+    expect(header.startsWith('tree_id,block_id,row_id,position,lat,lng,name,variety')).toBe(true);
     expect(row).toContain('"Cox, Orange ""Pippin"""');
-    expect(rest).toHaveLength(0); // address-less tree skipped
+    expect(rest).toHaveLength(1);
+    expect(rest[0]).toContain('OBC-001-0009');
 
     // Round-trip: the export parses back through the importer
     const parsed = await parseTreeCSV(new File([text], 'roundtrip.csv', { type: 'text/csv' }));

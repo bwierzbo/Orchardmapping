@@ -21,7 +21,7 @@ import {
   type ParseResult,
   type TreeImportRow,
 } from '@/lib/csv-parser';
-import { rowPositionKey } from '@/lib/row-id';
+import { addressKey } from '@/lib/address';
 import type { ClientTree } from '@/lib/types';
 
 interface BulkTreeImportProps {
@@ -66,15 +66,29 @@ export default function BulkTreeImport({
     return () => document.removeEventListener('keydown', onKey);
   }, [isOpen, step, close]);
 
-  const existingKeys = useMemo(() => {
-    const keys = new Set<string>();
+  /**
+   * How a row will be matched, mirroring bulkUpsertTrees: by permanent id
+   * when the file carries one, otherwise by the spot it names.
+   */
+  const existing = useMemo(() => {
+    const ids = new Set<string>();
+    const addresses = new Set<string>();
     for (const t of existingTrees) {
-      if (t.row_id != null && t.position != null) {
-        keys.add(rowPositionKey(t.row_id, t.position));
-      }
+      ids.add(t.tree_id);
+      const key = addressKey(t);
+      if (key) addresses.add(key);
     }
-    return keys;
+    return { ids, addresses };
   }, [existingTrees]);
+
+  const matchesExisting = useCallback(
+    (row: TreeImportRow) => {
+      if (row.tree_id && existing.ids.has(row.tree_id)) return true;
+      const key = addressKey(row);
+      return key != null && existing.addresses.has(key);
+    },
+    [existing]
+  );
 
   const summary = useMemo(() => {
     if (!parsed) return null;
@@ -82,7 +96,7 @@ export default function BulkTreeImport({
     let updated = 0;
     let noCoords = 0;
     for (const row of parsed.data) {
-      const exists = existingKeys.has(rowPositionKey(row.row_id, row.position));
+      const exists = matchesExisting(row);
       if (exists) updated++;
       else {
         created++;
@@ -90,7 +104,7 @@ export default function BulkTreeImport({
       }
     }
     return { created, updated, noCoords };
-  }, [parsed, existingKeys]);
+  }, [parsed, matchesExisting]);
 
   const handleFile = async (file: File) => {
     setFileName(file.name);
@@ -124,8 +138,7 @@ export default function BulkTreeImport({
     }
   };
 
-  const rowStatus = (row: TreeImportRow) =>
-    existingKeys.has(rowPositionKey(row.row_id, row.position)) ? 'update' : 'new';
+  const rowStatus = (row: TreeImportRow) => (matchesExisting(row) ? 'update' : 'new');
 
   const dialog = isOpen ? (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">

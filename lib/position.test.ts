@@ -3,8 +3,6 @@ import {
   normalizePosition,
   comparePositions,
   nextPosition,
-  positionIdPart,
-  rowIdPart,
 } from './position';
 
 describe('normalizePosition', () => {
@@ -40,24 +38,3 @@ describe('nextPosition', () => {
   });
 });
 
-describe('positionIdPart', () => {
-  it('pads pure numbers to the legacy 3 digits', () => {
-    expect(positionIdPart('7')).toBe('007');
-    expect(positionIdPart('012')).toBe('012');
-  });
-  it('cleans alphanumeric labels', () => {
-    expect(positionIdPart('1N')).toBe('1N');
-    expect(positionIdPart('north end')).toBe('NORTHEND');
-    expect(positionIdPart('  ')).toBe('X');
-  });
-});
-
-describe('rowIdPart', () => {
-  it('pads numeric rows to the legacy 2 digits', () => {
-    expect(rowIdPart('1')).toBe('01');
-  });
-  it('dashes out spaces and punctuation', () => {
-    expect(rowIdPart('North side')).toBe('North-side');
-    expect(rowIdPart('Espalier')).toBe('Espalier');
-  });
-});

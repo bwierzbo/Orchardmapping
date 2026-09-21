@@ -66,7 +66,10 @@ export function asTreeStatus(value: string | null | undefined): TreeStatus {
  */
 export interface ClientTree {
   id: number;
+  /** Permanent, opaque: OBC-001-0142. Never derived from the address. */
   tree_id: string;
+  /** The human-facing number within the orchard ("Tree 142"). */
+  tree_no?: number | null;
   orchard_id: string;
   name?: string | null;
   variety?: string | null;

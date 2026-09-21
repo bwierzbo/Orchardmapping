@@ -1,5 +1,5 @@
 import type { ClientTree } from './types';
-import { normalizeRowId } from './row-id';
+import { normalizeRowId } from './address';
 
 /**
  * A composable tree filter — dimensions AND together; within one

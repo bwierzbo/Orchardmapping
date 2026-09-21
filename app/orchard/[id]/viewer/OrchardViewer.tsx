@@ -11,7 +11,7 @@ import { TREE_STATUSES } from '@/lib/types';
 import { buildMapStyle } from '@/lib/map-style';
 import { ensurePmtilesProtocol } from '@/lib/pmtiles-protocol';
 import { toast } from 'sonner';
-import { normalizeRowId } from '@/lib/row-id';
+import { normalizeRowId } from '@/lib/address';
 import { comparePositions, nextPosition } from '@/lib/position';
 import BulkTreeImport from '../components/BulkTreeImport';
 import { useTrees } from './useTrees';
@@ -829,7 +829,6 @@ export default function OrchardViewer({
 
       {editMode && canEdit && (
         <EditModePanel
-          orchardId={orchard.id}
           row={row}
           position={position}
           autoIncrement={autoIncrement}
@@ -865,6 +864,7 @@ export default function OrchardViewer({
             setMovingTree(selectedTree);
             clear();
           }}
+          onMoved={refresh}
         />
       )}
 

@@ -10,7 +10,8 @@ import { recordInspectionInSavedWalk } from '@/lib/api/walk-progress';
 import { formatYMD } from '@/lib/dates';
 import StatusBadge, { STATUS_LABEL } from '@/components/StatusBadge';
 import TreeHistory from './TreeHistory';
-import ReaddressControl from './ReaddressControl';
+import AddressControl from './AddressControl';
+import { formatAddress, formatTreeLabel } from '@/lib/address';
 import type { TreeUpdateInput } from '@/lib/api/trees';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -55,6 +56,8 @@ interface TreeDetailPanelProps {
   onSave: (patch: TreeUpdateInput) => Promise<boolean>;
   onDelete: () => Promise<boolean>;
   onStartMove: () => void;
+  /** Reload trees after an address change, which no longer alters the id. */
+  onMoved: () => void;
   /** Status change from the Inspect form (same path as a walk). */
   onSetStatus: (treeId: string, status: TreeStatus) => Promise<boolean>;
 }
@@ -74,6 +77,7 @@ export default function TreeDetailPanel({
   onSave,
   onDelete,
   onStartMove,
+  onMoved,
   onSetStatus,
 }: TreeDetailPanelProps) {
   const [editing, setEditing] = useState(false);
@@ -156,7 +160,7 @@ export default function TreeDetailPanel({
   return (
     <div
       role="dialog"
-      aria-label={`Tree ${tree.tree_id}`}
+      aria-label={formatTreeLabel(tree)}
       className="absolute z-20 bg-surface shadow-2xl border border-line flex flex-col
                  inset-x-0 bottom-0 max-h-[70vh] rounded-t-2xl
                  md:inset-x-auto md:right-4 md:top-20 md:bottom-auto md:w-96 md:max-h-[calc(100vh-7rem)] md:rounded-xl"
@@ -164,15 +168,16 @@ export default function TreeDetailPanel({
       <div className="flex items-start justify-between px-5 pt-4 pb-3 border-b border-line">
         <div>
           {canEdit ? (
-            <ReaddressControl
+            <AddressControl
               treeId={tree.tree_id}
+              blockId={tree.block_id ?? null}
               rowId={tree.row_id ?? null}
               position={tree.position ?? null}
-              onMoved={() => window.location.reload()}
+              onMoved={onMoved}
             />
           ) : (
             <p className="font-mono text-xs text-bark tracking-wide">
-              R{tree.row_id ?? '—'} · P{tree.position ?? '—'}
+              {formatAddress(tree)}
             </p>
           )}
           <h2 className="text-lg font-semibold text-ink">
@@ -240,7 +245,6 @@ export default function TreeDetailPanel({
             {field('Source', tree.source)}
             {field('Acquired', formatYMD(tree.acquired_date))}
             {field('Planted', formatYMD(tree.planted_date))}
-            {field('Block', tree.block_id)}
             {field('Age', tree.age != null ? `${tree.age} yr` : null)}
             {field('Height', tree.height != null ? `${tree.height} m` : null)}
             {field('Last pruned', formatYMD(tree.last_pruned))}
@@ -340,9 +344,9 @@ export default function TreeDetailPanel({
             <button
               onClick={() => navigator.clipboard?.writeText(tree.tree_id)}
               className="font-mono text-xs text-bark/70 hover:text-ink"
-              title="Copy tree ID"
+              title={`Copy tree ID (${tree.tree_id})`}
             >
-              {tree.tree_id}
+              {tree.tree_no != null ? `Tree ${tree.tree_no}` : tree.tree_id}
             </button>
             {canEdit && (
               <div className="flex gap-2">
