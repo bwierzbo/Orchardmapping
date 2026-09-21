@@ -6,6 +6,7 @@ import { getOrchardConfigById, getAllOrchardConfigs } from '@/lib/db/orchards';
 import { getTreesByOrchard } from '@/lib/db/trees';
 import { serializeTree } from '@/lib/serialize';
 import OrchardViewerLoader from './viewer/OrchardViewerLoader';
+import { viewerRole, roleAtLeast } from '@/lib/orchard-access';
 
 // Live DB data; never prerender at build time
 export const dynamic = 'force-dynamic';
@@ -47,12 +48,16 @@ export default async function OrchardPage({ params }: PageProps) {
   // A genuine miss (query succeeded, no row) — DB failures throw to error.tsx
   if (!orchard) notFound();
 
+  // The layout already proved membership; this decides operator vs viewer.
+  const role = await viewerRole(id);
+  const canEdit = !!role && roleAtLeast(role, 'operator');
+
   return (
     <OrchardViewerLoader
       orchard={orchard}
       allOrchards={allOrchards}
       initialTrees={trees.map(serializeTree)}
-      canEdit={!!userId}
+      canEdit={canEdit}
     />
   );
 }

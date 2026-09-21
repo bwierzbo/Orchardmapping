@@ -9,6 +9,7 @@ import {
   deleteTree
 } from '@/lib/db/trees';
 import { insertTreeEvent, diffTreeChanges } from '@/lib/db/tree-events';
+import { assertTreeAccess, requireTreeAccess } from '@/lib/orchard-access';
 
 /**
  * GET /api/trees/[id]
@@ -27,6 +28,9 @@ export async function GET(
         { status: 400 }
       );
     }
+
+    const denied = await requireTreeAccess(tree_id, 'viewer');
+    if (denied) return denied;
 
     // Fetch tree
     const tree = await getTreeById(tree_id);
@@ -68,6 +72,9 @@ export async function PUT(
         { status: 400 }
       );
     }
+
+    const denied = await assertTreeAccess(tree_id, userId, 'operator');
+    if (denied) return denied;
 
     // Parse request body
     const body = await request.json();
@@ -170,6 +177,9 @@ export async function DELETE(
         { status: 400 }
       );
     }
+
+    const denied = await assertTreeAccess(tree_id, userId, 'operator');
+    if (denied) return denied;
 
     // Snapshot before deletion — the event preserves the final state
     const before = await getTreeById(tree_id);

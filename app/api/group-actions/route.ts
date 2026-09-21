@@ -9,6 +9,7 @@ import {
 } from '@/lib/db/group-actions';
 import { MANUAL_EVENT_TYPES } from '@/lib/db/tree-events';
 import type { GroupFilter } from '@/lib/group-filter';
+import { requireOrchardAccess, assertOrchardAccess } from '@/lib/orchard-access';
 
 function sanitizeFilter(raw: unknown): GroupFilter {
   const f = (raw ?? {}) as Record<string, unknown>;
@@ -29,6 +30,9 @@ export async function GET(request: NextRequest) {
     if (!orchardId) {
       return NextResponse.json({ error: 'Missing orchard_id' }, { status: 400 });
     }
+    const { response: denied } = await requireOrchardAccess(orchardId, 'viewer');
+    if (denied) return denied;
+
     const actions = await listGroupActions(orchardId);
     return NextResponse.json({ success: true, actions });
   } catch (error) {
@@ -44,6 +48,10 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const orchardId = String(body.orchard_id ?? '');
+    if (orchardId) {
+      const denied = await assertOrchardAccess(orchardId, userId, 'operator');
+      if (denied) return denied;
+    }
     if (!orchardId) {
       return NextResponse.json({ error: 'Missing orchard_id' }, { status: 400 });
     }

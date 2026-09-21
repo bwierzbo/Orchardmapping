@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@vercel/postgres';
 import { handleApiError } from '@/lib/api-errors';
 import { toYMD } from '@/lib/dates';
+import { requireOrchardAccess, assertOrchardAccess } from '@/lib/orchard-access';
 
 /**
  * GET /api/harvests?orchard_id=[&year=]
@@ -13,6 +14,9 @@ export async function GET(request: NextRequest) {
     if (!orchardId) {
       return NextResponse.json({ error: 'Missing orchard_id' }, { status: 400 });
     }
+
+    const { response: denied } = await requireOrchardAccess(orchardId, 'viewer');
+    if (denied) return denied;
     const yearParam = request.nextUrl.searchParams.get('year');
     const year = yearParam ? Number(yearParam) : null;
 

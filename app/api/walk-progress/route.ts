@@ -4,6 +4,7 @@ import { handleApiError } from '@/lib/api-errors';
 import { getSetting, putSetting } from '@/lib/db/app-settings';
 import { normalizeWalkProgress } from '@/lib/walk-progress';
 import { sql } from '@vercel/postgres';
+import { requireOrchardAccess, assertOrchardAccess } from '@/lib/orchard-access';
 
 /**
  * Server copy of an in-progress walk survey, one per orchard, so a walk
@@ -21,10 +22,10 @@ function orchardParam(request: NextRequest): string | null {
 /** GET /api/walk-progress?orchard=<id> — the saved walk, or null. */
 export async function GET(request: NextRequest) {
   try {
-    const { response } = await requireSession();
-    if (response) return response;
     const orchardId = orchardParam(request);
     if (!orchardId) return NextResponse.json({ error: 'orchard is required' }, { status: 400 });
+    const { response } = await requireOrchardAccess(orchardId, 'viewer');
+    if (response) return response;
     const progress = normalizeWalkProgress(await getSetting(key(orchardId)));
     return NextResponse.json({ progress: progress?.orchardId === orchardId ? progress : null });
   } catch (error) {
@@ -39,6 +40,8 @@ export async function PUT(request: NextRequest) {
     if (response) return response;
     const progress = normalizeWalkProgress(await request.json());
     if (!progress) return NextResponse.json({ error: 'Invalid walk progress' }, { status: 400 });
+    const denied = await assertOrchardAccess(progress.orchardId, userId, 'operator');
+    if (denied) return denied;
     await putSetting(key(progress.orchardId), progress, userId);
     return NextResponse.json({ progress });
   } catch (error) {
@@ -49,10 +52,10 @@ export async function PUT(request: NextRequest) {
 /** DELETE /api/walk-progress?orchard=<id> — the walk finished or was discarded. */
 export async function DELETE(request: NextRequest) {
   try {
-    const { response } = await requireSession();
-    if (response) return response;
     const orchardId = orchardParam(request);
     if (!orchardId) return NextResponse.json({ error: 'orchard is required' }, { status: 400 });
+    const { response } = await requireOrchardAccess(orchardId, 'operator');
+    if (response) return response;
     await sql`DELETE FROM app_settings WHERE key = ${key(orchardId)}`;
     return NextResponse.json({ success: true });
   } catch (error) {

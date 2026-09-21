@@ -5,6 +5,7 @@ import { getAllOrchardConfigs } from '@/lib/db/orchards';
 import { satellitePreviewUrl, boundarySvgPoints } from '@/lib/satellite-preview';
 import { getTreeCountsByOrchard } from '@/lib/db/trees';
 import { auth } from '@clerk/nextjs/server';
+import { memberOrchardIds } from '@/lib/orchard-access';
 import UserMenu from '@/components/UserMenu';
 import type { OrchardConfig } from '@/lib/types';
 
@@ -21,12 +22,17 @@ function surveyCaption(orchard: OrchardConfig, treeCount: number): string {
 }
 
 export default async function Home() {
-  const [orchards, treeCounts, { userId }] = await Promise.all([
+  const { userId } = await auth();
+  const signedIn = !!userId;
+  const [allOrchards, treeCounts, mine] = await Promise.all([
     getAllOrchardConfigs(),
     getTreeCountsByOrchard(),
-    auth(),
+    userId ? memberOrchardIds(userId) : Promise.resolve([]),
   ]);
-  const signedIn = !!userId;
+  // Only orchards you belong to. Signed out, that is none — the list used
+  // to show every orchard in the database to anyone who loaded the page.
+  const mineSet = new Set(mine);
+  const orchards = allOrchards.filter((o) => mineSet.has(o.id));
 
   const totalTrees = Object.values(treeCounts).reduce((a, b) => a + b, 0);
 

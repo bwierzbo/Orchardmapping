@@ -11,6 +11,7 @@ import { seasonOf } from '@/lib/phenology';
 import { nowLocalIso } from '@/lib/openmeteo';
 import { Histogram } from '../dashboard/charts';
 import TrapsClient from './TrapsClient';
+import { viewerRole, roleAtLeast } from '@/lib/orchard-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,6 +38,10 @@ export default async function TrapsPage({ params }: PageProps) {
     auth(),
   ]);
   if (!orchard) notFound();
+
+  // The layout already proved membership; this decides operator vs viewer.
+  const role = await viewerRole(id);
+  const canEdit = !!role && roleAtLeast(role, 'operator');
 
   const today = nowLocalIso().slice(0, 10);
   const season = seasonOf(today);
@@ -121,7 +126,7 @@ export default async function TrapsPage({ params }: PageProps) {
           orchardId={orchard.id}
           traps={traps}
           today={today}
-          canEdit={!!userId}
+          canEdit={canEdit}
           notes={TRAP_NOTE}
           labels={TRAP_LABEL}
         />

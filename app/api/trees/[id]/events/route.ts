@@ -9,6 +9,7 @@ import {
   type TreeEventType,
 } from '@/lib/db/tree-events';
 import { toYMD } from '@/lib/dates';
+import { assertTreeAccess, requireTreeAccess } from '@/lib/orchard-access';
 
 /**
  * GET /api/trees/[id]/events
@@ -20,6 +21,8 @@ export async function GET(
 ) {
   try {
     const { id: tree_id } = await params;
+    const denied = await requireTreeAccess(tree_id, 'viewer');
+    if (denied) return denied;
     const events = await listTreeEvents(tree_id);
     return NextResponse.json({
       success: true,
@@ -48,6 +51,9 @@ export async function POST(
     if (response) return response;
 
     const { id: tree_id } = await params;
+    const denied = await assertTreeAccess(tree_id, userId, 'operator');
+    if (denied) return denied;
+
     const tree = await getTreeById(tree_id);
     if (!tree) {
       return NextResponse.json({ error: 'Tree not found' }, { status: 404 });

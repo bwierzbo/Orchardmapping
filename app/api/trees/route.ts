@@ -10,6 +10,7 @@ import {
 import { validateTreeRow, formatValidationErrors, TreeRowData } from '@/lib/tree-validation';
 import { serializeTree } from '@/lib/serialize';
 import { insertTreeEvent } from '@/lib/db/tree-events';
+import { requireOrchardAccess, assertOrchardAccess } from '@/lib/orchard-access';
 
 /**
  * GET /api/trees?orchard_id=washington
@@ -27,6 +28,9 @@ export async function GET(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const { response: denied } = await requireOrchardAccess(orchard_id, 'viewer');
+    if (denied) return denied;
 
     // Fetch trees
     const trees = await getTreesByOrchard(orchard_id);
@@ -81,6 +85,9 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const denied = await assertOrchardAccess(orchard_id, userId, 'operator');
+    if (denied) return denied;
 
     // Validate field values (position label, status enum, date formats)
     const validation = validateTreeRow({
