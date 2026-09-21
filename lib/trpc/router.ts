@@ -9,6 +9,7 @@ import {
   treeViewerProcedure,
   treeOperatorProcedure,
   recordOperatorProcedure,
+  globalAdminProcedure,
 } from './init';
 import { memberOrchardConfigs, roleAtLeast, ORCHARD_ROLES } from '@/lib/orchard-access';
 import {
@@ -51,6 +52,7 @@ import {
 import { serializeTree } from '@/lib/serialize';
 import { formatAddress } from '@/lib/address';
 import { applyTreeEdits } from '@/lib/db/group-actions';
+import { listPeople, setGlobalRole } from '@/lib/db/people';
 import { toYMD } from '@/lib/dates';
 import { TRPCError } from '@trpc/server';
 import { listAreas, insertArea, updateArea, deleteArea, AREA_KINDS } from '@/lib/db/areas';
@@ -974,6 +976,40 @@ export const appRouter = router({
    * listing, which any member may see — knowing who else can change your
    * records is not privileged information.
    */
+  /**
+   * System-wide access. Only global admins may look, which is why the
+   * gate answers NOT_FOUND rather than FORBIDDEN.
+   */
+  access: router({
+    people: globalAdminProcedure.query(async () => ({
+      people: await listPeople(),
+      orchards: await getAllOrchardConfigs().then((all) =>
+        all.map((o) => ({ id: o.id, name: o.name }))
+      ),
+    })),
+
+    setGlobalRole: globalAdminProcedure
+      .input(
+        z.object({
+          userId: z.string().min(1),
+          // null clears it, leaving whatever memberships they hold
+          role: z.enum(ORCHARD_ROLES).nullable(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        try {
+          await setGlobalRole(input.userId, input.role, ctx.userId);
+        } catch (error) {
+          // setGlobalRole refuses to strand the system without an admin
+          if ((error as { status?: number }).status === 400) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: (error as Error).message });
+          }
+          throw error;
+        }
+        return { ok: true };
+      }),
+  }),
+
   members: router({
     list: orchardViewerProcedure
       .input(z.object({ orchardId: z.string().min(1) }))

@@ -13,8 +13,11 @@ import { orchardExists, insertOrchardFull } from '@/lib/db/orchards';
  */
 export async function POST(request: NextRequest) {
   try {
-    const { response } = await requireSession();
-    if (response) return response;
+    const { response, userId } = await requireSession();
+    if (response || !userId) return response ?? NextResponse.json(
+      { error: 'Unauthorized. Please sign in.' },
+      { status: 401 }
+    );
 
     const body = await request.json();
     const name = typeof body.name === 'string' ? body.name.trim() : '';
@@ -62,7 +65,7 @@ export async function POST(request: NextRequest) {
       bounds_max_lng: lng + dLng,
       bounds_max_lat: lat + dLat,
       default_zoom: 18,
-    });
+    }, userId);
 
     return NextResponse.json({ success: true, orchardId: orchard.id }, { status: 201 });
   } catch (error) {

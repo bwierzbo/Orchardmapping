@@ -13,8 +13,12 @@
  * data/orchards/finn-hall.geojson. Centre, bounds and default zoom are
  * derived from the geometry.
  *
+ * An orchard needs an owner -- membership is the only thing that grants
+ * access, so one created without it would be invisible to everybody. Pass
+ * the Clerk user id who should be its first admin.
+ *
  * Usage:
- *   npx tsx scripts/create-orchard-from-boundary.ts <file.geojson>
+ *   npx tsx scripts/create-orchard-from-boundary.ts <file.geojson> --owner <clerk-user-id>
  *   npx tsx scripts/create-orchard-from-boundary.ts <file.geojson> --dry-run
  *   npx tsx scripts/create-orchard-from-boundary.ts <file.geojson> --update
  */
@@ -128,6 +132,15 @@ async function main() {
     return;
   }
 
+  const ownerFlag = process.argv.indexOf('--owner');
+  const owner = ownerFlag === -1 ? '' : (process.argv[ownerFlag + 1] ?? '');
+  if (!owner) {
+    console.error(
+      'Creating an orchard needs --owner <clerk-user-id>: whoever should be its first admin.'
+    );
+    process.exit(1);
+  }
+
   await insertOrchardFull({
     id,
     name,
@@ -141,7 +154,7 @@ async function main() {
     bounds_max_lat: bounds.maxLat,
     default_zoom: defaultZoom,
     boundary,
-  });
+  }, owner);
 
   console.log(`\n✓ Created "${id}" — open /orchard/${id} and place trees inside the boundary`);
 }

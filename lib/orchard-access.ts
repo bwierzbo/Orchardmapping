@@ -48,24 +48,55 @@ async function claimInvitations(userId: string): Promise<void> {
 }
 
 /**
+ * A level that applies to every orchard, or null for almost everybody.
+ * See migration 051.
+ */
+export async function globalRole(userId: string): Promise<OrchardRole | null> {
+  const { rows } = await sql`
+    SELECT role FROM global_members WHERE user_id = ${userId}
+  `;
+  return rows.length > 0 ? (String(rows[0].role) as OrchardRole) : null;
+}
+
+/** True for the handful of people who run the whole system. */
+export async function isGlobalAdmin(userId: string): Promise<boolean> {
+  return (await globalRole(userId)) === 'admin';
+}
+
+/**
  * This user's role on this orchard, or null if they have none.
+ *
+ * The higher of their membership and their global level: per-orchard can
+ * raise someone above their global level but never lower them, so an
+ * orchard's owner cannot lock out the people who support the system.
  * Checks pending invitations before concluding no.
  */
 export async function orchardRole(
   orchardId: string,
   userId: string
 ): Promise<OrchardRole | null> {
-  const read = async () => {
+  const readMembership = async () => {
     const { rows } = await sql`
       SELECT role FROM orchard_members
       WHERE orchard_id = ${orchardId} AND user_id = ${userId}
     `;
     return rows.length > 0 ? (String(rows[0].role) as OrchardRole) : null;
   };
-  const found = await read();
-  if (found) return found;
+
+  const [global, membership] = await Promise.all([globalRole(userId), readMembership()]);
+  if (membership) return higherRole(global, membership);
+  if (global) return global;
+
+  // No membership and no global level: an invitation may be waiting.
   await claimInvitations(userId);
-  return read();
+  return readMembership();
+}
+
+/** Whichever of two levels grants more; null means "no level at all". */
+function higherRole(a: OrchardRole | null, b: OrchardRole | null): OrchardRole | null {
+  if (!a) return b;
+  if (!b) return a;
+  return roleAtLeast(a, b) ? a : b;
 }
 
 /**
@@ -121,6 +152,12 @@ export async function requireOrchardAccess(
 
 /** Orchards this user belongs to, for the home page and orchard switcher. */
 export async function memberOrchardIds(userId: string): Promise<string[]> {
+  // A global level reaches every orchard, including ones created after it
+  // was granted — which is the point of it.
+  if (await globalRole(userId)) {
+    const { rows } = await sql`SELECT id FROM orchards`;
+    return rows.map((r) => String(r.id));
+  }
   await claimInvitations(userId);
   const { rows } = await sql`
     SELECT orchard_id FROM orchard_members WHERE user_id = ${userId}
