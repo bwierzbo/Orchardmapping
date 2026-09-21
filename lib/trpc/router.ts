@@ -10,7 +10,7 @@ import {
   treeOperatorProcedure,
   recordOperatorProcedure,
 } from './init';
-import { memberOrchardIds, roleAtLeast, ORCHARD_ROLES } from '@/lib/orchard-access';
+import { memberOrchardConfigs, roleAtLeast, ORCHARD_ROLES } from '@/lib/orchard-access';
 import {
   listMembers,
   listPendingInvitations,
@@ -108,9 +108,7 @@ export const appRouter = router({
     // Only the orchards you belong to. This returned every orchard in the
     // database, which is how one signed-in user found everyone else's.
     list: protectedProcedure.query(async ({ ctx }) => {
-      const mine = new Set(await memberOrchardIds(ctx.userId));
-      const all = await getAllOrchardConfigs();
-      return all.filter((o) => mine.has(o.id));
+      return memberOrchardConfigs(ctx.userId);
     }),
     get: orchardViewerProcedure
       .input(z.object({ orchardId: z.string().min(1) }))

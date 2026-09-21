@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { handleApiError } from '@/lib/api-errors';
 import { getOrchardConfigById, getAllOrchardConfigs } from '@/lib/db/orchards';
 import { auth } from '@clerk/nextjs/server';
-import { requireOrchardAccess, memberOrchardIds } from '@/lib/orchard-access';
+import { requireOrchardAccess, memberOrchardConfigs } from '@/lib/orchard-access';
 
 // GET /api/orchards/config?id=orchardId - Get single orchard config
 // GET /api/orchards/config - Get all orchard configs
@@ -33,9 +33,7 @@ export async function GET(request: NextRequest) {
       if (!userId) {
         return NextResponse.json({ error: 'Unauthorized. Please sign in.' }, { status: 401 });
       }
-      const mine = new Set(await memberOrchardIds(userId));
-      const orchards = await getAllOrchardConfigs();
-      return NextResponse.json(orchards.filter((o) => mine.has(o.id)));
+      return NextResponse.json(await memberOrchardConfigs(userId));
     }
   } catch (error) {
     return handleApiError(error, 'GET /api/orchards/config');

@@ -3,7 +3,9 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { ArrowLeft, Map as MapIcon } from 'lucide-react';
-import { getOrchardConfigById, getAllOrchardConfigs } from '@/lib/db/orchards';
+import { getOrchardConfigById } from '@/lib/db/orchards';
+import { memberOrchardConfigs } from '@/lib/orchard-access';
+import { auth } from '@clerk/nextjs/server';
 import { getTreesByOrchard } from '@/lib/db/trees';
 import { serializeTree } from '@/lib/serialize';
 import { computeOrchardStats } from '@/lib/dashboard-stats';
@@ -82,9 +84,10 @@ function careBucketList(b: CareBuckets) {
 
 export default async function StatsPage({ params }: PageProps) {
   const { id } = await params;
+  const { userId } = await auth();
   const [orchard, allOrchards, dbTrees] = await Promise.all([
     getOrchard(id),
-    getAllOrchardConfigs(),
+    userId ? memberOrchardConfigs(userId) : Promise.resolve([]),
     getTreesByOrchard(id),
   ]);
   if (!orchard) notFound();

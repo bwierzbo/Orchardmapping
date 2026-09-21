@@ -1,11 +1,10 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { BarChart3, BookOpen, Camera, MapPin, Plus, Settings } from 'lucide-react';
-import { getAllOrchardConfigs } from '@/lib/db/orchards';
 import { satellitePreviewUrl, boundarySvgPoints } from '@/lib/satellite-preview';
 import { getTreeCountsByOrchard } from '@/lib/db/trees';
 import { auth } from '@clerk/nextjs/server';
-import { memberOrchardIds } from '@/lib/orchard-access';
+import { memberOrchardConfigs } from '@/lib/orchard-access';
 import UserMenu from '@/components/UserMenu';
 import type { OrchardConfig } from '@/lib/types';
 
@@ -24,17 +23,17 @@ function surveyCaption(orchard: OrchardConfig, treeCount: number): string {
 export default async function Home() {
   const { userId } = await auth();
   const signedIn = !!userId;
-  const [allOrchards, treeCounts, mine] = await Promise.all([
-    getAllOrchardConfigs(),
-    getTreeCountsByOrchard(),
-    userId ? memberOrchardIds(userId) : Promise.resolve([]),
-  ]);
   // Only orchards you belong to. Signed out, that is none — the list used
   // to show every orchard in the database to anyone who loaded the page.
-  const mineSet = new Set(mine);
-  const orchards = allOrchards.filter((o) => mineSet.has(o.id));
+  const [orchards, treeCounts] = await Promise.all([
+    userId ? memberOrchardConfigs(userId) : Promise.resolve([]),
+    getTreeCountsByOrchard(),
+  ]);
 
-  const totalTrees = Object.values(treeCounts).reduce((a, b) => a + b, 0);
+  // Count only the trees in orchards you belong to. Summing every count
+  // told a signed-in stranger how many trees the database holds, under a
+  // list that correctly showed them none.
+  const totalTrees = orchards.reduce((sum, o) => sum + (treeCounts[o.id] ?? 0), 0);
 
   const actions = [
     {

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { auth, currentUser } from '@clerk/nextjs/server';
 import { sql } from '@vercel/postgres';
+import { getAllOrchardConfigs } from './db/orchards';
+import type { OrchardConfig } from './types';
 import { roleAtLeast, type OrchardRole } from './roles';
 
 export { ORCHARD_ROLES, roleAtLeast, ROLE_LABEL, ROLE_DESCRIPTION } from './roles';
@@ -124,6 +126,23 @@ export async function memberOrchardIds(userId: string): Promise<string[]> {
     SELECT orchard_id FROM orchard_members WHERE user_id = ${userId}
   `;
   return rows.map((r) => String(r.orchard_id));
+}
+
+/**
+ * The orchards this user belongs to, as full configs.
+ *
+ * Anything that shows a person a *list* of orchards goes through here --
+ * the home page, the switcher in the dashboard header, the config API.
+ * Fetching every orchard and filtering at the call site is how the
+ * switcher ended up naming other growers' orchards to anyone signed in.
+ */
+export async function memberOrchardConfigs(userId: string): Promise<OrchardConfig[]> {
+  const [mine, all] = await Promise.all([
+    memberOrchardIds(userId),
+    getAllOrchardConfigs(),
+  ]);
+  const mineSet = new Set(mine);
+  return all.filter((o) => mineSet.has(o.id));
 }
 
 /**
