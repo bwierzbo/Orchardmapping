@@ -42,7 +42,14 @@ import {
   insertApplication,
   deleteApplication,
 } from '@/lib/db/spray';
-import { listMarks, markStage, unmarkStage } from '@/lib/db/phenology';
+import {
+  listMarks,
+  listVarieties,
+  markStage,
+  markStageForAll,
+  unmarkStage,
+} from '@/lib/db/phenology';
+import { PHENOLOGY_SCOPES } from '@/lib/phenology';
 import { clearPosture, setPosture } from '@/lib/db/posture';
 import { POSTURES } from '@/lib/posture';
 import { completeStep, setStepEnabled, uncompleteStep } from '@/lib/db/program';
@@ -598,6 +605,41 @@ export const appRouter = router({
       .input(z.object({ orchardId: z.string().min(1) }))
       .query(async ({ input }) => listMarks(input.orchardId)),
 
+    varieties: publicProcedure
+      .input(z.object({ orchardId: z.string().min(1) }))
+      .query(async ({ input }) => listVarieties(input.orchardId)),
+
+    /**
+     * Mark a stage for everything, naming only the stragglers. With a
+     * block of eighteen varieties arriving within a few days, the
+     * exceptions are the short list and the rest is one tap.
+     */
+    markAll: protectedProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          stage: z.enum(PHENOLOGY_STAGES),
+          observedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          groups: z.array(z.string().min(1)).min(1).max(200),
+          exceptions: z
+            .array(
+              z.object({
+                group: z.string().min(1),
+                // null means "not there yet" — skipped, not guessed
+                observedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+              }),
+            )
+            .max(200)
+            .optional(),
+          scope: z.enum(PHENOLOGY_SCOPES).optional(),
+          note: z.string().max(500).optional(),
+        }),
+      )
+      .mutation(async ({ input, ctx }) => {
+        const marked = await markStageForAll({ ...input, createdBy: ctx.userId });
+        return { marked };
+      }),
+
     mark: protectedProcedure
       .input(
         z.object({
@@ -605,6 +647,8 @@ export const appRouter = router({
           stage: z.enum(PHENOLOGY_STAGES),
           // Plain YYYY-MM-DD: passes to Postgres verbatim, no day-shift
           observedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          scope: z.enum(PHENOLOGY_SCOPES).optional(),
+          scopeValue: z.string().max(120).nullable().optional(),
           note: z.string().max(500).optional(),
         }),
       )

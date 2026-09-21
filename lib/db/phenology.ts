@@ -1,5 +1,10 @@
 import { sql } from '@vercel/postgres';
-import { isPhenologyStage, type PhenologyStage } from '../phenology';
+import {
+  isPhenologyStage,
+  PHENOLOGY_SCOPES,
+  type PhenologyScope,
+  type PhenologyStage,
+} from '../phenology';
 
 /**
  * Growth-stage marks for an orchard. The domain logic — ordering, what
@@ -12,6 +17,9 @@ export interface PhenologyMarkRow {
   stage: PhenologyStage;
   /** Local YYYY-MM-DD. */
   observedOn: string;
+  scope: PhenologyScope;
+  /** Variety or block name; null for an orchard-wide mark. */
+  scopeValue: string | null;
   note: string | null;
 }
 
@@ -22,10 +30,15 @@ function decode(row: Record<string, unknown>): PhenologyMarkRow {
     // appears on; it is simply no longer part of the season.
     throw new Error(`Unknown phenology stage in database: ${stage}`);
   }
+  const scope = String(row.scope ?? 'orchard');
   return {
     id: Number(row.id),
     stage,
     observedOn: String(row.observed_on),
+    scope: ((PHENOLOGY_SCOPES as readonly string[]).includes(scope)
+      ? scope
+      : 'orchard') as PhenologyScope,
+    scopeValue: (row.scope_value as string | null) ?? null,
     note: (row.note as string | null) ?? null,
   };
 }
@@ -33,10 +46,11 @@ function decode(row: Record<string, unknown>): PhenologyMarkRow {
 /** Every mark for an orchard, oldest first. Seasons are cheap to filter in TS. */
 export async function listMarks(orchardId: string): Promise<PhenologyMarkRow[]> {
   const { rows } = await sql`
-    SELECT id, stage, to_char(observed_on, 'YYYY-MM-DD') AS observed_on, note
+    SELECT id, stage, to_char(observed_on, 'YYYY-MM-DD') AS observed_on,
+           scope, scope_value, note
     FROM phenology_marks
     WHERE orchard_id = ${orchardId}
-    ORDER BY observed_on, stage
+    ORDER BY observed_on, stage, scope_value
   `;
   return rows.map(decode);
 }
@@ -50,23 +64,83 @@ export async function markStage(input: {
   orchardId: string;
   stage: PhenologyStage;
   observedOn: string;
+  scope?: PhenologyScope;
+  scopeValue?: string | null;
   note?: string | null;
   createdBy?: string | null;
 }): Promise<PhenologyMarkRow> {
+  const scope = input.scope ?? 'orchard';
   const { rows } = await sql`
-    INSERT INTO phenology_marks (orchard_id, stage, observed_on, note, created_by)
+    INSERT INTO phenology_marks
+      (orchard_id, stage, observed_on, scope, scope_value, note, created_by)
     VALUES (
       ${input.orchardId}, ${input.stage}, ${input.observedOn}::date,
+      ${scope}, ${input.scopeValue ?? null},
       ${input.note ?? null}, ${input.createdBy ?? null}
     )
-    ON CONFLICT (orchard_id, stage, (date_part('year', observed_on)))
+    ON CONFLICT (orchard_id, scope, COALESCE(scope_value, ''), stage,
+                 (date_part('year', observed_on)))
     DO UPDATE SET
       observed_on = EXCLUDED.observed_on,
       note = EXCLUDED.note,
       updated_at = NOW()
-    RETURNING id, stage, to_char(observed_on, 'YYYY-MM-DD') AS observed_on, note
+    RETURNING id, stage, to_char(observed_on, 'YYYY-MM-DD') AS observed_on,
+              scope, scope_value, note
   `;
   return decode(rows[0]);
+}
+
+/**
+ * Mark a stage for everything, with exceptions.
+ *
+ * The common case in the field is that the whole block arrives within a
+ * few days: "everything hit green tip today except Harrison and Chisel
+ * Jersey, they're a week behind." Marking eighteen varieties one at a
+ * time would be accurate and nobody would do it, so the default is all
+ * of them and the work is in naming the stragglers.
+ */
+export async function markStageForAll(input: {
+  orchardId: string;
+  stage: PhenologyStage;
+  observedOn: string;
+  /** Every group to mark — usually every variety in the block. */
+  groups: readonly string[];
+  /** Groups on their own date, or omitted entirely when date is null. */
+  exceptions?: readonly { group: string; observedOn: string | null }[];
+  scope?: PhenologyScope;
+  note?: string | null;
+  createdBy?: string | null;
+}): Promise<number> {
+  const except = new Map(
+    (input.exceptions ?? []).map((e) => [e.group, e.observedOn])
+  );
+  let written = 0;
+  for (const group of input.groups) {
+    const on = except.has(group) ? except.get(group)! : input.observedOn;
+    // A null date means "not there yet" — skip rather than guess.
+    if (on === null) continue;
+    await markStage({
+      orchardId: input.orchardId,
+      stage: input.stage,
+      observedOn: on,
+      scope: input.scope ?? 'variety',
+      scopeValue: group,
+      note: input.note ?? null,
+      createdBy: input.createdBy ?? null,
+    });
+    written += 1;
+  }
+  return written;
+}
+
+/** Varieties present in an orchard, for the "all, except" picker. */
+export async function listVarieties(orchardId: string): Promise<string[]> {
+  const { rows } = await sql`
+    SELECT DISTINCT variety FROM trees
+    WHERE orchard_id = ${orchardId} AND variety IS NOT NULL AND variety <> ''
+    ORDER BY variety
+  `;
+  return rows.map((r) => String(r.variety));
 }
 
 /** Hard delete — a mis-tapped stage is noise, not history worth keeping. */

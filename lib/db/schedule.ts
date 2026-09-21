@@ -135,7 +135,12 @@ export async function resolveSchedule(
     postures,
     infectionEvents,
     kickbackHours: (m) => kickbackBy.get(m) ?? null,
-    marks: marks.map((m) => ({ stage: m.stage, observedOn: m.observedOn })),
+    marks: marks.map((m) => ({
+      stage: m.stage,
+      observedOn: m.observedOn,
+      scope: m.scope,
+      scopeValue: m.scopeValue,
+    })),
     ddDate: (trigger, biofix) =>
       crossings.get(modelKey(trigger, biofix))?.get(trigger.dd) ?? null,
     completions: [...completions, ...labCompletions],
