@@ -19,8 +19,11 @@ export async function POST(request: NextRequest) {
   let orchardId: string | null = null;
 
   try {
-    const { response } = await requireSession();
-    if (response) return response;
+    const { response, userId } = await requireSession();
+    if (response || !userId) return response ?? NextResponse.json(
+      { error: 'Unauthorized. Please sign in.' },
+      { status: 401 }
+    );
 
     const body = await request.json();
     const { name, location, blobUrl } = body as {
@@ -120,7 +123,7 @@ export async function POST(request: NextRequest) {
       tile_min_zoom: Math.round(minZoom),
       tile_max_zoom: Math.min(tileMaxZoom, 23),
       ortho_pmtiles_url: blobUrl,
-    });
+    }, userId);
 
     return NextResponse.json({
       success: true,

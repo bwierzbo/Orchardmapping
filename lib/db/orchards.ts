@@ -1,4 +1,5 @@
-import { sql } from '@vercel/postgres';
+import { sql, db } from '@vercel/postgres';
+import { resolveSiteForNewOrchard, nextOrchardCode } from './sites';
 import { OrchardBoundary, OrchardConfig } from '../types';
 import { buildUpdateSet } from './sql-helpers';
 import { toNum } from './decode';
@@ -132,58 +133,6 @@ export function dbRowToOrchardConfig(row: Orchard): OrchardConfig {
   };
 }
 
-/**
- * Insert a new orchard into the database
- *
- * @param orchardData - Orchard data to insert
- * @returns The created orchard object
- * @throws Error if insertion fails or orchard already exists
- *
- * @example
- * const orchard = await insertOrchard({
- *   id: 'my-orchard',
- *   name: 'My Orchard',
- *   location: 'Washington, USA',
- *   center_lat: 48.14192,
- *   center_lng: -123.16743
- * });
- */
-export async function insertOrchard(orchardData: OrchardInsertData): Promise<Orchard> {
-  try {
-    const { id, name, location, center_lat, center_lng } = orchardData;
-
-    // Validate required fields
-    if (!id || !name || !location) {
-      throw new Error('Missing required fields: id, name, and location are required');
-    }
-
-    if (center_lat === undefined || center_lng === undefined) {
-      throw new Error('Missing required fields: center_lat and center_lng are required');
-    }
-
-    // Check if orchard already exists
-    const exists = await orchardExists(id);
-    if (exists) {
-      throw new Error(`Orchard with id "${id}" already exists`);
-    }
-
-    // Insert the orchard
-    const result = await sql`
-      INSERT INTO orchards (id, name, location, center_lat, center_lng)
-      VALUES (${id}, ${name}, ${location}, ${center_lat}, ${center_lng})
-      RETURNING *
-    `;
-
-    if (result.rows.length === 0) {
-      throw new Error('Failed to insert orchard - no rows returned');
-    }
-
-    return result.rows[0] as Orchard;
-  } catch (error: any) {
-    console.error('Error inserting orchard:', error);
-    throw new Error(`Failed to insert orchard: ${error.message}`);
-  }
-}
 
 /**
  * Check if an orchard with the given ID already exists in the database
@@ -317,11 +266,25 @@ export async function getOrchardsCount(): Promise<number> {
 /**
  * Insert a new orchard with full configuration into the database
  */
-export async function insertOrchardFull(data: OrchardFullInsertData): Promise<Orchard> {
+export async function insertOrchardFull(
+  data: OrchardFullInsertData,
+  ownerUserId: string
+): Promise<Orchard> {
+  if (!ownerUserId) {
+    throw new Error('An orchard needs an owner: pass the creator’s user id');
+  }
+  const client = await db.connect();
   try {
-    const result = await sql`
+    await client.query('BEGIN');
+
+    // site_id and code are NOT NULL and permanent: they are baked into
+    // every tree id this orchard will ever issue (migration 049).
+    const siteId = await resolveSiteForNewOrchard(client, ownerUserId, data.name);
+    const code = await nextOrchardCode(client, siteId);
+
+    const result = await client.sql`
       INSERT INTO orchards (
-        id, name, location, description,
+        id, name, location, description, site_id, code,
         center_lat, center_lng,
         bounds_min_lng, bounds_min_lat, bounds_max_lng, bounds_max_lat,
         default_zoom, min_zoom, max_zoom, tile_min_zoom, tile_max_zoom,
@@ -329,6 +292,7 @@ export async function insertOrchardFull(data: OrchardFullInsertData): Promise<Or
         boundary_geojson
       ) VALUES (
         ${data.id}, ${data.name}, ${data.location}, ${data.description || null},
+        ${siteId}, ${code},
         ${data.center_lat}, ${data.center_lng},
         ${data.bounds_min_lng || null}, ${data.bounds_min_lat || null},
         ${data.bounds_max_lng || null}, ${data.bounds_max_lat || null},
@@ -345,10 +309,24 @@ export async function insertOrchardFull(data: OrchardFullInsertData): Promise<Or
       throw new Error('Failed to insert orchard - no rows returned');
     }
 
+    // The creator is its first admin, in the same transaction that makes
+    // the orchard. Membership is the only thing that grants access, so an
+    // orchard created without one is invisible to everybody including the
+    // person who just made it.
+    await client.sql`
+      INSERT INTO orchard_members (orchard_id, user_id, role)
+      VALUES (${data.id}, ${ownerUserId}, 'admin')
+      ON CONFLICT (orchard_id, user_id) DO NOTHING
+    `;
+
+    await client.query('COMMIT');
     return result.rows[0] as Orchard;
   } catch (error: any) {
+    await client.query('ROLLBACK');
     console.error('Error inserting orchard:', error);
     throw new Error(`Failed to insert orchard: ${error.message}`);
+  } finally {
+    client.release();
   }
 }
 
