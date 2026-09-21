@@ -6,14 +6,12 @@ This directory contains scripts for importing and managing tree data in the orch
 
 The database tracks the following information for each tree:
 
-- **tree_id** (required, unique): Unique identifier for the tree (e.g., "WA-R01-P01")
+- **tree_id** (issued by the database, never supplied): permanent id, e.g. `OBC-001-0142` — site code, orchard code, tree number. Include it in an import file only to say *which existing tree* a row is about; a file without it is matched by address instead.
+- **block_id / row_id / position**: the tree's address. All three are optional and freely editable — a tree may sit in a block with no rows, or be unplaced entirely.
 - **name**: Display name for the tree
 - **variety**: Tree variety (e.g., "Honeycrisp", "Gala", "Fuji")
 - **status**: Health status ("healthy", "stressed", "dead", "unknown")
 - **planted_date**: Date the tree was planted (YYYY-MM-DD)
-- **block_id**: Block identifier within the orchard
-- **row_id**: Row number or identifier
-- **position**: Position within the row (integer)
 - **age**: Age of the tree in years
 - **height**: Height in meters (decimal)
 - **lat/lng**: Geographic coordinates
@@ -32,10 +30,10 @@ Best for importing data from Excel or Google Sheets.
 
 **Usage:**
 ```bash
-npx tsx scripts/import-trees-csv.ts <orchard-id> <csv-file>
+npx tsx scripts/import-trees.ts <orchard-id> <csv-file> [--dry-run]
 
 # Example:
-npx tsx scripts/import-trees-csv.ts washington scripts/import-trees-sample.csv
+npx tsx scripts/import-trees.ts finn-hall scripts/import-trees-sample.csv --dry-run
 ```
 
 **Tips:**
@@ -52,10 +50,10 @@ Best for importing data from other systems or APIs.
 
 **Usage:**
 ```bash
-npx tsx scripts/import-trees.ts <json-file>
+npx tsx scripts/import-trees.ts <orchard-id> <json-file> [--dry-run]
 
 # Example:
-npx tsx scripts/import-trees.ts scripts/import-trees-sample.json
+npx tsx scripts/import-trees.ts finn-hall scripts/import-trees-sample.json
 ```
 
 ### 3. Export from PMTiles
@@ -86,12 +84,12 @@ Option B: Use the PMTiles export
 
 For CSV:
 ```bash
-npx tsx scripts/import-trees-csv.ts washington my-trees.csv
+npx tsx scripts/import-trees.ts finn-hall my-trees.csv
 ```
 
 For JSON:
 ```bash
-npx tsx scripts/import-trees.ts my-trees.json
+npx tsx scripts/import-trees.ts finn-hall my-trees.json
 ```
 
 ### Step 3: Verify Import
@@ -100,21 +98,26 @@ npx tsx scripts/import-trees.ts my-trees.json
 2. Visit the web application and click on trees to see the imported data
 3. Failed imports can be fixed and re-imported (updates existing records)
 
-## Tree ID Format Recommendation
+## Tree ID Format
 
-We recommend using a consistent format for tree_id:
-```
-<ORCHARD>-R<ROW>-P<POSITION>
+Ids are issued by the database and are **not** yours to choose:
 
-Examples:
-- WA-R01-P01 (Washington, Row 1, Position 1)
-- CA-R10-P15 (California, Row 10, Position 15)
-- OR-B2-R05-P08 (Oregon, Block 2, Row 5, Position 8)
 ```
+OBC-001-0142
+ │   │    └── 142nd tree recorded in that orchard (never reused, never reset)
+ │   └─────── sub-orchard 002 at that site
+ └─────────── site code
+
+```
+
+The middle part names the planting a tree belongs to and is permanent. It is
+**not** the `block_id` field, which is part of the mutable address. Before
+migration 049 a tree's id was its address, which is why moving one used to
+mean renaming it and rewriting its history.
 
 ## Notes
 
-- The import process uses "upsert" logic: if a tree_id already exists, it updates the record
+- The import matches a row by `tree_id` when the file has one, and by address otherwise; matched rows are updated, the rest become new trees
 - You can re-run imports to update existing data
 - All imports generate a timestamped report file with success/error details
 - Empty or null values in your import file won't overwrite existing data

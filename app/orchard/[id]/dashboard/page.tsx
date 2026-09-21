@@ -6,7 +6,7 @@ import type { Metadata } from 'next';
 import {
   ArrowLeft, BarChart3, Bug, CalendarRange, FlaskConical,
   Map as MapIcon, SprayCan, Target, Users } from 'lucide-react';
-import { getOrchardConfigById, getAllOrchardConfigs } from '@/lib/db/orchards';
+import { getOrchardConfigById } from '@/lib/db/orchards';
 import { getTreesByOrchard } from '@/lib/db/trees';
 import { serializeTree } from '@/lib/serialize';
 import { computeOrchardStats } from '@/lib/dashboard-stats';
@@ -14,7 +14,7 @@ import OrchardSwitcher from '../viewer/OrchardSwitcher';
 import SeasonCard from './SeasonCard';
 import StageCard from './StageCard';
 import DueNowCard from './DueNowCard';
-import { viewerRole, roleAtLeast } from '@/lib/orchard-access';
+import { viewerRole, roleAtLeast, memberOrchardConfigs } from '@/lib/orchard-access';
 
 // Live DB data; never prerender at build time
 export const dynamic = 'force-dynamic';
@@ -37,11 +37,11 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function DashboardPage({ params }: PageProps) {
   const { id } = await params;
-  const [orchard, allOrchards, dbTrees, { userId }] = await Promise.all([
+  const { userId } = await auth();
+  const [orchard, allOrchards, dbTrees] = await Promise.all([
     getOrchard(id),
-    getAllOrchardConfigs(),
+    userId ? memberOrchardConfigs(userId) : Promise.resolve([]),
     getTreesByOrchard(id),
-    auth(),
   ]);
   if (!orchard) notFound();
 

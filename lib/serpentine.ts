@@ -1,5 +1,5 @@
 import type { ClientTree } from './types';
-import { normalizeRowId } from './row-id';
+import { normalizeRowId } from './address';
 import { comparePositions } from './position';
 
 /** Trees grouped by normalized row, each row sorted by position. */

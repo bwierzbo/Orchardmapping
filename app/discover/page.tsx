@@ -14,13 +14,6 @@ import { trpc } from '@/lib/trpc/client';
 import { createTree, createTreeEvent, ApiError } from '@/lib/api/trees';
 import type { OrchardConfig } from '@/lib/types';
 
-/** Compact position label so found trees never collide: MMDD-HHMM. */
-function foundPosition(): string {
-  const d = new Date();
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
-}
-
 function inBounds(o: OrchardConfig, lng: number, lat: number): boolean {
   const b = o.bounds;
   if (!b) return false;
@@ -45,12 +38,16 @@ export default function DiscoverPage() {
   const [point, setPoint] = useState<{ lng: number; lat: number } | null>(null);
   const [locSource, setLocSource] = useState<'photo' | 'device' | 'manual'>('manual');
   const [saving, setSaving] = useState(false);
-  const [done, setDone] = useState<{ orchardId: string; treeId: string } | null>(null);
+  const [done, setDone] = useState<{
+    orchardId: string;
+    treeId: string;
+    treeNo: number | null;
+  } | null>(null);
 
   // form fields
   const [variety, setVariety] = useState('');
-  const [rowId, setRowId] = useState('Found');
-  const [position, setPosition] = useState(foundPosition);
+  const [rowId, setRowId] = useState('');
+  const [position, setPosition] = useState('');
   const [newName, setNewName] = useState('');
   const [newLocation, setNewLocation] = useState('');
 
@@ -255,8 +252,10 @@ export default function DiscoverPage() {
 
       const tree = await createTree({
         orchard_id: orchardId,
-        row_id: rowId.trim() || 'Found',
-        position: position.trim() || foundPosition(),
+        // Left blank the tree is simply unplaced: it has its own id, and
+        // can be given a row on the map later.
+        row_id: rowId.trim() || undefined,
+        position: position.trim() || undefined,
         lat: point.lat,
         lng: point.lng,
         variety: variety.trim() || undefined,
@@ -267,7 +266,7 @@ export default function DiscoverPage() {
         detail: 'Found-tree photo',
         photo_url: photoUrl,
       });
-      setDone({ orchardId, treeId: tree.tree_id });
+      setDone({ orchardId, treeId: tree.tree_id, treeNo: tree.tree_no ?? null });
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : err instanceof Error ? err.message : 'Save failed');
     } finally {
@@ -297,7 +296,9 @@ export default function DiscoverPage() {
         {done ? (
           <div className="space-y-3 text-center">
             <p className="text-sm font-semibold text-ink">Tree recorded 🌳</p>
-            <p className="text-xs text-bark font-mono">{done.treeId}</p>
+            <p className="text-xs text-bark font-mono">
+              {done.treeNo != null ? `Tree ${done.treeNo}` : done.treeId}
+            </p>
             <div className="flex gap-2">
               <Link
                 href={`/orchard/${done.orchardId}?tree=${encodeURIComponent(done.treeId)}`}
@@ -313,7 +314,8 @@ export default function DiscoverPage() {
                   setPhotoUrl(null);
                   setPoint(null);
                   setVariety('');
-                  setPosition(foundPosition());
+                  setPosition('');
+                  setRowId('');
                   setNewName('');
                 }}
               >
@@ -364,8 +366,8 @@ export default function DiscoverPage() {
 
             {containing ? (
               <div className="grid grid-cols-3 gap-2">
-                <Input value={rowId} onChange={(e) => setRowId(e.target.value)} placeholder="Row/Block" className="h-10" />
-                <Input value={position} onChange={(e) => setPosition(e.target.value)} placeholder="Position" className="h-10" />
+                <Input value={rowId} onChange={(e) => setRowId(e.target.value)} placeholder="Row?" className="h-10" />
+                <Input value={position} onChange={(e) => setPosition(e.target.value)} placeholder="Position?" className="h-10" />
                 <Input value={variety} onChange={(e) => setVariety(e.target.value)} placeholder="Variety?" className="h-10" />
               </div>
             ) : (

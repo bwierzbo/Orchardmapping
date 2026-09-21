@@ -10,6 +10,8 @@ export function serializeTree(tree: Tree): ClientTree {
   return {
     id: tree.id,
     tree_id: tree.tree_id,
+    tree_no: tree.tree_no ?? null,
+    legacy_tree_id: tree.legacy_tree_id ?? null,
     orchard_id: tree.orchard_id,
     name: tree.name ?? null,
     variety: tree.variety ?? null,

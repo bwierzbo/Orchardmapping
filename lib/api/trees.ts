@@ -48,9 +48,11 @@ async function parseResponse<T>(response: Response): Promise<T> {
 
 export interface TreeCreateInput {
   orchard_id: string;
-  row_id: string;
+  /** Every part of the address is optional; a tree may start unplaced. */
+  block_id?: string;
+  row_id?: string;
   /** Free-form alphanumeric label: "5", "1N", "A3", … */
-  position: string;
+  position?: string;
   lat?: number;
   lng?: number;
   variety?: string;

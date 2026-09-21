@@ -1,7 +1,7 @@
 'use client';
 
 import { Undo2 } from 'lucide-react';
-import { generateTreeIdPreview } from '@/lib/row-id';
+import { formatAddress } from '@/lib/address';
 import type { TreeStatus } from '@/lib/types';
 import { TREE_STATUSES } from '@/lib/types';
 
@@ -13,7 +13,6 @@ const STATUS_LABEL: Record<TreeStatus, string> = {
 };
 
 interface EditModePanelProps {
-  orchardId: string;
   row: string;
   position: string;
   autoIncrement: boolean;
@@ -33,7 +32,6 @@ interface EditModePanelProps {
 }
 
 export default function EditModePanel({
-  orchardId,
   row,
   position,
   autoIncrement,
@@ -152,7 +150,7 @@ export default function EditModePanel({
       </div>
 
       <div className="flex items-center justify-between font-mono text-[11px] text-bark/70">
-        <span>Next: {generateTreeIdPreview(orchardId, row, position)}</span>
+        <span>Next: {formatAddress({ row_id: row, position })}</span>
         {placedCount > 0 && <span>{placedCount} placed</span>}
       </div>
     </div>

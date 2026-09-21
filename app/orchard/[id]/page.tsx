@@ -2,11 +2,11 @@ import { cache } from 'react';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { auth } from '@clerk/nextjs/server';
-import { getOrchardConfigById, getAllOrchardConfigs } from '@/lib/db/orchards';
+import { getOrchardConfigById } from '@/lib/db/orchards';
 import { getTreesByOrchard } from '@/lib/db/trees';
 import { serializeTree } from '@/lib/serialize';
 import OrchardViewerLoader from './viewer/OrchardViewerLoader';
-import { viewerRole, roleAtLeast } from '@/lib/orchard-access';
+import { viewerRole, roleAtLeast, memberOrchardConfigs } from '@/lib/orchard-access';
 
 // Live DB data; never prerender at build time
 export const dynamic = 'force-dynamic';
@@ -38,11 +38,11 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 export default async function OrchardPage({ params }: PageProps) {
   const { id } = await params;
 
-  const [orchard, allOrchards, trees, { userId }] = await Promise.all([
+  const { userId } = await auth();
+  const [orchard, allOrchards, trees] = await Promise.all([
     getOrchard(id),
-    getAllOrchardConfigs(),
+    userId ? memberOrchardConfigs(userId) : Promise.resolve([]),
     getTreesByOrchard(id),
-    auth(),
   ]);
 
   // A genuine miss (query succeeded, no row) — DB failures throw to error.tsx

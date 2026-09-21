@@ -11,9 +11,16 @@
  */
 
 export interface TreeImportRow {
-  row_id: string;
+  /**
+   * Permanent id. Present in every export, so a file that has been round
+   * -tripped updates the trees it came from even if their addresses have
+   * since changed. A file without it is matched by address instead.
+   */
+  tree_id?: string;
+  /** Every part of the address is optional; a tree may be unplaced. */
+  row_id?: string;
   /** Free-form alphanumeric label: "5", "1N", "A3", … */
-  position: string;
+  position?: string;
   lat?: number;
   lng?: number;
   name?: string;
@@ -43,6 +50,9 @@ export interface ParseResult {
 
 /** Canonical field for each accepted header spelling (lowercased). */
 const HEADER_ALIASES: Record<string, keyof TreeImportRow> = {
+  tree_id: 'tree_id',
+  'tree id': 'tree_id',
+  tree: 'tree_id',
   row_id: 'row_id',
   row: 'row_id',
   'row id': 'row_id',
@@ -73,6 +83,7 @@ const HEADER_ALIASES: Record<string, keyof TreeImportRow> = {
   'plant date': 'planted_date',
   block_id: 'block_id',
   block: 'block_id',
+  section: 'block_id',
   age: 'age',
   height: 'height',
   last_pruned: 'last_pruned',
@@ -129,16 +140,34 @@ export async function parseTreeCSV(file: File): Promise<ParseResult> {
     } catch {
       return fail('Could not read the file.');
     }
-    // Strip BOM, normalize line endings
-    text = text.replace(/^﻿/, '').replace(/\r\n?/g, '\n');
-    rows = text
-      .split('\n')
-      .filter((line) => line.trim())
-      .map(parseCSVLine);
+    return parseTreeCSVText(text);
   }
 
   if (rows.length < 2) {
     return fail('File must contain a header row and at least one data row.');
+  }
+  return parseRows(rows);
+}
+
+/**
+ * Parse CSV text. Shared by the browser upload above and the Node import
+ * script, so a file behaves identically whichever way it is loaded.
+ */
+export function parseTreeCSVText(text: string): ParseResult {
+  // Strip BOM, normalize line endings
+  const normalized = text.replace(/^﻿/, '').replace(/\r\n?/g, '\n');
+  const rows = normalized
+    .split('\n')
+    .filter((line) => line.trim())
+    .map(parseCSVLine);
+  if (rows.length < 2) {
+    return {
+      success: false,
+      data: [],
+      errors: ['File must contain a header row and at least one data row.'],
+      warnings: [],
+      rowCount: 0,
+    };
   }
   return parseRows(rows);
 }
@@ -192,8 +221,16 @@ function parseRows(rows: string[][]): ParseResult {
   if (unknown.length > 0) {
     warnings.push(`Ignored unrecognized column(s): ${unknown.join(', ')}`);
   }
-  if (!headers.includes('row_id')) errors.push('Missing required column: row_id (or "row", "row/block")');
-  if (!headers.includes('position')) errors.push('Missing required column: position (or "pos")');
+  // A file needs some way to say which tree each row is about: a permanent
+  // id, or an address to place it at.
+  const identifies = (['tree_id', 'block_id', 'row_id', 'position'] as const).some((f) =>
+    headers.includes(f)
+  );
+  if (!identifies) {
+    errors.push(
+      'Missing an identifying column: tree_id, or an address (block, row, position)'
+    );
+  }
   if (errors.length > 0) {
     return { success: false, data: [], errors, warnings, rowCount: 0 };
   }
@@ -237,24 +274,28 @@ function parseRows(rows: string[][]): ParseResult {
       if (field && values[idx] !== undefined) raw[field] = values[idx].trim();
     });
 
-    const row_id = raw.row_id?.toString() ?? '';
+    const tree_id = raw.tree_id?.toString().trim() ?? '';
+    const block_id = raw.block_id?.toString().trim() ?? '';
+    const row_id = raw.row_id?.toString().trim() ?? '';
     const position = raw.position?.toString().trim() ?? '';
-    if (!row_id) {
-      errors.push(`Row ${lineNo}: missing row_id`);
+
+    // A row has to say which tree it means, one way or the other.
+    if (!tree_id && !block_id && !row_id && !position) {
+      errors.push(`Row ${lineNo}: no tree_id and no address — nothing to match on`);
       continue;
     }
-    if (!position) {
-      errors.push(`Row ${lineNo}: missing position`);
-      continue;
-    }
-    if (position.length > 20 || !POSITION_PATTERN.test(position)) {
+    if (position && (position.length > 20 || !POSITION_PATTERN.test(position))) {
       errors.push(
         `Row ${lineNo}: invalid position "${position}" (letters, numbers, spaces, . _ - /, up to 20 chars)`
       );
       continue;
     }
 
-    const tree: TreeImportRow = { row_id, position };
+    const tree: TreeImportRow = {};
+    if (tree_id) tree.tree_id = tree_id;
+    if (block_id) tree.block_id = block_id;
+    if (row_id) tree.row_id = row_id;
+    if (position) tree.position = position;
 
     tree.lat = numberField(raw.lat, 'lat', lineNo, { min: -90, max: 90 });
     tree.lng = numberField(raw.lng, 'lng', lineNo, { min: -180, max: 180 });
@@ -347,6 +388,8 @@ function csvEscape(value: string): string {
 
 /** Column order for tree exports — every header re-imports cleanly. */
 export const EXPORT_COLUMNS = [
+  'tree_id',
+  'block_id',
   'row_id',
   'position',
   'lat',
@@ -356,7 +399,6 @@ export const EXPORT_COLUMNS = [
   'fruit_type',
   'status',
   'planted_date',
-  'block_id',
   'age',
   'height',
   'last_pruned',
@@ -371,17 +413,18 @@ export const EXPORT_COLUMNS = [
 /**
  * Export the orchard's trees as an import-compatible CSV: the
  * spreadsheet round-trip. Edit any columns in Excel/Sheets and
- * re-import — rows are matched by row_id + position and updated in
- * one transaction (blank cells leave existing values untouched).
- * Trees without a row/position address are skipped (they can't be
- * matched on re-import).
+ * re-import — rows are matched by tree_id where the file has one and by
+ * address otherwise, then updated in one transaction (blank cells leave
+ * existing values untouched). Because the id is permanent, a re-import
+ * can move trees around without creating duplicates.
  */
 export function generateTreesCSV(
   trees: Array<Partial<Record<(typeof EXPORT_COLUMNS)[number], unknown>>>
 ): Blob {
   const lines = [EXPORT_COLUMNS.join(',')];
   for (const t of trees) {
-    if (t.row_id == null || t.position == null || t.position === '') continue;
+    // An unplaced tree still exports: it has a permanent id to come back on.
+    if (t.tree_id == null && t.row_id == null && t.position == null) continue;
     lines.push(
       EXPORT_COLUMNS.map((c) => {
         const v = t[c];
@@ -397,6 +440,7 @@ export function generateTreesCSV(
  */
 export function generateTemplateCSV(): Blob {
   const headers = [
+    'block_id',
     'row_id',
     'position',
     'lat',
@@ -412,9 +456,9 @@ export function generateTemplateCSV(): Blob {
   ];
 
   const sampleRows = [
-    ['1', '1', '48.11412', '-123.26440', 'Fuji', 'healthy', '2020-03-15', '4', '2024-01-10', '2023-10-15', '45.5', 'Strong growth this year'],
-    ['1', '2', '48.11412', '-123.26432', 'Gala', 'stressed', '2020-03-15', '4', '2024-01-10', '2023-10-12', '32.0', 'Possible pest damage'],
-    ['Espalier', '1N', '48.11405', '-123.26440', 'Honeycrisp', 'healthy', '2019-04-20', '5', '2024-01-08', '2023-10-20', '52.3', 'Rows and positions can be any label'],
+    ['', '1', '1', '48.11412', '-123.26440', 'Fuji', 'healthy', '2020-03-15', '4', '2024-01-10', '2023-10-15', '45.5', 'Strong growth this year'],
+    ['', '1', '2', '48.11412', '-123.26432', 'Gala', 'stressed', '2020-03-15', '4', '2024-01-10', '2023-10-12', '32.0', 'Possible pest damage'],
+    ['Upper', 'Espalier', '1N', '48.11405', '-123.26440', 'Honeycrisp', 'healthy', '2019-04-20', '5', '2024-01-08', '2023-10-20', '52.3', 'Block, row and position are all optional labels'],
   ];
 
   const csvContent = [

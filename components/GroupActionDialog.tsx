@@ -5,7 +5,7 @@ import type { ClientTree } from '@/lib/types';
 import { TREE_STATUSES } from '@/lib/types';
 import { STATUS_LABEL } from '@/components/StatusBadge';
 import { filterTrees, describeFilter, type GroupFilter } from '@/lib/group-filter';
-import { normalizeRowId } from '@/lib/row-id';
+import { normalizeRowId } from '@/lib/address';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';

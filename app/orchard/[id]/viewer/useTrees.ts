@@ -14,6 +14,11 @@ export function useTrees(initialTrees: ClientTree[], orchardId: string, notify: 
 
   const byId = useMemo(() => {
     const m = new Map<string, ClientTree>();
+    // Old ?tree= links and exports carry the address-shaped id a tree had
+    // before migration 049, so those resolve too.
+    for (const t of trees) {
+      if (t.legacy_tree_id) m.set(t.legacy_tree_id, t);
+    }
     for (const t of trees) m.set(t.tree_id, t);
     return m;
   }, [trees]);

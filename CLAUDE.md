@@ -17,8 +17,7 @@ pnpm test             # vitest run — pure-function unit tests colocated in lib
 pnpm db:migrate       # Run SQL migrations (lib/db/migrations/) — add "-- --status" for a dry list
 
 # Data utilities (each loads .env.local via dotenv)
-npx tsx scripts/import-trees-csv-autoid.ts <orchard-id> <csv>   # row_id,position,X,Y — auto tree IDs
-npx tsx scripts/import-trees-csv.ts <orchard-id> <csv>          # CSV with explicit tree_id
+npx tsx scripts/import-trees.ts <orchard-id> <file.csv|.json>   # add "--dry-run" to preview
 npx tsx scripts/export-current-trees.ts <orchard-id> [csv|json]
 npx tsx scripts/set-preview.ts <orchard-id> <image-path>
 npx tsx scripts/check-database.ts
@@ -33,7 +32,9 @@ CI (`.github/workflows/ci.yml`) runs typecheck, lint, test, build on every PR �
 ### Auth (Clerk)
 - `proxy.ts` (Next 16's middleware file — there is **no `middleware.ts`**) runs `clerkMiddleware()`; only `/orchards/new` is matcher-protected.
 - **Every mutating API route must call `requireSession()` from `lib/api-auth.ts` itself** (returns 401 JSON); forgetting it makes the route public.
-- No roles: the Clerk instance is invite-only, any signed-in user is a trusted collaborator. (The `users` table from migration 002 and "operator/admin" doc-comments are dead legacy.)
+- **An orchard is a tenant** (migration 048): `orchard_members` maps a Clerk user id to a role — `viewer` < `operator` < `admin` (`lib/roles.ts`, matching CiderPilot's `user_role`). Membership is the access check everywhere; being signed in grants nothing.
+- Guards live in `lib/orchard-access.ts`: `requireOrchardAccess()` / `requireTreeAccess()` in REST routes (return a `NextResponse` on denial), `assertOrchardAccess()` / `assertTreeAccess()` in tRPC, `viewerRole()` in server components, `memberOrchardIds()` to scope a listing. A route that takes an orchard or tree id and skips these is public to every signed-in user.
+- Invitations (`orchard_invitations`) are keyed by **email**, because a Clerk user id does not exist until first sign-in; they are claimed lazily on the first access miss. An existing membership wins — re-accepting an old invitation never changes a role.
 - Env: `CLERK_SECRET_KEY`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `NEXT_PUBLIC_CLERK_SIGN_IN_URL=/login`, `NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/`.
 
 ### API convergence (Sept 2026, in progress)
@@ -46,7 +47,15 @@ This app is being aligned with CiderPilot (see the cidery repo's practices).
 
 ### Data layer (raw SQL, no ORM)
 - `@vercel/postgres` tagged-template `sql` everywhere; dynamic UPDATEs via `buildUpdateSet()` (`lib/db/sql-helpers.ts`) against the column whitelists `TREE_UPDATABLE_COLUMNS` / `ORCHARD_UPDATABLE_COLUMNS` — **never interpolate request-supplied column names**.
-- Tables: `orchards` (config lives in DB, not code — id is a slug of the name), `trees` (`tree_id` unique; `UNIQUE (orchard_id, row_id, position)`; status CHECK), `tree_health_logs` (written by nothing yet), `_migrations`.
+- Tables: `sites` (a grower; holds orchards), `orchards` (config lives in DB, not code — id is a slug of the name; carries `site_id`, `code`, `next_tree_no`), `trees`, `_migrations`.
+
+### Tree identity vs. tree address (migration 049) — read before touching trees
+- **`tree_id` is permanent and opaque**: `OBC-001-0142` = site code, orchard code, tree number. Issued once by `allocateTreeIds()` (`lib/db/trees.ts`), which bumps `orchards.next_tree_no` in the same statement it reads. **Never regenerate it, never derive it from anything, never parse it.** Numbers are never reused, even after a delete.
+- `trees.tree_no` is the same number as a column — that is what the UI shows ("Tree 142"). `trees.legacy_tree_id` holds the pre-049 address-shaped id so old links and exports still resolve; `getTreeById()` falls back to it.
+- **The address is `block_id` + `row_id` + `position`, all nullable and all freely editable.** A tree may be in a block with no row, a row with no block, or unplaced (all three NULL) — which is what a newly discovered tree is.
+- `lib/address.ts` is the single definition of address semantics (`normalizeAddress`, `addressKey`, `formatAddress`, `formatTreeLabel`) and is client-safe. An absent part is **NULL, never `''`**.
+- Uniqueness is `UNIQUE (orchard_id, address_key) DEFERRABLE`, where `address_key` is a generated column that is NULL for an unplaced tree (so any number of unplaced trees may coexist). Bulk paths `SET CONSTRAINTS trees_orchard_address_uniq DEFERRED` so a swap or a shift-the-row-by-one succeeds in one transaction.
+- Moving a tree goes through `setTreeAddress()` / tRPC `tree.setAddress`, which checks the spot is free and logs a `moved` event. `update` deliberately ignores address fields so there is one path that does those things.
 - DECIMAL columns come back **as strings** — decode via `lib/db/decode.ts` (`decodeTreeRow`/`toNum`).
 - `tile_min_zoom`/`tile_max_zoom` are INTEGER — round before insert.
 - Bulk import: `bulkUpsertTrees` (chunked, transactional, `COALESCE` on conflict so sparse CSVs never wipe fields).

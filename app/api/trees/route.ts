@@ -1,12 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireSession } from '@/lib/api-auth';
 import { handleApiError } from '@/lib/api-errors';
-import {
-  getTreesByOrchard,
-  insertTree,
-  checkDuplicateRowPosition,
-  TreeInsertData
-} from '@/lib/db/trees';
+import { getTreesByOrchard, insertTree, TreeInsertData } from '@/lib/db/trees';
+import { formatAddress } from '@/lib/address';
 import { validateTreeRow, formatValidationErrors, TreeRowData } from '@/lib/tree-validation';
 import { serializeTree } from '@/lib/serialize';
 import { insertTreeEvent } from '@/lib/db/tree-events';
@@ -59,6 +55,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const {
       orchard_id,
+      block_id,
       row_id,
       position,
       lat,
@@ -75,13 +72,11 @@ export async function POST(request: NextRequest) {
       notes
     } = body;
 
-    // Validate required fields
-    if (!orchard_id || !row_id || position === undefined || position === null) {
+    // Only the orchard is required: a tree found in the field can be
+    // recorded where it stands and placed in a row later.
+    if (!orchard_id) {
       return NextResponse.json(
-        {
-          error: 'Missing required fields',
-          details: 'orchard_id, row_id, and position are required'
-        },
+        { error: 'Missing required fields', details: 'orchard_id is required' },
         { status: 400 }
       );
     }
@@ -101,21 +96,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check for duplicate row/position
-    const duplicate = await checkDuplicateRowPosition(orchard_id, row_id, position);
-    if (duplicate) {
-      return NextResponse.json(
-        {
-          error: 'Duplicate tree location',
-          details: `A tree already exists at row ${row_id}, position ${position} in orchard ${orchard_id}`
-        },
-        { status: 409 }
-      );
-    }
-
     // Build tree data
     const treeData: TreeInsertData = {
       orchard_id,
+      block_id,
       row_id,
       position,
       lat,
@@ -142,7 +126,7 @@ export async function POST(request: NextRequest) {
         tree_id: tree.tree_id,
         orchard_id: tree.orchard_id,
         event_type: 'created',
-        detail: `${tree.variety ?? 'Unknown variety'} at R${tree.row_id ?? '?'}·P${tree.position ?? '?'}`,
+        detail: `${tree.variety ?? 'Unknown variety'} at ${formatAddress(tree)}`,
         created_by: userId,
       },
       { bestEffort: true }

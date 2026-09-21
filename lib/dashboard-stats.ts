@@ -1,7 +1,7 @@
 import type { ClientTree, TreeStatus } from './types';
 import { TREE_STATUSES } from './types';
 import { dateToYMD } from './dates';
-import { normalizeRowId } from './row-id';
+import { normalizeRowId } from './address';
 import { comparePositions } from './position';
 
 export interface VarietyStat {
