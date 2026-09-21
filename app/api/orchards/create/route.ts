@@ -26,10 +26,11 @@ export async function POST(request: NextRequest) {
     );
 
     const body = await request.json();
-    const { name, location, blobUrl } = body as {
+    const { name, location, blobUrl, timezone } = body as {
       name?: string;
       location?: string;
       blobUrl?: string;
+      timezone?: string;
     };
 
     if (!name || !location || !blobUrl) {
@@ -108,6 +109,7 @@ export async function POST(request: NextRequest) {
     await insertOrchardFull({
       id: orchardId,
       name,
+      timezone,
       location,
       description: 'Orchard orthomosaic imagery',
       center_lat: center.lat,

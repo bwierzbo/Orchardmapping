@@ -10,6 +10,7 @@ import {
 } from '@/lib/phenology';
 import { formatYMD } from '@/lib/dates';
 import { nowLocalIso } from '@/lib/openmeteo';
+import { orchardTimezone } from '@/lib/db/orchards';
 import StageMarker from './StageMarker';
 import RollUpPrompt from './RollUpPrompt';
 import BloomSpread from './BloomSpread';
@@ -27,7 +28,7 @@ export default async function StageCard({
   orchardId: string;
   canEdit: boolean;
 }) {
-  const today = nowLocalIso().slice(0, 10);
+  const today = nowLocalIso(await orchardTimezone(orchardId)).slice(0, 10);
   const season = seasonOf(today);
   const [marks, varieties, rollUps, blooms] = await Promise.all([
     listMarks(orchardId).catch(() => []),

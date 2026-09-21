@@ -24,6 +24,7 @@ export async function POST(request: NextRequest) {
     const location = typeof body.location === 'string' ? body.location.trim() : '';
     const lat = Number(body.lat);
     const lng = Number(body.lng);
+    const timezone = typeof body.timezone === 'string' ? body.timezone : undefined;
 
     if (!name) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 });
@@ -56,6 +57,7 @@ export async function POST(request: NextRequest) {
     const orchard = await insertOrchardFull({
       id: orchardId,
       name,
+      timezone,
       location: location || 'Discovered location',
       description: 'Created from a found tree (no imagery yet)',
       center_lat: lat,

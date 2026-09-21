@@ -89,10 +89,11 @@ async function reset() {
     }
   }
 
-  const now = nowLocalIso();
-  const archive = await fetchArchiveHours(LAT, LNG, '2026-01-01', now.slice(0, 10));
+  const TZ = 'America/Los_Angeles'; // the test harness sits at the real coordinates
+  const now = nowLocalIso(TZ);
+  const archive = await fetchArchiveHours(LAT, LNG, '2026-01-01', now.slice(0, 10), TZ);
   const written = await insertHours(TEST_ORCHARD_ID, archive);
-  const recent = await fetchRecentHours(LAT, LNG, 10, now);
+  const recent = await fetchRecentHours(LAT, LNG, 10, now, TZ);
   const hours = written + (await insertHours(TEST_ORCHARD_ID, recent));
   const { rows: t } = await sql`
     SELECT COUNT(*)::int AS n FROM trees WHERE orchard_id = ${TEST_ORCHARD_ID}`;

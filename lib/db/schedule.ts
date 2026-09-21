@@ -18,6 +18,7 @@ import {
 } from '../ipm-schedule';
 import { seasonOf } from '../phenology';
 import { nowLocalIso } from '../openmeteo';
+import { orchardTimezone } from './orchards';
 
 /**
  * This orchard's program, placed on this season.
@@ -29,8 +30,11 @@ import { nowLocalIso } from '../openmeteo';
  */
 export async function resolveSchedule(
   orchardId: string,
-  asOfYmd: string = nowLocalIso().slice(0, 10)
+  asOfYmdInput?: string
 ): Promise<ResolvedStep[]> {
+  // "Today" is the orchard's today, not the server's
+  const asOfYmd =
+    asOfYmdInput ?? nowLocalIso(await orchardTimezone(orchardId)).slice(0, 10);
   const season = seasonOf(asOfYmd);
 
   const [steps, marks, completions, sprays, trapCatches, postures, kickback] =

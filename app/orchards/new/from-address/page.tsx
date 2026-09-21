@@ -135,6 +135,8 @@ export default function NewOrchardFromAddressPage() {
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
+          // the browser's own zone: whoever adds an orchard is nearly always in it
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           name: name.trim(),
           location: address.trim() || 'Discovered location',
           lat: point.lat,

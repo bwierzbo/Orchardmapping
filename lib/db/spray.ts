@@ -1,6 +1,5 @@
 import { sql } from '@vercel/postgres';
 import type { ProgramMode, SprayMaterial, PriorApplication } from '../spray-rules';
-import { TIMEZONE } from '../openmeteo';
 
 /**
  * Spray/IPM persistence: the material library, the application record,
@@ -127,7 +126,11 @@ export async function applicationHistory(
 ): Promise<PriorApplication[]> {
   const { rows } = await sql`
     SELECT material_key, material_name, applied_at,
-           to_char(applied_at AT TIME ZONE ${TIMEZONE}, 'YYYY-MM-DD') AS applied_on
+           to_char(
+             applied_at AT TIME ZONE
+               (SELECT o.timezone FROM orchards o WHERE o.id = spray_applications.orchard_id),
+             'YYYY-MM-DD'
+           ) AS applied_on
     FROM spray_applications
     WHERE orchard_id = ${orchardId}
       AND deleted_at IS NULL

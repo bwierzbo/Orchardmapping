@@ -239,6 +239,8 @@ export default function DiscoverPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+          // the browser's own zone: whoever adds an orchard is nearly always in it
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             name: newName.trim(),
             location: newLocation.trim(),
             lat: point.lat,

@@ -1,5 +1,6 @@
 import { sql, db } from '@vercel/postgres';
 import { resolveSiteForNewOrchard, nextOrchardCode } from './sites';
+import { resolveTimezone } from '../openmeteo';
 import { OrchardBoundary, OrchardConfig } from '../types';
 import { buildUpdateSet } from './sql-helpers';
 import { toNum } from './decode';
@@ -38,6 +39,8 @@ export const ORCHARD_UPDATABLE_COLUMNS = [
 export interface Orchard {
   id: string;
   name: string;
+  /** IANA zone, NOT NULL since migration 052. */
+  timezone?: string;
   location?: string;
   description?: string;
   center_lat?: number;
@@ -85,6 +88,8 @@ export interface OrchardFullInsertData {
   name: string;
   location: string;
   description?: string;
+  /** IANA zone. Resolved from the coordinates when the caller omits it. */
+  timezone?: string;
   center_lat: number;
   center_lng: number;
   bounds_min_lng?: number;
@@ -111,6 +116,8 @@ export function dbRowToOrchardConfig(row: Orchard): OrchardConfig {
   return {
     id: row.id,
     name: row.name,
+    // Pacific only as a last resort for a row written before migration 052
+    timezone: row.timezone || 'America/Los_Angeles',
     location: row.location || '',
     description: row.description || '',
     center: [toNum(row.center_lng, 0), toNum(row.center_lat, 0)],
@@ -273,6 +280,20 @@ export async function insertOrchardFull(
   if (!ownerUserId) {
     throw new Error('An orchard needs an owner: pass the creator’s user id');
   }
+
+  // Resolve the clock before opening the transaction — this is a network
+  // call and has no business inside one. The caller's own zone is trusted
+  // first (whoever is adding an orchard is nearly always in it), then the
+  // coordinates. Guessing is worse than failing: a wrong zone is silent,
+  // and it would quietly shift every weather hour and spray date.
+  const timezone =
+    data.timezone ?? (await resolveTimezone(data.center_lat, data.center_lng));
+  if (!timezone) {
+    throw new Error(
+      'Could not work out this orchard’s timezone. Try again, or supply one explicitly.'
+    );
+  }
+
   const client = await db.connect();
   try {
     await client.query('BEGIN');
@@ -284,7 +305,7 @@ export async function insertOrchardFull(
 
     const result = await client.sql`
       INSERT INTO orchards (
-        id, name, location, description, site_id, code,
+        id, name, location, description, site_id, code, timezone,
         center_lat, center_lng,
         bounds_min_lng, bounds_min_lat, bounds_max_lng, bounds_max_lat,
         default_zoom, min_zoom, max_zoom, tile_min_zoom, tile_max_zoom,
@@ -292,7 +313,7 @@ export async function insertOrchardFull(
         boundary_geojson
       ) VALUES (
         ${data.id}, ${data.name}, ${data.location}, ${data.description || null},
-        ${siteId}, ${code},
+        ${siteId}, ${code}, ${timezone},
         ${data.center_lat}, ${data.center_lng},
         ${data.bounds_min_lng || null}, ${data.bounds_min_lat || null},
         ${data.bounds_max_lng || null}, ${data.bounds_max_lat || null},
@@ -328,6 +349,18 @@ export async function insertOrchardFull(
   } finally {
     client.release();
   }
+}
+
+/**
+ * This orchard's local clock zone.
+ *
+ * Falls back to Pacific only if the orchard is missing entirely, which
+ * callers treat as "no such orchard" anyway — better than throwing deep
+ * inside a weather sync.
+ */
+export async function orchardTimezone(orchardId: string): Promise<string> {
+  const { rows } = await sql`SELECT timezone FROM orchards WHERE id = ${orchardId} LIMIT 1`;
+  return (rows[0]?.timezone as string | undefined) || 'America/Los_Angeles';
 }
 
 /**

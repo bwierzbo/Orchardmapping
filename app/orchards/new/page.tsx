@@ -89,7 +89,9 @@ export default function NewOrchardPage() {
       const response = await fetch('/api/orchards/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim(), location: location.trim(), blobUrl: blob.url }),
+        body: JSON.stringify({
+          // the browser's own zone: whoever adds an orchard is nearly always in it
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, name: name.trim(), location: location.trim(), blobUrl: blob.url }),
         credentials: 'include',
       });
       const result = await response.json();

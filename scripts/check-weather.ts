@@ -10,10 +10,11 @@ import { getHours, priorSeasonAggregates, latestHourTs } from '../lib/db/weather
 import { buildSeasonSummary } from '../lib/weather-summary';
 import { chillSeasonWindow } from '../lib/chill';
 import { nowLocalIso } from '../lib/openmeteo';
+import { orchardTimezone } from '../lib/db/orchards';
 
 async function main() {
   const orchardId = process.argv[2] ?? 'finn-hall';
-  const asOf = nowLocalIso().slice(0, 10);
+  const asOf = nowLocalIso(await orchardTimezone(orchardId)).slice(0, 10);
   const w = chillSeasonWindow(asOf);
   const [cw, yh, prior, latest] = await Promise.all([
     getHours(orchardId, w.start, w.end),
