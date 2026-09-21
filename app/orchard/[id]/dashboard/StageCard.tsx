@@ -1,5 +1,5 @@
 import { Sprout } from 'lucide-react';
-import { listMarks, listVarieties } from '@/lib/db/phenology';
+import { listMarks, listVarieties, pendingRollUps } from '@/lib/db/phenology';
 import {
   PHENOLOGY_LABEL,
   currentStage,
@@ -10,6 +10,7 @@ import {
 import { formatYMD } from '@/lib/dates';
 import { nowLocalIso } from '@/lib/openmeteo';
 import StageMarker from './StageMarker';
+import RollUpPrompt from './RollUpPrompt';
 
 /**
  * Where the block is in the season, and the control to record the next
@@ -24,12 +25,14 @@ export default async function StageCard({
   orchardId: string;
   canEdit: boolean;
 }) {
-  const [marks, varieties] = await Promise.all([
-    listMarks(orchardId).catch(() => []),
-    listVarieties(orchardId).catch(() => []),
-  ]);
   const today = nowLocalIso().slice(0, 10);
   const season = seasonOf(today);
+  const [marks, varieties, rollUps] = await Promise.all([
+    listMarks(orchardId).catch(() => []),
+    listVarieties(orchardId).catch(() => []),
+    // What walk mode has seen but the programme has not been told.
+    pendingRollUps(orchardId, season).catch(() => []),
+  ]);
   const current = currentStage(marks, today);
   const thisSeason = marks.filter((m) => seasonOf(m.observedOn) === season);
   const remaining = remainingStages(marks, today);
@@ -65,6 +68,19 @@ export default async function StageCard({
           />
         )}
       </div>
+
+      {canEdit && rollUps.length > 0 && (
+        <RollUpPrompt
+          orchardId={orchardId}
+          suggestions={rollUps.map((r) => ({
+            variety: r.variety,
+            stage: r.stage,
+            atOrPast: r.atOrPast,
+            observed: r.observed,
+            reachedOn: r.reachedOn,
+          }))}
+        />
+      )}
 
       {thisSeason.length > 0 && (
         <ol className="mt-4 flex flex-wrap gap-x-4 gap-y-1">

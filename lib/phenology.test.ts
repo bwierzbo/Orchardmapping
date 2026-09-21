@@ -11,7 +11,11 @@ import {
   stageSpread,
   stageDateLatest,
   onePassWindow,
+  stageFromLabel,
+  rollUpFromTrees,
+  rollUpSuggestions,
   type PhenologyMark,
+  type TreeStageObservation,
 } from './phenology';
 
 const mark = (stage: string, observedOn: string) =>
@@ -203,5 +207,153 @@ describe('onePassWindow', () => {
     expect(one.start).toBe('2026-03-14');
     expect(one.end).toBe('2026-03-21');
     expect(onePassWindow([]).start).toBeNull();
+  });
+});
+
+describe('stageFromLabel', () => {
+  it('maps what walk mode stores onto a stage key', () => {
+    expect(stageFromLabel('Green Tip')).toBe('green_tip');
+    expect(stageFromLabel('Half-Inch Green')).toBe('half_inch_green');
+    expect(stageFromLabel('Petal Fall')).toBe('petal_fall');
+    expect(stageFromLabel('  full bloom ')).toBe('full_bloom');
+  });
+
+  it('returns null for anything it does not recognise', () => {
+    expect(stageFromLabel('Blossoming')).toBeNull();
+    expect(stageFromLabel('')).toBeNull();
+  });
+});
+
+describe('rollUpFromTrees', () => {
+  const obs = (treeId: string, variety: string, stage: string, on = '2026-04-20') =>
+    ({ treeId, variety, stage, observedOn: on }) as TreeStageObservation;
+
+  it('calls a stage once three quarters of the looked-at trees are there', () => {
+    const [r] = rollUpFromTrees(
+      [
+        obs('t1', 'Harrison', 'pink'),
+        obs('t2', 'Harrison', 'pink'),
+        obs('t3', 'Harrison', 'pink'),
+        obs('t4', 'Harrison', 'tight_cluster'),
+      ],
+      2026
+    );
+    expect(r.stage).toBe('pink');
+    expect(r.atOrPast).toBe(3);
+    expect(r.observed).toBe(4);
+    expect(r.ready).toBe(true);
+  });
+
+  it('does not call it when too few are there', () => {
+    const [r] = rollUpFromTrees(
+      [
+        obs('t1', 'Harrison', 'pink'),
+        obs('t2', 'Harrison', 'tight_cluster'),
+        obs('t3', 'Harrison', 'tight_cluster'),
+        obs('t4', 'Harrison', 'tight_cluster'),
+      ],
+      2026
+    );
+    // Tight cluster clears it; pink does not
+    expect(r.stage).toBe('tight_cluster');
+    expect(r.ready).toBe(true);
+  });
+
+  it('counts a tree at its furthest sighting — trees do not go backwards', () => {
+    const [r] = rollUpFromTrees(
+      [
+        obs('t1', 'Dabinett', 'tight_cluster', '2026-04-10'),
+        obs('t1', 'Dabinett', 'pink', '2026-04-20'),
+      ],
+      2026
+    );
+    expect(r.observed).toBe(1);
+    expect(r.stage).toBe('pink');
+  });
+
+  it('does not hold an unobserved tree against the variety', () => {
+    // Two of the block's twenty Harrison looked at, both at pink.
+    const [r] = rollUpFromTrees(
+      [obs('t1', 'Harrison', 'pink'), obs('t2', 'Harrison', 'pink')],
+      2026
+    );
+    expect(r.share).toBe(1);
+    expect(r.ready).toBe(true);
+  });
+
+  it('separates varieties', () => {
+    const out = rollUpFromTrees(
+      [
+        obs('t1', 'Harrison', 'pink'),
+        obs('t2', 'Dabinett', 'full_bloom'),
+      ],
+      2026
+    );
+    expect(out.map((r) => [r.variety, r.stage])).toEqual([
+      ['Dabinett', 'full_bloom'],
+      ['Harrison', 'pink'],
+    ]);
+  });
+
+  it('ignores last season and trees with no variety', () => {
+    expect(rollUpFromTrees([obs('t1', 'Harrison', 'pink', '2025-04-20')], 2026)).toEqual([]);
+    expect(
+      rollUpFromTrees(
+        [{ treeId: 't1', variety: null, stage: 'pink', observedOn: '2026-04-20' }],
+        2026
+      )
+    ).toEqual([]);
+  });
+
+  it('dates the call to the observation that got it over the line', () => {
+    const [r] = rollUpFromTrees(
+      [
+        obs('t1', 'Harrison', 'pink', '2026-04-18'),
+        obs('t2', 'Harrison', 'pink', '2026-04-22'),
+      ],
+      2026
+    );
+    expect(r.reachedOn).toBe('2026-04-22');
+  });
+});
+
+describe('rollUpSuggestions', () => {
+  const rollUp = {
+    variety: 'Harrison',
+    stage: 'pink' as const,
+    atOrPast: 3,
+    observed: 4,
+    share: 0.75,
+    reachedOn: '2026-04-20',
+    ready: true,
+  };
+
+  it('suggests a stage the programme has not been told about', () => {
+    expect(rollUpSuggestions([rollUp], [], 2026)).toHaveLength(1);
+  });
+
+  it('stays quiet once that variety is already marked there', () => {
+    const marked: PhenologyMark[] = [
+      { stage: 'pink', observedOn: '2026-04-20', scope: 'variety', scopeValue: 'Harrison' },
+    ];
+    expect(rollUpSuggestions([rollUp], marked, 2026)).toEqual([]);
+  });
+
+  it('stays quiet when the variety is already further along', () => {
+    const marked: PhenologyMark[] = [
+      { stage: 'petal_fall', observedOn: '2026-05-12', scope: 'variety', scopeValue: 'Harrison' },
+    ];
+    expect(rollUpSuggestions([rollUp], marked, 2026)).toEqual([]);
+  });
+
+  it('is not silenced by a DIFFERENT variety being marked', () => {
+    const marked: PhenologyMark[] = [
+      { stage: 'pink', observedOn: '2026-04-18', scope: 'variety', scopeValue: 'Dabinett' },
+    ];
+    expect(rollUpSuggestions([rollUp], marked, 2026)).toHaveLength(1);
+  });
+
+  it('never suggests something that has not cleared the threshold', () => {
+    expect(rollUpSuggestions([{ ...rollUp, ready: false }], [], 2026)).toEqual([]);
   });
 });
