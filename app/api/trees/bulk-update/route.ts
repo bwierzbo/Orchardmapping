@@ -4,6 +4,7 @@ import { handleApiError } from '@/lib/api-errors';
 import { bulkUpsertTrees, BulkUpsertRow } from '@/lib/db/trees';
 import { orchardExists } from '@/lib/db/orchards';
 import { validateBulkImport, formatValidationErrors, TreeRowData } from '@/lib/tree-validation';
+import { requireOrchardAccess, assertOrchardAccess } from '@/lib/orchard-access';
 
 /**
  * POST /api/trees/bulk-update
@@ -22,7 +23,7 @@ import { validateBulkImport, formatValidationErrors, TreeRowData } from '@/lib/t
  */
 export async function POST(request: NextRequest) {
   try {
-    const { response } = await requireSession();
+    const { userId, response } = await requireSession();
     if (response) return response;
 
     const body = await request.json();
@@ -41,6 +42,9 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const denied = await assertOrchardAccess(orchard_id, userId, 'operator');
+    if (denied) return denied;
 
     if (!(await orchardExists(orchard_id))) {
       return NextResponse.json(

@@ -1,5 +1,24 @@
 import { z } from 'zod';
-import { router, publicProcedure, protectedProcedure } from './init';
+import {
+  router,
+  publicProcedure,
+  protectedProcedure,
+  orchardViewerProcedure,
+  orchardOperatorProcedure,
+  orchardAdminProcedure,
+  treeViewerProcedure,
+  treeOperatorProcedure,
+  recordOperatorProcedure,
+} from './init';
+import { memberOrchardIds, roleAtLeast, ORCHARD_ROLES } from '@/lib/orchard-access';
+import {
+  listMembers,
+  listPendingInvitations,
+  inviteMember,
+  revokeInvitation,
+  setMemberRole,
+  removeMember,
+} from '@/lib/db/members';
 import {
   getTreesByOrchard,
   getTreeById,
@@ -83,8 +102,14 @@ import { parseBoundary } from '@/lib/orchard-boundary';
  */
 export const appRouter = router({
   orchard: router({
-    list: publicProcedure.query(async () => getAllOrchardConfigs()),
-    get: publicProcedure
+    // Only the orchards you belong to. This returned every orchard in the
+    // database, which is how one signed-in user found everyone else's.
+    list: protectedProcedure.query(async ({ ctx }) => {
+      const mine = new Set(await memberOrchardIds(ctx.userId));
+      const all = await getAllOrchardConfigs();
+      return all.filter((o) => mine.has(o.id));
+    }),
+    get: orchardViewerProcedure
       .input(z.object({ orchardId: z.string().min(1) }))
       .query(async ({ input }) => {
         const config = await getOrchardConfigById(input.orchardId);
@@ -93,7 +118,7 @@ export const appRouter = router({
         }
         return config;
       }),
-    setBoundary: protectedProcedure
+    setBoundary: orchardOperatorProcedure
       .input(z.object({ orchardId: z.string().min(1), boundary: z.unknown() }))
       .mutation(async ({ input }) => {
         const boundary = parseBoundary(input.boundary);
@@ -124,13 +149,13 @@ export const appRouter = router({
   }),
 
   tree: router({
-    list: publicProcedure
+    list: orchardViewerProcedure
       .input(z.object({ orchardId: z.string().min(1) }))
       .query(async ({ input }) => {
         const trees = await getTreesByOrchard(input.orchardId);
         return trees.map(serializeTree);
       }),
-    get: publicProcedure
+    get: treeViewerProcedure
       .input(z.object({ treeId: z.string().min(1) }))
       .query(async ({ input }) => {
         const tree = await getTreeById(input.treeId);
@@ -139,7 +164,7 @@ export const appRouter = router({
         }
         return serializeTree(tree);
       }),
-    events: publicProcedure
+    events: treeViewerProcedure
       .input(z.object({ treeId: z.string().min(1) }))
       .query(async ({ input }) => {
         const events = await listTreeEvents(input.treeId);
@@ -149,7 +174,7 @@ export const appRouter = router({
           created_at: e.created_at ? new Date(e.created_at).toISOString() : null,
         }));
       }),
-    create: protectedProcedure
+    create: orchardOperatorProcedure
       .input(
         z.object({
           orchard_id: z.string().min(1),
@@ -209,7 +234,7 @@ export const appRouter = router({
         );
         return serializeTree(tree);
       }),
-    update: protectedProcedure
+    update: treeOperatorProcedure
       .input(
         z.object({
           treeId: z.string().min(1),
@@ -270,7 +295,7 @@ export const appRouter = router({
         }
         return serializeTree(updated);
       }),
-    delete: protectedProcedure
+    delete: treeOperatorProcedure
       .input(z.object({ treeId: z.string().min(1) }))
       .mutation(async ({ input, ctx }) => {
         const before = await getTreeById(input.treeId);
@@ -293,7 +318,7 @@ export const appRouter = router({
         }
         return { success: true };
       }),
-    logEvent: protectedProcedure
+    logEvent: treeOperatorProcedure
       .input(
         z.object({
           treeId: z.string().min(1),
@@ -323,10 +348,10 @@ export const appRouter = router({
   }),
 
   area: router({
-    list: publicProcedure
+    list: orchardViewerProcedure
       .input(z.object({ orchardId: z.string().min(1) }))
       .query(async ({ input }) => listAreas(input.orchardId)),
-    create: protectedProcedure
+    create: orchardOperatorProcedure
       .input(
         z.object({
           orchardId: z.string().min(1),
@@ -352,7 +377,7 @@ export const appRouter = router({
           created_by: ctx.userId,
         });
       }),
-    update: protectedProcedure
+    update: recordOperatorProcedure('area')
       .input(
         z.object({
           id: z.number().int().positive(),
@@ -377,7 +402,7 @@ export const appRouter = router({
         if (!area) throw new TRPCError({ code: 'NOT_FOUND', message: 'Area not found' });
         return area;
       }),
-    delete: protectedProcedure
+    delete: recordOperatorProcedure('area')
       .input(z.object({ id: z.number().int().positive() }))
       .mutation(async ({ input }) => {
         const deleted = await deleteArea(input.id);
@@ -393,7 +418,7 @@ export const appRouter = router({
    */
   spray: router({
     /** Library scoped to this orchard's program mode, plus the mode itself. */
-    materials: publicProcedure
+    materials: orchardViewerProcedure
       .input(z.object({ orchardId: z.string().min(1) }))
       .query(async ({ input }) => {
         const [library, mode] = await Promise.all([
@@ -404,7 +429,7 @@ export const appRouter = router({
       }),
 
     /** What to reach for against a target, best-fit first. */
-    recommend: publicProcedure
+    recommend: orchardViewerProcedure
       .input(z.object({ orchardId: z.string().min(1), target: z.string().min(1) }))
       .query(async ({ input }) => {
         const [library, mode] = await Promise.all([
@@ -414,13 +439,13 @@ export const appRouter = router({
         return { mode, options: recommendFor(library, input.target, mode) };
       }),
 
-    applications: publicProcedure
+    applications: orchardViewerProcedure
       .input(z.object({ orchardId: z.string().min(1), limit: z.number().int().min(1).max(500).optional() }))
       .query(async ({ input }) => listApplications(input.orchardId, input.limit ?? 100)),
 
     /** Dry run — what would this application trigger? Drives the live
      *  warnings in the form before anything is saved. */
-    check: publicProcedure
+    check: orchardViewerProcedure
       .input(
         z.object({
           orchardId: z.string().min(1),
@@ -446,7 +471,7 @@ export const appRouter = router({
         return { findings, blocked: hasBlocker(findings) };
       }),
 
-    record: protectedProcedure
+    record: orchardOperatorProcedure
       .input(
         z.object({
           orchardId: z.string().min(1),
@@ -494,14 +519,14 @@ export const appRouter = router({
         return { application, findings };
       }),
 
-    setMode: protectedProcedure
+    setMode: orchardOperatorProcedure
       .input(z.object({ orchardId: z.string().min(1), mode: z.enum(PROGRAM_MODES) }))
       .mutation(async ({ input }) => {
         await setProgramMode(input.orchardId, input.mode);
         return { success: true, mode: input.mode };
       }),
 
-    deleteApplication: protectedProcedure
+    deleteApplication: recordOperatorProcedure('sprayApplication')
       .input(z.object({ id: z.number().int().positive() }))
       .mutation(async ({ input }) => {
         const ok = await deleteApplication(input.id);
@@ -516,7 +541,7 @@ export const appRouter = router({
    * spray.recommend without a second mapping.
    */
   pest: router({
-    list: publicProcedure
+    list: orchardViewerProcedure
       .input(z.object({ orchardId: z.string().min(1).optional() }).optional())
       .query(async ({ input }) => {
         const entries = await listPests();
@@ -526,7 +551,7 @@ export const appRouter = router({
         return { entries, counts };
       }),
 
-    get: publicProcedure
+    get: orchardViewerProcedure
       .input(z.object({ key: z.string().min(1), orchardId: z.string().min(1).optional() }))
       .query(async ({ input }) => {
         const entry = await getPest(input.key);
@@ -537,13 +562,13 @@ export const appRouter = router({
         return { entry, observations };
       }),
 
-    observations: publicProcedure
+    observations: orchardViewerProcedure
       .input(z.object({ orchardId: z.string().min(1), pestKey: z.string().optional() }))
       .query(async ({ input }) => listObservations(input.orchardId, input.pestKey)),
 
     /** Log a sighting — this is both the scouting record and the photo
      *  that grows the orchard's own reference collection. */
-    observe: protectedProcedure
+    observe: treeOperatorProcedure
       .input(
         z.object({
           orchardId: z.string().min(1),
@@ -559,7 +584,7 @@ export const appRouter = router({
         insertObservation({ ...input, createdBy: ctx.userId ?? null }),
       ),
 
-    deleteObservation: protectedProcedure
+    deleteObservation: recordOperatorProcedure('pestObservation')
       .input(z.object({ id: z.number().int().positive() }))
       .mutation(async ({ input }) => {
         const ok = await deleteObservation(input.id);
@@ -572,7 +597,7 @@ export const appRouter = router({
      * recording it is what stops the coverage check treating the pest
      * as an oversight.
      */
-    setPosture: protectedProcedure
+    setPosture: orchardOperatorProcedure
       .input(
         z.object({
           orchardId: z.string().min(1),
@@ -587,7 +612,7 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    clearPosture: protectedProcedure
+    clearPosture: orchardOperatorProcedure
       .input(z.object({ orchardId: z.string().min(1), pestKey: z.string().min(1) }))
       .mutation(async ({ input }) => {
         await clearPosture(input.orchardId, input.pestKey);
@@ -601,11 +626,11 @@ export const appRouter = router({
    * when it actually got there.
    */
   phenology: router({
-    list: publicProcedure
+    list: orchardViewerProcedure
       .input(z.object({ orchardId: z.string().min(1) }))
       .query(async ({ input }) => listMarks(input.orchardId)),
 
-    varieties: publicProcedure
+    varieties: orchardViewerProcedure
       .input(z.object({ orchardId: z.string().min(1) }))
       .query(async ({ input }) => listVarieties(input.orchardId)),
 
@@ -614,7 +639,7 @@ export const appRouter = router({
      * block of eighteen varieties arriving within a few days, the
      * exceptions are the short list and the rest is one tap.
      */
-    markAll: protectedProcedure
+    markAll: orchardOperatorProcedure
       .input(
         z.object({
           orchardId: z.string().min(1),
@@ -640,7 +665,7 @@ export const appRouter = router({
         return { marked };
       }),
 
-    mark: protectedProcedure
+    mark: orchardOperatorProcedure
       .input(
         z.object({
           orchardId: z.string().min(1),
@@ -654,7 +679,7 @@ export const appRouter = router({
       )
       .mutation(async ({ input, ctx }) => markStage({ ...input, createdBy: ctx.userId })),
 
-    unmark: protectedProcedure
+    unmark: recordOperatorProcedure('phenologyMark')
       .input(z.object({ id: z.number().int().positive() }))
       .mutation(async ({ input }) => {
         const ok = await unmarkStage(input.id);
@@ -670,13 +695,13 @@ export const appRouter = router({
    */
   program: router({
     /** What the program is asking for, small enough for the map. */
-    summary: publicProcedure
+    summary: orchardViewerProcedure
       .input(z.object({ orchardId: z.string().min(1) }))
       .query(async ({ input }) => summariseSchedule(input.orchardId)),
 
     /** Turn a step on or off for this orchard. Global steps are regional
      *  agronomy; whether an orchard runs one is a local decision. */
-    setEnabled: protectedProcedure
+    setEnabled: orchardOperatorProcedure
       .input(
         z.object({
           orchardId: z.string().min(1),
@@ -689,7 +714,7 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    complete: protectedProcedure
+    complete: orchardOperatorProcedure
       .input(
         z.object({
           orchardId: z.string().min(1),
@@ -700,7 +725,7 @@ export const appRouter = router({
       )
       .mutation(async ({ input, ctx }) => completeStep({ ...input, createdBy: ctx.userId })),
 
-    uncomplete: protectedProcedure
+    uncomplete: orchardOperatorProcedure
       .input(
         z.object({
           orchardId: z.string().min(1),
@@ -723,7 +748,7 @@ export const appRouter = router({
    * a reading means, which is interpretation and lives in lib.
    */
   nutrition: router({
-    setIntent: protectedProcedure
+    setIntent: orchardOperatorProcedure
       .input(
         z.object({
           orchardId: z.string().min(1),
@@ -736,7 +761,7 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    recordTissue: protectedProcedure
+    recordTissue: orchardOperatorProcedure
       .input(
         z.object({
           orchardId: z.string().min(1),
@@ -754,7 +779,7 @@ export const appRouter = router({
         return { id };
       }),
 
-    recordSoil: protectedProcedure
+    recordSoil: orchardOperatorProcedure
       .input(
         z.object({
           orchardId: z.string().min(1),
@@ -782,7 +807,7 @@ export const appRouter = router({
    * point for the summer half of the year.
    */
   trap: router({
-    list: publicProcedure
+    list: orchardViewerProcedure
       .input(
         z.object({
           orchardId: z.string().min(1),
@@ -793,7 +818,7 @@ export const appRouter = router({
         listTraps(input.orchardId, input.season ?? new Date().getFullYear()),
       ),
 
-    add: protectedProcedure
+    add: orchardOperatorProcedure
       .input(
         z.object({
           orchardId: z.string().min(1),
@@ -811,7 +836,7 @@ export const appRouter = router({
       }),
 
     /** Place a trap on the map, or drag one already there. */
-    move: protectedProcedure
+    move: recordOperatorProcedure('trap')
       .input(
         z.object({
           id: z.number().int().positive(),
@@ -825,7 +850,7 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    retire: protectedProcedure
+    retire: recordOperatorProcedure('trap')
       .input(
         z.object({
           id: z.number().int().positive(),
@@ -839,7 +864,7 @@ export const appRouter = router({
       }),
 
     /** The weekly round arrives as one submission, not one per trap. */
-    recordCounts: protectedProcedure
+    recordCounts: orchardOperatorProcedure
       .input(
         z.object({
           orchardId: z.string().min(1),
@@ -865,6 +890,65 @@ export const appRouter = router({
           });
         }
         return { recorded: input.entries.length };
+      }),
+  }),
+
+  /**
+   * Who may reach this orchard. Everything here is admin-only except the
+   * listing, which any member may see — knowing who else can change your
+   * records is not privileged information.
+   */
+  members: router({
+    list: orchardViewerProcedure
+      .input(z.object({ orchardId: z.string().min(1) }))
+      .query(async ({ input, ctx }) => ({
+        members: await listMembers(input.orchardId),
+        pending: roleAtLeast(ctx.role, 'admin')
+          ? await listPendingInvitations(input.orchardId)
+          : [],
+        yourRole: ctx.role,
+      })),
+
+    invite: orchardAdminProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          email: z.string().trim().email(),
+          role: z.enum(ORCHARD_ROLES),
+        })
+      )
+      .mutation(({ input, ctx }) =>
+        inviteMember(input.orchardId, input.email, input.role, ctx.userId)
+      ),
+
+    revokeInvitation: orchardAdminProcedure
+      .input(z.object({ orchardId: z.string().min(1), id: z.number().int().positive() }))
+      .mutation(async ({ input }) => {
+        const ok = await revokeInvitation(input.orchardId, input.id);
+        if (!ok) throw new TRPCError({ code: 'NOT_FOUND', message: 'Invitation not found' });
+        return { success: true };
+      }),
+
+    setRole: orchardAdminProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          userId: z.string().min(1),
+          role: z.enum(ORCHARD_ROLES),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const r = await setMemberRole(input.orchardId, input.userId, input.role);
+        if (!r.ok) throw new TRPCError({ code: 'BAD_REQUEST', message: r.reason });
+        return { success: true };
+      }),
+
+    remove: orchardAdminProcedure
+      .input(z.object({ orchardId: z.string().min(1), userId: z.string().min(1) }))
+      .mutation(async ({ input }) => {
+        const r = await removeMember(input.orchardId, input.userId);
+        if (!r.ok) throw new TRPCError({ code: 'BAD_REQUEST', message: r.reason });
+        return { success: true };
       }),
   }),
 });

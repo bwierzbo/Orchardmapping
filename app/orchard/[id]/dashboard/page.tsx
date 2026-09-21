@@ -5,8 +5,7 @@ import { auth } from '@clerk/nextjs/server';
 import type { Metadata } from 'next';
 import {
   ArrowLeft, BarChart3, Bug, CalendarRange, FlaskConical,
-  Map as MapIcon, SprayCan, Target,
-} from 'lucide-react';
+  Map as MapIcon, SprayCan, Target, Users } from 'lucide-react';
 import { getOrchardConfigById, getAllOrchardConfigs } from '@/lib/db/orchards';
 import { getTreesByOrchard } from '@/lib/db/trees';
 import { serializeTree } from '@/lib/serialize';
@@ -15,6 +14,7 @@ import OrchardSwitcher from '../viewer/OrchardSwitcher';
 import SeasonCard from './SeasonCard';
 import StageCard from './StageCard';
 import DueNowCard from './DueNowCard';
+import { viewerRole, roleAtLeast } from '@/lib/orchard-access';
 
 // Live DB data; never prerender at build time
 export const dynamic = 'force-dynamic';
@@ -44,6 +44,10 @@ export default async function DashboardPage({ params }: PageProps) {
     auth(),
   ]);
   if (!orchard) notFound();
+
+  // The layout already proved membership; this decides operator vs viewer.
+  const role = await viewerRole(id);
+  const canEdit = !!role && roleAtLeast(role, 'operator');
 
   const trees = dbTrees.map(serializeTree);
   const stats = computeOrchardStats(trees);
@@ -113,6 +117,13 @@ export default async function DashboardPage({ params }: PageProps) {
               Traps
             </Link>
             <Link
+              href={`/orchard/${orchard.id}/members`}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-bark hover:text-ink rounded-lg hover:bg-canopy-50 dark:hover:bg-canopy-600/10 whitespace-nowrap"
+            >
+              <Users aria-hidden size={15} />
+              People
+            </Link>
+            <Link
               href={`/orchard/${orchard.id}/nutrition`}
               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-bark hover:text-ink rounded-lg hover:bg-canopy-50 dark:hover:bg-canopy-600/10 whitespace-nowrap"
             >
@@ -152,7 +163,7 @@ export default async function DashboardPage({ params }: PageProps) {
             </section>
           }
         >
-          <DueNowCard orchardId={orchard.id} canEdit={!!userId} />
+          <DueNowCard orchardId={orchard.id} canEdit={canEdit} />
         </Suspense>
 
         <Suspense
@@ -163,7 +174,7 @@ export default async function DashboardPage({ params }: PageProps) {
             </section>
           }
         >
-          <StageCard orchardId={orchard.id} canEdit={!!userId} />
+          <StageCard orchardId={orchard.id} canEdit={canEdit} />
         </Suspense>
 
         <Suspense
