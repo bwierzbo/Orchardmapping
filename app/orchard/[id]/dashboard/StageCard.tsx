@@ -1,5 +1,5 @@
 import { Sprout } from 'lucide-react';
-import { listMarks } from '@/lib/db/phenology';
+import { listMarks, listVarieties } from '@/lib/db/phenology';
 import {
   PHENOLOGY_LABEL,
   currentStage,
@@ -24,7 +24,10 @@ export default async function StageCard({
   orchardId: string;
   canEdit: boolean;
 }) {
-  const marks = await listMarks(orchardId).catch(() => []);
+  const [marks, varieties] = await Promise.all([
+    listMarks(orchardId).catch(() => []),
+    listVarieties(orchardId).catch(() => []),
+  ]);
   const today = nowLocalIso().slice(0, 10);
   const season = seasonOf(today);
   const current = currentStage(marks, today);
@@ -48,13 +51,18 @@ export default async function StageCard({
             </p>
           ) : (
             <p className="text-sm text-bark mt-0.5">
-              Mark green tip when you see it — the {season} program hangs off these dates.
+              Tell the app when you see green tip — {season}&rsquo;s spray timing hangs off these dates, and nine steps are waiting on them.
             </p>
           )}
         </div>
 
         {canEdit && remaining.length > 0 && (
-          <StageMarker orchardId={orchardId} stages={remaining} today={today} />
+          <StageMarker
+            orchardId={orchardId}
+            stages={remaining}
+            today={today}
+            varieties={varieties}
+          />
         )}
       </div>
 

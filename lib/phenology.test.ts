@@ -8,6 +8,9 @@ import {
   seasonOf,
   stageDate,
   stageOrder,
+  stageSpread,
+  stageDateLatest,
+  onePassWindow,
   type PhenologyMark,
 } from './phenology';
 
@@ -117,5 +120,88 @@ describe('seasonOf / daysBetween', () => {
     expect(daysBetween('2026-03-28', '2026-03-14')).toBe(-14);
     // across a DST boundary — March 8 2026 is the US spring-forward
     expect(daysBetween('2026-03-07', '2026-03-09')).toBe(2);
+  });
+});
+
+describe('stageSpread', () => {
+  const marks: PhenologyMark[] = [
+    { stage: 'green_tip', observedOn: '2026-03-14', scope: 'variety', scopeValue: 'Dabinett' },
+    { stage: 'green_tip', observedOn: '2026-03-19', scope: 'variety', scopeValue: 'Harrison' },
+    { stage: 'green_tip', observedOn: '2026-03-16', scope: 'variety', scopeValue: 'Kingston Black' },
+  ];
+
+  it('reports the first and last group and the gap between them', () => {
+    const s = stageSpread(marks, 'green_tip', 2026)!;
+    expect(s.earliest).toBe('2026-03-14');
+    expect(s.latest).toBe('2026-03-19');
+    expect(s.spreadDays).toBe(5);
+    expect(s.order.map((o) => o.group)).toEqual(['Dabinett', 'Kingston Black', 'Harrison']);
+  });
+
+  it('is null for a stage nothing has reached', () => {
+    expect(stageSpread(marks, 'petal_fall', 2026)).toBeNull();
+  });
+});
+
+describe('stageDate takes the EARLIEST group', () => {
+  const marks: PhenologyMark[] = [
+    { stage: 'half_inch_green', observedOn: '2026-04-02', scopeValue: 'Harrison' },
+    { stage: 'half_inch_green', observedOn: '2026-03-28', scopeValue: 'Kingston Black' },
+  ];
+
+  it('anchors a protectant on the first variety to become vulnerable', () => {
+    // Spraying the 28th protects both; spraying the 2nd leaves Kingston
+    // Black exposed for five days, which is the point of the spray.
+    expect(stageDate(marks, 'half_inch_green', 2026)).toBe('2026-03-28');
+  });
+
+  it('closes a window on the last', () => {
+    expect(stageDateLatest(marks, 'half_inch_green', 2026)).toBe('2026-04-02');
+  });
+});
+
+describe('onePassWindow', () => {
+  it('finds the days that work for every variety', () => {
+    const w = onePassWindow([
+      { group: 'Kingston Black', start: '2026-03-28', end: '2026-04-04' },
+      { group: 'Harrison', start: '2026-04-02', end: '2026-04-09' },
+    ]);
+    expect(w.start).toBe('2026-04-02');
+    expect(w.end).toBe('2026-04-04');
+    expect(w.needsTwoPasses).toBe(false);
+  });
+
+  it('says plainly when one pass cannot cover everything', () => {
+    const w = onePassWindow([
+      { group: 'Dabinett', start: '2026-03-28', end: '2026-04-04' },
+      { group: 'Chisel Jersey', start: '2026-04-11', end: '2026-04-18' },
+    ]);
+    expect(w.needsTwoPasses).toBe(true);
+  });
+
+  it('stays open-ended when any group is', () => {
+    // Primary scab with petal fall unmarked on one variety
+    const w = onePassWindow([
+      { group: 'A', start: '2026-03-14', end: '2026-05-12' },
+      { group: 'B', start: '2026-03-19', end: null },
+    ]);
+    expect(w.start).toBe('2026-03-19');
+    expect(w.end).toBeNull();
+    expect(w.needsTwoPasses).toBe(false);
+  });
+
+  it('carries the groups it could not place rather than ignoring them', () => {
+    const w = onePassWindow(
+      [{ group: 'A', start: '2026-03-14', end: '2026-03-21' }],
+      ['Nehou', 'Michelin']
+    );
+    expect(w.unplaced).toEqual(['Nehou', 'Michelin']);
+  });
+
+  it('handles a single group and none at all', () => {
+    const one = onePassWindow([{ group: 'A', start: '2026-03-14', end: '2026-03-21' }]);
+    expect(one.start).toBe('2026-03-14');
+    expect(one.end).toBe('2026-03-21');
+    expect(onePassWindow([]).start).toBeNull();
   });
 });

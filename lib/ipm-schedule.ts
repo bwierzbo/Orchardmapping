@@ -1,4 +1,13 @@
-import { type PhenologyMark, type PhenologyStage, seasonOf, stageDate } from './phenology';
+import {
+  onePassWindow,
+  seasonOf,
+  stageDate,
+  stageDateLatest,
+  stageSpread,
+  type OnePassWindow,
+  type PhenologyMark,
+  type PhenologyStage,
+} from './phenology';
 import type { TrapCatch } from './traps';
 import { hoursRemaining, kickbackDeadline, type PestPosture } from './posture';
 
@@ -191,6 +200,12 @@ export interface ResolvedStep {
   lastDoneOn: string | null;
   /** For a recurring step that is done for now, when it comes back. */
   dueAgainOn: string | null;
+  /**
+   * For a stage-anchored step on an orchard of several varieties: the
+   * days when one spray covers all of them. Null where the step is not
+   * stage-anchored or nothing has been marked.
+   */
+  onePass?: OnePassWindow | null;
 }
 
 /** "half_inch_green" → "half inch green", for reasons a grower reads. */
@@ -416,21 +431,58 @@ export function resolveStep(step: ProgramStep, rawInput: ResolveInput): Resolved
       if (!anchor) return unplaceable(`Waiting on ${stageWords(t.stage)} to be marked`);
       const start = addDays(anchor, t.offsetDays ?? 0);
 
+      /**
+       * Each variety has its own window; the useful question for a
+       * three-acre block is when ONE spray covers all of them. See
+       * onePassWindow — it starts when the last variety arrives and
+       * ends when the first one leaves, and says so plainly when that
+       * overlap does not exist.
+       */
+      const spread = stageSpread(marks, t.stage, season);
+      const closingSpread = t.untilStage
+        ? stageSpread(marks, t.untilStage, season)
+        : null;
+      const perGroup = (spread?.order ?? []).map((g) => {
+        const gStart = addDays(g.on, t.offsetDays ?? 0);
+        if (t.untilStage) {
+          const close = closingSpread?.order.find((c) => c.group === g.group);
+          return { group: g.group, start: gStart, end: close?.on ?? null };
+        }
+        return { group: g.group, start: gStart, end: addDays(gStart, t.windowDays ?? 14) };
+      });
+      const unplaced = t.untilStage
+        ? (spread?.order ?? [])
+            .filter((g) => !closingSpread?.order.some((c) => c.group === g.group))
+            .map((g) => g.group)
+        : [];
+      const onePass = perGroup.length > 1 ? onePassWindow(perGroup, unplaced) : null;
+
       if (t.untilStage) {
-        const until = stageDate(marks, t.untilStage, season);
+        // Closes on the LAST group to get there: ending primary scab
+        // when the earliest variety drops its petals would cut the
+        // programme short for everything behind it.
+        const until = stageDateLatest(marks, t.untilStage, season);
         // An unmarked closing stage means the window is still OPEN, not
         // that it lasted a default fortnight. Closing primary scab 14
         // days after green tip because petal fall wasn't recorded yet
         // would be wrong by about six weeks.
-        if (!until) return openEnded(start, `${stageWords(t.stage)} until ${stageWords(t.untilStage)} is marked`);
-        return placed(start, until, `${stageWords(t.stage)} to ${stageWords(t.untilStage)}`);
+        if (!until) {
+          return {
+            ...openEnded(start, `${stageWords(t.stage)} until ${stageWords(t.untilStage)} is marked`),
+            onePass,
+          };
+        }
+        return {
+          ...placed(start, until, `${stageWords(t.stage)} to ${stageWords(t.untilStage)}`),
+          onePass,
+        };
       }
 
       const end = addDays(start, t.windowDays ?? 14);
       const why = t.offsetDays
         ? `${t.offsetDays} days after ${stageWords(t.stage)}`
         : `At ${stageWords(t.stage)}`;
-      return placed(start, end, why);
+      return { ...placed(start, end, why), onePass };
     }
 
     case 'condition': {
