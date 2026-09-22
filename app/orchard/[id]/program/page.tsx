@@ -3,6 +3,8 @@ import RegionBanner from './RegionBanner';
 import { orchardRegion } from '@/lib/db/regions';
 import { programDrift, stepsNeedingReview } from '@/lib/db/program';
 import RevisionNotice from './RevisionNotice';
+import WhyThisStep from './WhyThisStep';
+import { provenanceForSteps } from '@/lib/db/provenance';
 import { viewerRole, roleAtLeast } from '@/lib/orchard-access';
 import { requireOrchardPage } from '@/lib/orchard-page';
 import { notFound } from 'next/navigation';
@@ -75,6 +77,11 @@ export default async function ProgramPage({ params }: PageProps) {
     listAllProgramSteps(orchard.id).catch(() => []),
   ]);
   const resolvedByKey = new Map(schedule.map((r) => [r.step.key, r]));
+  // Where each step's numbers came from — shown with the step, because
+  // that is where somebody is deciding whether to act on them.
+  const provenance = await provenanceForSteps(
+    allSteps.map((s) => ({ key: s.key, materialKey: s.materialKey }))
+  ).catch(() => new Map());
 
   // Two kinds of anchor the program hangs off, on one rail: stages the
   // orchard was observed to reach, and heat totals it accumulated.
@@ -229,6 +236,7 @@ export default async function ProgramPage({ params }: PageProps) {
                         {r.dueAgainOn && r.status === 'done' && ` · again ${formatYMD(r.dueAgainOn)}`}
                       </p>
                     )}
+                    <WhyThisStep notes={provenance.get(step.key) ?? []} />
                     {step.pestKey && (
                       <Link
                         href={`/orchard/${orchard.id}/pests/${step.pestKey}`}
