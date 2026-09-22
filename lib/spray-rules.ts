@@ -43,6 +43,8 @@ export interface SprayMaterial {
   rate_high: number | null;
   rate_unit: string | null;
   targets: string[];
+  /** Targets this material does not hold in this region, with the finding. */
+  regional_exclusions?: Array<{ pest: string; reason: string | null }>;
   /** Must not be applied within conflict_days of these, in EITHER order. */
   conflicts_with: string[];
   conflict_days: number | null;
