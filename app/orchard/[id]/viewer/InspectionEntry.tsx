@@ -1,17 +1,19 @@
 'use client';
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ClientTree, TreeStatus } from '@/lib/types';
 import { STATUS_COLORS } from '@/lib/trees-geojson';
 import { createTreeEvent } from '@/lib/api/trees';
 import { sgToBrix } from '@/lib/sugar';
 import { bloomStagesFor, FRUIT_METRIC_CATALOG, type WalkSettings } from '@/lib/settings';
 import type { WalkInspection } from '@/lib/walk-progress';
-import { Check } from 'lucide-react';
+import { Check, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import PhotoButton from '@/components/PhotoButton';
+import { trpc } from '@/lib/trpc/client';
+import { splitForPicker, type PickablePest } from '@/lib/pest-picker';
 
 export const STRESS_REASONS = [
   'Pests',
@@ -22,12 +24,22 @@ export const STRESS_REASONS = [
   'Other',
 ];
 
+export type PestSeverity = 'light' | 'moderate' | 'severe';
+export const PEST_SEVERITIES: readonly PestSeverity[] = ['light', 'moderate', 'severe'];
+
 export interface InspectionAnswers {
   health: TreeStatus | null;
   stressReason: string | null;
   bloom: string | null;
   fruit: number | null;
   metrics: Record<string, string>;
+  /**
+   * What was seen on this tree, by pest key. Deliberately independent of
+   * health: a tree can be in good shape and still have codling moth on
+   * it, and the whole point of scouting is to catch that before it is
+   * bad enough to change the tree's status.
+   */
+  pests: Record<string, PestSeverity | null>;
   note: string;
 }
 
@@ -55,9 +67,12 @@ export async function saveInspection(
   tree: ClientTree,
   answers: InspectionAnswers,
   settings: WalkSettings,
-  onSetStatus: (treeId: string, status: TreeStatus) => Promise<boolean>
+  onSetStatus: (treeId: string, status: TreeStatus) => Promise<boolean>,
+  /** Names for the pest keys, so the history line reads in English. */
+  pestNames: ReadonlyMap<string, string> = new Map()
 ): Promise<InspectionSaved> {
   const noteText = answers.note.trim();
+  const pestKeys = Object.keys(answers.pests);
   let saved = 0;
   let noteUsed = false;
   if (answers.health) {
@@ -106,13 +121,50 @@ export async function saveInspection(
     });
     saved++;
   }
+  if (pestKeys.length > 0) {
+    // Two writes, on purpose. pest_observations is the scouting record
+    // the pest pages and the trap thresholds read; the tree event is
+    // what puts "saw codling moth" in THIS tree's history, which is
+    // where somebody standing at the tree next month will look.
+    // The note lands once, on the first record that can carry it — the
+    // health observation if there was one, otherwise here.
+    const noteForPests = noteUsed ? undefined : noteText || undefined;
+    const described: string[] = [];
+    for (const key of pestKeys) {
+      const severity = answers.pests[key];
+      const name = pestNames.get(key) ?? key;
+      described.push(severity ? `${name} (${severity})` : name);
+      await trpc.pest.observe.mutate({
+        orchardId: tree.orchard_id,
+        pestKey: key,
+        treeId: tree.tree_id,
+        severity: severity ?? undefined,
+        notes: noteForPests,
+      });
+      saved++;
+    }
+    if (noteForPests) noteUsed = true;
+    await createTreeEvent(tree.tree_id, {
+      event_type: 'observation',
+      detail: `Seen on tree: ${described.join(', ')}`,
+      changes: { pests: answers.pests },
+    });
+    saved++;
+  }
   if (noteText && !noteUsed) {
     await createTreeEvent(tree.tree_id, { event_type: 'observation', detail: noteText });
     saved++;
   }
   return {
     saved,
-    inspected: answers.health !== null || answers.bloom !== null || answers.fruit !== null,
+    // Spotting a pest is an inspection. Without this, a tree you looked
+    // hard enough at to find codling moth on would still read as never
+    // visited on the coverage map.
+    inspected:
+      answers.health !== null ||
+      answers.bloom !== null ||
+      answers.fruit !== null ||
+      pestKeys.length > 0,
     photo: false,
   };
 }
@@ -141,6 +193,17 @@ interface InspectionEntryProps {
   onDirtyChange?: (dirty: boolean) => void;
   /** Extra button(s) rendered next to the camera (the walk's Skip). */
   secondaryAction?: (busy: boolean) => ReactNode;
+  /**
+   * The pest library for this orchard, already ranked by the caller.
+   * Empty or undefined hides the section rather than showing an empty
+   * one — an orchard whose library has not loaded is not an orchard
+   * with no pests.
+   */
+  pests?: readonly PickablePest[];
+  /** How many of each have been logged here, for the ranking. */
+  pestSightings?: Readonly<Record<string, number>>;
+  /** False when the orchard has no region, so nothing ranks the list. */
+  pestsRanked?: boolean;
 }
 
 /**
@@ -163,6 +226,9 @@ export default function InspectionEntry({
   onBusyChange,
   onDirtyChange,
   secondaryAction,
+  pests,
+  pestSightings,
+  pestsRanked = true,
 }: InspectionEntryProps) {
   // Answers live in a ref so the auto-save check sees the latest values
   // regardless of render timing; the state mirrors drive the highlights.
@@ -172,6 +238,7 @@ export default function InspectionEntry({
     bloom: null,
     fruit: null,
     metrics: {},
+    pests: {},
     note: '',
   });
   const [healthChoice, setHealthChoice] = useState<TreeStatus | null>(null);
@@ -179,7 +246,18 @@ export default function InspectionEntry({
   const [bloomChoice, setBloomChoice] = useState<string | null>(null);
   const [fruitLoad, setFruitLoad] = useState<number | null>(null);
   const [metrics, setMetrics] = useState<Record<string, string>>({});
+  const [pestsSeen, setPestsSeen] = useState<Record<string, PestSeverity | null>>({});
+  const [showAllPests, setShowAllPests] = useState(false);
+
   const [note, setNote] = useState('');
+  const pestNames = useMemo(
+    () => new Map((pests ?? []).map((p) => [p.key, p.name])),
+    [pests]
+  );
+  const pestPicker = useMemo(
+    () => splitForPicker(pests ?? [], pestSightings ?? {}, Object.keys(pestsSeen)),
+    [pests, pestSightings, pestsSeen]
+  );
   const [busy, setBusyState] = useState(false);
   const setBusy = (b: boolean) => {
     setBusyState(b);
@@ -193,7 +271,13 @@ export default function InspectionEntry({
     if (busy) return;
     setBusy(true);
     try {
-      const result = await saveInspection(tree, answersRef.current, settings, onSetStatus);
+      const result = await saveInspection(
+        tree,
+        answersRef.current,
+        settings,
+        onSetStatus,
+        pestNames
+      );
       onSaved(result);
     } catch (err) {
       toast.error(err instanceof Error ? `Save failed: ${err.message}` : 'Save failed — try again');
@@ -211,7 +295,15 @@ export default function InspectionEntry({
     );
   };
   const maybeAutoSave = () => {
-    if (autoSave && complete() && !detailedFruit && answersRef.current.health !== 'stressed') {
+    if (
+      autoSave &&
+      complete() &&
+      !detailedFruit &&
+      answersRef.current.health !== 'stressed' &&
+      // A ticked pest means there is more to say — at the very least a
+      // severity to set — so the button takes over from here.
+      Object.keys(answersRef.current.pests).length === 0
+    ) {
       void save();
     }
   };
@@ -244,18 +336,39 @@ export default function InspectionEntry({
     answersRef.current.metrics = { ...answersRef.current.metrics, [key]: value };
     setMetrics(answersRef.current.metrics);
   };
+  const togglePest = (key: string) => {
+    const next = { ...answersRef.current.pests };
+    if (key in next) delete next[key];
+    else next[key] = null;
+    answersRef.current.pests = next;
+    setPestsSeen(next);
+  };
+  const setPestSeverity = (key: string, severity: PestSeverity) => {
+    const next = { ...answersRef.current.pests };
+    // Tapping the level it already has clears it — "seen, severity not
+    // stated" is a real answer and has to stay reachable.
+    next[key] = next[key] === severity ? null : severity;
+    answersRef.current.pests = next;
+    setPestsSeen(next);
+  };
   const changeNote = (value: string) => {
     answersRef.current.note = value;
     setNote(value);
   };
 
+  const pestKeys = Object.keys(pestsSeen);
   const hasAnything =
-    healthChoice !== null || bloomChoice !== null || fruitLoad !== null || note.trim() !== '';
+    healthChoice !== null ||
+    bloomChoice !== null ||
+    fruitLoad !== null ||
+    pestKeys.length > 0 ||
+    note.trim() !== '';
 
   // Answers entered and not yet recorded. A photo saves on its own, so
   // this is what would be lost by walking away after taking one.
   const unsaved =
     healthChoice !== null || bloomChoice !== null || fruitLoad !== null ||
+    pestKeys.length > 0 ||
     Object.values(metrics).some((v) => v !== '');
 
   useEffect(() => {
@@ -300,6 +413,80 @@ export default function InspectionEntry({
   return (
     <>
       <div className="space-y-3 px-4 pb-2">
+        {/* ── Pests seen: independent of health, on purpose ── */}
+        {pests && pests.length > 0 && (
+          <div className="space-y-1.5">
+            {sectionLabel('Pests seen', pestKeys.length > 0)}
+            <div className="flex flex-wrap gap-1.5">
+              {(showAllPests ? [...pestPicker.top, ...pestPicker.rest] : pestPicker.top).map(
+                (pest) => {
+                  const on = pest.key in pestsSeen;
+                  return (
+                    <button
+                      key={pest.key}
+                      type="button"
+                      onClick={() => togglePest(pest.key)}
+                      aria-pressed={on}
+                      disabled={busy}
+                      className={`px-3 py-2 rounded-lg text-sm font-medium border active:scale-[0.97] disabled:opacity-50 ${
+                        on
+                          ? 'bg-flag-600 border-flag-600 text-white ring-2 ring-flag-600 ring-offset-1'
+                          : 'border-line text-ink bg-paper hover:bg-canopy-50'
+                      }`}
+                    >
+                      {pest.name}
+                    </button>
+                  );
+                }
+              )}
+              {!showAllPests && pestPicker.rest.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllPests(true)}
+                  disabled={busy}
+                  className="px-3 py-2 rounded-lg text-sm font-medium border border-dashed border-line text-bark bg-paper hover:bg-canopy-50 active:scale-[0.97] disabled:opacity-50 inline-flex items-center gap-1"
+                >
+                  <Plus aria-hidden size={14} />
+                  {pestPicker.rest.length} more
+                </button>
+              )}
+            </div>
+
+            {/* Severity, only for what was actually ticked. Optional —
+                "seen" on its own is a useful record. */}
+            {pestKeys.map((key) => (
+              <div key={key} className="flex items-center gap-2 pl-0.5">
+                <span className="text-[11px] text-bark flex-1 truncate">
+                  {pestNames.get(key) ?? key}
+                </span>
+                {PEST_SEVERITIES.map((level) => (
+                  <button
+                    key={level}
+                    type="button"
+                    onClick={() => setPestSeverity(key, level)}
+                    aria-pressed={pestsSeen[key] === level}
+                    disabled={busy}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-medium border capitalize disabled:opacity-50 ${
+                      pestsSeen[key] === level
+                        ? 'bg-flag-600 border-flag-600 text-white'
+                        : 'border-line text-bark bg-paper hover:bg-canopy-50'
+                    }`}
+                  >
+                    {level}
+                  </button>
+                ))}
+              </div>
+            ))}
+
+            {!pestsRanked && (
+              <p className="text-[11px] text-bark">
+                Not ranked — set a region for this orchard and the ones that matter here come
+                first.
+              </p>
+            )}
+          </div>
+        )}
+
         {/* ── Health ── */}
         {inspections.has('health') && (
           <div className="space-y-1.5">
@@ -446,6 +633,24 @@ export default function InspectionEntry({
           aria-label="Notes"
         />
 
+      </div>
+
+      {/*
+        Photo above the record button, because a photo saves on its own
+        and the record button is the one that saves everything else.
+        Bottom of the stack = the thing that finishes the job.
+      */}
+      <div className="px-4 pb-4 space-y-2">
+        <div className="flex gap-2">
+          <PhotoButton
+            treeId={tree.tree_id}
+            onUploaded={savePhoto}
+            className={secondaryAction ? 'h-11 px-3.5' : 'h-11 flex-1'}
+            label={secondaryAction ? undefined : 'Photo'}
+          />
+          {secondaryAction?.(busy)}
+        </div>
+
         <Button
           className="w-full h-11"
           onClick={() => void save()}
@@ -453,16 +658,6 @@ export default function InspectionEntry({
         >
           {busy ? 'Saving…' : unsaved ? `${recordLabel} — not saved yet` : recordLabel}
         </Button>
-      </div>
-
-      <div className="flex gap-2 px-4 pb-4">
-        <PhotoButton
-          treeId={tree.tree_id}
-          onUploaded={savePhoto}
-          className={secondaryAction ? 'h-11 px-3.5' : 'h-11 flex-1'}
-          label={secondaryAction ? undefined : 'Photo'}
-        />
-        {secondaryAction?.(busy)}
       </div>
     </>
   );
