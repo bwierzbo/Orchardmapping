@@ -1,4 +1,7 @@
 import { sql } from '@vercel/postgres';
+import { orchardRegion } from './regions';
+import { triggerSchema } from '../trigger-schema';
+import { adjustTriggerForRegion } from '../region-program';
 import type { ProgramStep, StepCategory, StepCompletion, Trigger } from '../ipm-schedule';
 import { STEP_CATEGORIES } from '../ipm-schedule';
 
@@ -108,22 +111,55 @@ export async function setStepEnabled(
  * caller can say so rather than claim more than it did.
  */
 export async function adoptRegionProgram(orchardId: string): Promise<string[]> {
-  const { rows } = await sql`
-    INSERT INTO orchard_program_steps (
-      orchard_id, key, source_step_key, recommended_by,
-      title, detail, category, pest_key, material_key,
-      trigger_spec, repeat_days, sort_order, enabled
-    )
-    SELECT o.id, s.key, s.key, s.region_key,
-           s.title, s.detail, s.category, s.pest_key, s.material_key,
-           s.trigger_spec, s.repeat_days, s.sort_order, TRUE
-    FROM orchards o
-    JOIN program_steps s ON s.region_key = o.region_key AND s.is_active
-    WHERE o.id = ${orchardId}
-    ON CONFLICT (orchard_id, key) DO NOTHING
-    RETURNING key
+  const region = await orchardRegion(orchardId);
+  if (!region) return [];
+
+  // What the region recommends and this orchard has not got
+  const { rows: candidates } = await sql`
+    SELECT s.key, s.title, s.detail, s.category, s.pest_key, s.material_key,
+           s.trigger_spec, s.repeat_days, s.sort_order, s.region_key
+    FROM program_steps s
+    LEFT JOIN orchard_program_steps ops
+      ON ops.orchard_id = ${orchardId} AND ops.key = s.key
+    WHERE s.region_key = ${region.key} AND s.is_active AND ops.id IS NULL
+    ORDER BY s.sort_order
   `;
-  return rows.map((r) => String(r.key));
+  if (candidates.length === 0) return [];
+
+  const added: string[] = [];
+  for (const c of candidates) {
+    // Fit the recommendation to the region rather than copying it. A
+    // seeded trigger was written for the region it came from; where the
+    // adopting region states something different — counting heat from a
+    // biofix rather than January 1 — the step is adjusted and says so.
+    const parsed = triggerSchema.safeParse(c.trigger_spec);
+    let trigger: unknown = c.trigger_spec;
+    let detail = (c.detail as string | null) ?? null;
+    if (parsed.success) {
+      const adjusted = adjustTriggerForRegion(
+        parsed.data,
+        (c.pest_key as string | null) ?? null,
+        region
+      );
+      trigger = adjusted.trigger;
+      if (adjusted.note) detail = detail ? `${detail}\n\n${adjusted.note}` : adjusted.note;
+    }
+
+    await sql`
+      INSERT INTO orchard_program_steps (
+        orchard_id, key, source_step_key, recommended_by,
+        title, detail, category, pest_key, material_key,
+        trigger_spec, repeat_days, sort_order, enabled
+      ) VALUES (
+        ${orchardId}, ${c.key}, ${c.key}, ${region.key},
+        ${c.title}, ${detail}, ${c.category}, ${c.pest_key}, ${c.material_key},
+        ${JSON.stringify(trigger)}::jsonb, ${c.repeat_days}, ${c.sort_order}, TRUE
+      )
+      ON CONFLICT (orchard_id, key) DO NOTHING
+    `;
+    added.push(String(c.key));
+  }
+  return added;
 }
 
 /**
