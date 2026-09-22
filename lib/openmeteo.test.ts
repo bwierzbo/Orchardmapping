@@ -44,13 +44,13 @@ describe('resolveTimezone', () => {
   });
 
   it('asks for the zone at those exact coordinates', async () => {
-    const fetchMock = vi.fn(async () => ({
+    const fetchMock = vi.fn(async (_url: string) => ({
       ok: true,
       json: async () => ({ timezone: 'Europe/London' }),
     }));
     vi.stubGlobal('fetch', fetchMock);
     await resolveTimezone(52.06, -2.72);
-    const url = String(fetchMock.mock.calls[0][0]);
+    const url = String(fetchMock.mock.calls[0]?.[0] ?? '');
     expect(url).toContain('latitude=52.06');
     expect(url).toContain('longitude=-2.72');
     expect(url).toContain('timezone=auto');
