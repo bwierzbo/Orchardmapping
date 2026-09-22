@@ -20,6 +20,8 @@ import { formatYMD } from '@/lib/dates';
 import type { StepStatus } from '@/lib/ipm-schedule';
 import SeasonTimeline, { type TimelineMarker } from './SeasonTimeline';
 import StepToggle from './StepToggle';
+import { StepControls } from './StepEditor';
+import AddStep from './AddStep';
 
 export const dynamic = 'force-dynamic';
 
@@ -171,6 +173,8 @@ export default async function ProgramPage({ params }: PageProps) {
             chart and the due list, and keeps its history for whenever you switch it
             back on.
           </p>
+          {canEdit && <AddStep orchardId={orchard.id} />}
+
           <ul className="divide-y divide-line">
             {allSteps.map((step) => {
               const r = resolvedByKey.get(step.key);
@@ -182,6 +186,22 @@ export default async function ProgramPage({ params }: PageProps) {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-baseline gap-x-2">
                       <span className="text-ink font-medium">{step.title}</span>
+                      {step.customised && (
+                        <span
+                          className="font-mono text-[10px] uppercase tracking-widest text-bark"
+                          title="Changed from what your region recommends"
+                        >
+                          yours
+                        </span>
+                      )}
+                      {!step.sourceStepKey && (
+                        <span
+                          className="font-mono text-[10px] uppercase tracking-widest text-bark"
+                          title="A step you added; not part of any recommendation"
+                        >
+                          own
+                        </span>
+                      )}
                       {r ? (
                         <span className="font-mono text-[10px] uppercase tracking-widest text-bark">
                           {STATUS_LABEL[r.status]}
@@ -215,12 +235,28 @@ export default async function ProgramPage({ params }: PageProps) {
                     )}
                   </div>
                   {userId && (
-                    <StepToggle
-                      orchardId={orchard.id}
-                      stepKey={step.key}
-                      enabled={step.enabled}
-                      title={step.title}
-                    />
+                    <div className="flex items-center gap-1 shrink-0">
+                      {canEdit && (
+                        <StepControls
+                          orchardId={orchard.id}
+                          step={{
+                            key: step.key,
+                            title: step.title,
+                            detail: step.detail ?? null,
+                            triggerSpec: step.trigger,
+                            repeatDays: step.repeatDays ?? null,
+                            customised: step.customised,
+                            sourceStepKey: step.sourceStepKey,
+                          }}
+                        />
+                      )}
+                      <StepToggle
+                        orchardId={orchard.id}
+                        stepKey={step.key}
+                        enabled={step.enabled}
+                        title={step.title}
+                      />
+                    </div>
                   )}
                 </li>
               );
