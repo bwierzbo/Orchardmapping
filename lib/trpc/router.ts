@@ -30,7 +30,15 @@ import {
   TreeInsertData,
 } from '@/lib/db/trees';
 import { diffTreeChanges } from '@/lib/db/tree-events';
-import { programDrift, adoptRegionProgram } from '@/lib/db/program';
+import {
+  programDrift,
+  adoptRegionProgram,
+  updateOrchardStep,
+  deleteOrchardStep,
+  createOrchardStep,
+  freeStepKey,
+} from '@/lib/db/program';
+import { triggerSchema } from '@/lib/trigger-schema';
 import {
   validateTreeRow,
   validateTreeUpdate,
@@ -646,6 +654,70 @@ export const appRouter = router({
      * Never overwrites a step the orchard already holds, customised or
      * not: adopting a recommendation must not quietly undo a decision.
      */
+    /** Change one of this orchard's steps. Marks it customised. */
+    updateStep: orchardOperatorProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          key: z.string().min(1),
+          patch: z.object({
+            title: z.string().min(1).max(120).optional(),
+            detail: z.string().max(4000).nullable().optional(),
+            pestKey: z.string().max(60).nullable().optional(),
+            materialKey: z.string().max(60).nullable().optional(),
+            triggerSpec: triggerSchema.optional(),
+            repeatDays: z.number().int().min(1).max(3650).nullable().optional(),
+            sortOrder: z.number().int().min(0).max(10000).optional(),
+            enabled: z.boolean().optional(),
+          }),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const ok = await updateOrchardStep(input.orchardId, input.key, input.patch);
+        if (!ok) throw new TRPCError({ code: 'NOT_FOUND', message: 'No such step here.' });
+        return { ok: true };
+      }),
+
+    /**
+     * Remove a step from this orchard. A recommended one stays
+     * recommended and reappears as not-adopted, so "I decided against
+     * this" stays distinguishable from "I never saw it".
+     */
+    deleteStep: orchardOperatorProcedure
+      .input(z.object({ orchardId: z.string().min(1), key: z.string().min(1) }))
+      .mutation(async ({ input }) => {
+        const ok = await deleteOrchardStep(input.orchardId, input.key);
+        if (!ok) throw new TRPCError({ code: 'NOT_FOUND', message: 'No such step here.' });
+        return { ok: true };
+      }),
+
+    /** A step of the orchard's own devising. */
+    createStep: orchardOperatorProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          title: z.string().min(1).max(120),
+          detail: z.string().max(4000).optional(),
+          pestKey: z.string().max(60).optional(),
+          materialKey: z.string().max(60).optional(),
+          triggerSpec: triggerSchema,
+          repeatDays: z.number().int().min(1).max(3650).optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const key = await freeStepKey(input.orchardId, input.title);
+        await createOrchardStep(input.orchardId, {
+          key,
+          title: input.title,
+          detail: input.detail ?? null,
+          pestKey: input.pestKey ?? null,
+          materialKey: input.materialKey ?? null,
+          triggerSpec: input.triggerSpec,
+          repeatDays: input.repeatDays ?? null,
+        });
+        return { key };
+      }),
+
     adopt: orchardOperatorProcedure
       .input(z.object({ orchardId: z.string().min(1) }))
       .mutation(async ({ input }) => {

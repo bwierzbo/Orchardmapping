@@ -222,3 +222,116 @@ export async function uncompleteStep(
   `;
   return (rowCount ?? 0) > 0;
 }
+
+export interface StepPatch {
+  title?: string;
+  detail?: string | null;
+  category?: string | null;
+  pestKey?: string | null;
+  materialKey?: string | null;
+  triggerSpec?: unknown;
+  repeatDays?: number | null;
+  sortOrder?: number;
+  enabled?: boolean;
+}
+
+/**
+ * Change one of an orchard's steps.
+ *
+ * Anything that came from a recommendation is marked customised the
+ * moment it is changed, so the program page can keep saying what was
+ * advised and where this orchard differs. Turning a step off is not a
+ * customisation — it is the decision the step is there to support.
+ */
+export async function updateOrchardStep(
+  orchardId: string,
+  key: string,
+  patch: StepPatch
+): Promise<boolean> {
+  const substantive =
+    patch.title !== undefined ||
+    patch.detail !== undefined ||
+    patch.pestKey !== undefined ||
+    patch.materialKey !== undefined ||
+    patch.triggerSpec !== undefined ||
+    patch.repeatDays !== undefined;
+
+  const { rowCount } = await sql`
+    UPDATE orchard_program_steps SET
+      title        = COALESCE(${patch.title ?? null}, title),
+      detail       = CASE WHEN ${patch.detail !== undefined} THEN ${patch.detail ?? null} ELSE detail END,
+      category     = CASE WHEN ${patch.category !== undefined} THEN ${patch.category ?? null} ELSE category END,
+      pest_key     = CASE WHEN ${patch.pestKey !== undefined} THEN ${patch.pestKey ?? null} ELSE pest_key END,
+      material_key = CASE WHEN ${patch.materialKey !== undefined} THEN ${patch.materialKey ?? null} ELSE material_key END,
+      trigger_spec = COALESCE(${patch.triggerSpec ? JSON.stringify(patch.triggerSpec) : null}::jsonb, trigger_spec),
+      repeat_days  = CASE WHEN ${patch.repeatDays !== undefined} THEN ${patch.repeatDays ?? null} ELSE repeat_days END,
+      sort_order   = COALESCE(${patch.sortOrder ?? null}, sort_order),
+      enabled      = COALESCE(${patch.enabled ?? null}, enabled),
+      customised   = customised OR (${substantive} AND source_step_key IS NOT NULL),
+      updated_at   = NOW()
+    WHERE orchard_id = ${orchardId} AND key = ${key}
+  `;
+  return (rowCount ?? 0) > 0;
+}
+
+/**
+ * Remove a step from this orchard's program.
+ *
+ * Only from this orchard's. A recommended step deleted here stays
+ * recommended, and shows up as not-adopted rather than vanishing — which
+ * is how you tell "I decided against this" from "I never saw it".
+ */
+export async function deleteOrchardStep(orchardId: string, key: string): Promise<boolean> {
+  const { rowCount } = await sql`
+    DELETE FROM orchard_program_steps WHERE orchard_id = ${orchardId} AND key = ${key}
+  `;
+  return (rowCount ?? 0) > 0;
+}
+
+/** A step this orchard invented. No source, so nothing to be customised from. */
+export async function createOrchardStep(
+  orchardId: string,
+  input: {
+    key: string;
+    title: string;
+    detail?: string | null;
+    category?: string | null;
+    pestKey?: string | null;
+    materialKey?: string | null;
+    triggerSpec: unknown;
+    repeatDays?: number | null;
+    sortOrder?: number;
+  }
+): Promise<void> {
+  await sql`
+    INSERT INTO orchard_program_steps (
+      orchard_id, key, source_step_key, recommended_by,
+      title, detail, category, pest_key, material_key,
+      trigger_spec, repeat_days, sort_order, enabled
+    ) VALUES (
+      ${orchardId}, ${input.key}, NULL, NULL,
+      ${input.title}, ${input.detail ?? null}, ${input.category ?? null},
+      ${input.pestKey ?? null}, ${input.materialKey ?? null},
+      ${JSON.stringify(input.triggerSpec)}::jsonb, ${input.repeatDays ?? null},
+      ${input.sortOrder ?? 100}, TRUE
+    )
+  `;
+}
+
+/** A key that is free within this orchard, derived from the title. */
+export async function freeStepKey(orchardId: string, title: string): Promise<string> {
+  const base =
+    title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 40) || 'step';
+  const { rows } = await sql`
+    SELECT key FROM orchard_program_steps
+    WHERE orchard_id = ${orchardId} AND key LIKE ${base + '%'}
+  `;
+  const taken = new Set(rows.map((r) => String(r.key)));
+  if (!taken.has(base)) return base;
+  for (let n = 2; n < 100; n++) if (!taken.has(`${base}_${n}`)) return `${base}_${n}`;
+  throw new Error(`Could not find a free step key near "${base}"`);
+}
