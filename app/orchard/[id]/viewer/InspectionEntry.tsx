@@ -134,6 +134,11 @@ interface InspectionEntryProps {
   onSetStatus: (treeId: string, status: TreeStatus) => Promise<boolean>;
   onSaved: (result: InspectionSaved) => void;
   onBusyChange?: (busy: boolean) => void;
+  /**
+   * Fired when there are answers entered but not yet recorded, so a
+   * parent can stop the form being closed on top of them.
+   */
+  onDirtyChange?: (dirty: boolean) => void;
   /** Extra button(s) rendered next to the camera (the walk's Skip). */
   secondaryAction?: (busy: boolean) => ReactNode;
 }
@@ -156,6 +161,7 @@ export default function InspectionEntry({
   onSetStatus,
   onSaved,
   onBusyChange,
+  onDirtyChange,
   secondaryAction,
 }: InspectionEntryProps) {
   // Answers live in a ref so the auto-save check sees the latest values
@@ -246,6 +252,18 @@ export default function InspectionEntry({
   const hasAnything =
     healthChoice !== null || bloomChoice !== null || fruitLoad !== null || note.trim() !== '';
 
+  // Answers entered and not yet recorded. A photo saves on its own, so
+  // this is what would be lost by walking away after taking one.
+  const unsaved =
+    healthChoice !== null || bloomChoice !== null || fruitLoad !== null ||
+    Object.values(metrics).some((v) => v !== '');
+
+  useEffect(() => {
+    onDirtyChange?.(unsaved);
+  }, [unsaved, onDirtyChange]);
+  // Leaving the form should not report a dirty state nobody can act on
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
+
   // Photo: an observation carrying the image (and the note, if typed).
   // Never auto-advances — a photo usually precedes a status tap.
   const savePhoto = async (url: string) => {
@@ -257,7 +275,14 @@ export default function InspectionEntry({
       });
       changeNote('');
       onSaved({ saved: 1, inspected: false, photo: true });
-      toast.success('Photo saved');
+      // A photo saves by itself and the rest does not. Saying only
+      // "Photo saved" reads as "it is saved", and an assessment tapped
+      // out before the photo is then lost on closing the panel.
+      if (unsaved) {
+        toast.warning(`Photo saved — tap ${recordLabel} to save the rest`, { duration: 6000 });
+      } else {
+        toast.success('Photo saved');
+      }
     } catch {
       toast.error('Photo uploaded but could not be attached — try again');
     }
@@ -421,8 +446,12 @@ export default function InspectionEntry({
           aria-label="Notes"
         />
 
-        <Button className="w-full h-11" onClick={() => void save()} disabled={busy || !hasAnything}>
-          {busy ? 'Saving…' : recordLabel}
+        <Button
+          className="w-full h-11"
+          onClick={() => void save()}
+          disabled={busy || !hasAnything}
+        >
+          {busy ? 'Saving…' : unsaved ? `${recordLabel} — not saved yet` : recordLabel}
         </Button>
       </div>
 
