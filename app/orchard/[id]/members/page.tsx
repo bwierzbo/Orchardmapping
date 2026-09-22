@@ -1,10 +1,11 @@
 import Link from 'next/link';
+import { requireOrchardPage } from '@/lib/orchard-page';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { ArrowLeft, Users } from 'lucide-react';
 import { getOrchardConfigById } from '@/lib/db/orchards';
 import { listMembers, listPendingInvitations } from '@/lib/db/members';
-import { viewerRole, roleAtLeast } from '@/lib/orchard-access';
+import { roleAtLeast } from '@/lib/orchard-access';
 import MembersClient from './MembersClient';
 
 export const dynamic = 'force-dynamic';
@@ -15,16 +16,17 @@ interface PageProps {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params;
+  await requireOrchardPage(id);
   const orchard = await getOrchardConfigById(id).catch(() => null);
   return { title: orchard ? `${orchard.name} — people` : 'People' };
 }
 
 export default async function MembersPage({ params }: PageProps) {
   const { id } = await params;
+  const role = await requireOrchardPage(id);
   const orchard = await getOrchardConfigById(id).catch(() => null);
   if (!orchard) notFound();
 
-  const role = await viewerRole(id);
   if (!role) notFound();
   const isAdmin = roleAtLeast(role, 'admin');
 

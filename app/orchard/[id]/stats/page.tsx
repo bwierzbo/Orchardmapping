@@ -1,4 +1,5 @@
 import { cache } from 'react';
+import { requireOrchardPage } from '@/lib/orchard-page';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
@@ -35,6 +36,7 @@ interface PageProps {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params;
+  await requireOrchardPage(id);
   const orchard = await getOrchard(id).catch(() => null);
   if (!orchard) return { title: 'Dashboard' };
   return {
@@ -84,6 +86,7 @@ function careBucketList(b: CareBuckets) {
 
 export default async function StatsPage({ params }: PageProps) {
   const { id } = await params;
+  await requireOrchardPage(id);
   const { userId } = await auth();
   const [orchard, allOrchards, dbTrees] = await Promise.all([
     getOrchard(id),

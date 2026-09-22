@@ -1,4 +1,5 @@
 import { cache, Suspense } from 'react';
+import { requireOrchardPage } from '@/lib/orchard-page';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { auth } from '@clerk/nextjs/server';
@@ -14,7 +15,7 @@ import OrchardSwitcher from '../viewer/OrchardSwitcher';
 import SeasonCard from './SeasonCard';
 import StageCard from './StageCard';
 import DueNowCard from './DueNowCard';
-import { viewerRole, roleAtLeast, memberOrchardConfigs } from '@/lib/orchard-access';
+import { roleAtLeast, memberOrchardConfigs } from '@/lib/orchard-access';
 
 // Live DB data; never prerender at build time
 export const dynamic = 'force-dynamic';
@@ -27,6 +28,7 @@ interface PageProps {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params;
+  await requireOrchardPage(id);
   const orchard = await getOrchard(id).catch(() => null);
   if (!orchard) return { title: 'Dashboard' };
   return {
@@ -37,6 +39,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function DashboardPage({ params }: PageProps) {
   const { id } = await params;
+  const role = await requireOrchardPage(id);
   const { userId } = await auth();
   const [orchard, allOrchards, dbTrees] = await Promise.all([
     getOrchard(id),
@@ -45,8 +48,6 @@ export default async function DashboardPage({ params }: PageProps) {
   ]);
   if (!orchard) notFound();
 
-  // The layout already proved membership; this decides operator vs viewer.
-  const role = await viewerRole(id);
   const canEdit = !!role && roleAtLeast(role, 'operator');
 
   const trees = dbTrees.map(serializeTree);

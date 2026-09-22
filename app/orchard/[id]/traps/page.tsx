@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { requireOrchardPage } from '@/lib/orchard-page';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { auth } from '@clerk/nextjs/server';
@@ -11,7 +12,7 @@ import { seasonOf } from '@/lib/phenology';
 import { nowLocalIso } from '@/lib/openmeteo';
 import { Histogram } from '../dashboard/charts';
 import TrapsClient from './TrapsClient';
-import { viewerRole, roleAtLeast } from '@/lib/orchard-access';
+import { roleAtLeast } from '@/lib/orchard-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +22,7 @@ interface PageProps {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params;
+  await requireOrchardPage(id);
   const orchard = await getOrchardConfigById(id).catch(() => null);
   return { title: orchard ? `${orchard.name} — traps` : 'Traps' };
 }
@@ -33,14 +35,13 @@ function weekLabel(ymd: string): string {
 
 export default async function TrapsPage({ params }: PageProps) {
   const { id } = await params;
+  const role = await requireOrchardPage(id);
   const [orchard, { userId }] = await Promise.all([
     getOrchardConfigById(id).catch(() => null),
     auth(),
   ]);
   if (!orchard) notFound();
 
-  // The layout already proved membership; this decides operator vs viewer.
-  const role = await viewerRole(id);
   const canEdit = !!role && roleAtLeast(role, 'operator');
 
   const today = nowLocalIso(orchard.timezone).slice(0, 10);
