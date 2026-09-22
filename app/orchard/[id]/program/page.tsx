@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import RegionBanner from './RegionBanner';
 import { orchardRegion } from '@/lib/db/regions';
-import { programDrift } from '@/lib/db/program';
+import { programDrift, stepsNeedingReview } from '@/lib/db/program';
+import RevisionNotice from './RevisionNotice';
 import { viewerRole, roleAtLeast } from '@/lib/orchard-access';
 import { requireOrchardPage } from '@/lib/orchard-page';
 import { notFound } from 'next/navigation';
@@ -57,9 +58,10 @@ export default async function ProgramPage({ params }: PageProps) {
   const today = nowLocalIso(orchard.timezone).slice(0, 10);
   const season = seasonOf(today);
 
-  const [region, drift] = await Promise.all([
+  const [region, drift, revisions] = await Promise.all([
     orchardRegion(orchard.id),
     programDrift(orchard.id).catch(() => ({ notAdopted: [], customised: [], invented: [] })),
+    stepsNeedingReview(orchard.id).catch(() => []),
   ]);
   const role = await viewerRole(orchard.id);
   const canEdit = !!role && roleAtLeast(role, 'operator');
@@ -116,6 +118,8 @@ export default async function ProgramPage({ params }: PageProps) {
           spring, monitor-only in summer. Bars are windows, not appointments — the red
           line is today.
         </p>
+
+        {canEdit && <RevisionNotice orchardId={orchard.id} steps={revisions} />}
 
         <RegionBanner
           orchardId={orchard.id}

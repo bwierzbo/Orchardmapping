@@ -110,6 +110,78 @@ export async function setStepEnabled(
  * silently undo a decision somebody made. Returns what it added, so the
  * caller can say so rather than claim more than it did.
  */
+/**
+ * How a recommended step is fingerprinted.
+ *
+ * Written once and used by both adoption and the revision check, so the
+ * two can never disagree about what "changed" means. It covers what a
+ * grower would want to hear about — timing, material, target, wording —
+ * and nothing cosmetic.
+ */
+const FINGERPRINT_SQL = `md5(
+  COALESCE(s.title, '') || '|' || COALESCE(s.detail, '') || '|' ||
+  COALESCE(s.material_key, '') || '|' || COALESCE(s.pest_key, '') || '|' ||
+  s.trigger_spec::text || '|' || COALESCE(s.repeat_days::text, '')
+)`;
+
+/**
+ * Adopted steps whose recommendation has been revised since.
+ *
+ * Reported, never applied. The orchard's version may be deliberate, and
+ * silently reverting somebody's decision is worse than not telling them.
+ */
+export async function stepsNeedingReview(
+  orchardId: string
+): Promise<Array<{ key: string; title: string; customised: boolean }>> {
+  const { rows } = await sql.query(
+    `SELECT ops.key, ops.title, ops.customised
+       FROM orchard_program_steps ops
+       JOIN program_steps s
+         ON s.key = ops.source_step_key AND s.is_active
+      WHERE ops.orchard_id = $1
+        AND ops.adopted_fingerprint IS NOT NULL
+        AND ops.adopted_fingerprint <> ${FINGERPRINT_SQL}
+      ORDER BY ops.sort_order`,
+    [orchardId]
+  );
+  return rows.map((r) => ({
+    key: String(r.key),
+    title: String(r.title),
+    customised: Boolean(r.customised),
+  }));
+}
+
+/** Take the current recommendation for one step, replacing this orchard's. */
+export async function acceptRevision(orchardId: string, key: string): Promise<boolean> {
+  const { rowCount } = await sql.query(
+    `UPDATE orchard_program_steps ops SET
+       title = s.title, detail = s.detail, category = s.category,
+       pest_key = s.pest_key, material_key = s.material_key,
+       trigger_spec = s.trigger_spec, repeat_days = s.repeat_days,
+       customised = FALSE,
+       adopted_fingerprint = ${FINGERPRINT_SQL},
+       updated_at = NOW()
+     FROM program_steps s
+     WHERE s.key = ops.source_step_key
+       AND ops.orchard_id = $1 AND ops.key = $2`,
+    [orchardId, key]
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/** Keep this orchard's version, and stop being told about that revision. */
+export async function keepMine(orchardId: string, key: string): Promise<boolean> {
+  const { rowCount } = await sql.query(
+    `UPDATE orchard_program_steps ops
+        SET adopted_fingerprint = ${FINGERPRINT_SQL}, customised = TRUE, updated_at = NOW()
+       FROM program_steps s
+      WHERE s.key = ops.source_step_key
+        AND ops.orchard_id = $1 AND ops.key = $2`,
+    [orchardId, key]
+  );
+  return (rowCount ?? 0) > 0;
+}
+
 export async function adoptRegionProgram(orchardId: string): Promise<string[]> {
   const region = await orchardRegion(orchardId);
   if (!region) return [];
@@ -145,18 +217,21 @@ export async function adoptRegionProgram(orchardId: string): Promise<string[]> {
       if (adjusted.note) detail = detail ? `${detail}\n\n${adjusted.note}` : adjusted.note;
     }
 
-    await sql`
-      INSERT INTO orchard_program_steps (
-        orchard_id, key, source_step_key, recommended_by,
-        title, detail, category, pest_key, material_key,
-        trigger_spec, repeat_days, sort_order, enabled
-      ) VALUES (
-        ${orchardId}, ${c.key}, ${c.key}, ${region.key},
-        ${c.title}, ${detail}, ${c.category}, ${c.pest_key}, ${c.material_key},
-        ${JSON.stringify(trigger)}::jsonb, ${c.repeat_days}, ${c.sort_order}, TRUE
-      )
-      ON CONFLICT (orchard_id, key) DO NOTHING
-    `;
+    // The fingerprint is of the RECOMMENDATION, while the stored trigger
+    // may have been adapted for this region. That is the point: a later
+    // revision of the recommendation is still detectable.
+    await sql.query(
+      `INSERT INTO orchard_program_steps (
+         orchard_id, key, source_step_key, recommended_by,
+         title, detail, category, pest_key, material_key,
+         trigger_spec, repeat_days, sort_order, enabled, adopted_fingerprint
+       )
+       SELECT $1, s.key, s.key, $2, $3, $4, s.category, s.pest_key, s.material_key,
+              $5::jsonb, s.repeat_days, s.sort_order, TRUE, ${FINGERPRINT_SQL}
+         FROM program_steps s WHERE s.key = $6
+       ON CONFLICT (orchard_id, key) DO NOTHING`,
+      [orchardId, region.key, c.title, detail, JSON.stringify(trigger), c.key]
+    );
     added.push(String(c.key));
   }
   return added;

@@ -33,6 +33,9 @@ import { diffTreeChanges } from '@/lib/db/tree-events';
 import {
   programDrift,
   adoptRegionProgram,
+  stepsNeedingReview,
+  acceptRevision,
+  keepMine,
   updateOrchardStep,
   deleteOrchardStep,
   createOrchardStep,
@@ -654,6 +657,35 @@ export const appRouter = router({
      * Never overwrites a step the orchard already holds, customised or
      * not: adopting a recommendation must not quietly undo a decision.
      */
+    /** Adopted steps whose recommendation has been revised since. */
+    needsReview: orchardViewerProcedure
+      .input(z.object({ orchardId: z.string().min(1) }))
+      .query(({ input }) => stepsNeedingReview(input.orchardId)),
+
+    /**
+     * Resolve one revision: take the new advice, or keep your version.
+     *
+     * Either way the orchard stops being asked about that revision.
+     * Nothing is ever applied without this being called, because the
+     * orchard's version may be deliberate.
+     */
+    resolveRevision: orchardOperatorProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          key: z.string().min(1),
+          choice: z.enum(['accept', 'keep']),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const ok =
+          input.choice === 'accept'
+            ? await acceptRevision(input.orchardId, input.key)
+            : await keepMine(input.orchardId, input.key);
+        if (!ok) throw new TRPCError({ code: 'NOT_FOUND', message: 'No such step here.' });
+        return { ok: true };
+      }),
+
     /** Change one of this orchard's steps. Marks it customised. */
     updateStep: orchardOperatorProcedure
       .input(
