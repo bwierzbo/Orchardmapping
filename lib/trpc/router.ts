@@ -524,7 +524,7 @@ export const appRouter = router({
       .input(z.object({ orchardId: z.string().min(1) }))
       .query(async ({ input }) => {
         const [library, mode] = await Promise.all([
-          listMaterials(),
+          listMaterials(input.orchardId),
           getProgramMode(input.orchardId),
         ]);
         return { mode, materials: availableMaterials(library, mode), all: library };
@@ -535,7 +535,7 @@ export const appRouter = router({
       .input(z.object({ orchardId: z.string().min(1), target: z.string().min(1) }))
       .query(async ({ input }) => {
         const [library, mode] = await Promise.all([
-          listMaterials(),
+          listMaterials(input.orchardId),
           getProgramMode(input.orchardId),
         ]);
         return { mode, options: recommendFor(library, input.target, mode) };
@@ -560,7 +560,7 @@ export const appRouter = router({
           getMaterial(input.materialId),
           getProgramMode(input.orchardId),
           applicationHistory(input.orchardId),
-          listMaterials(),
+          listMaterials(input.orchardId),
         ]);
         if (!material) throw new TRPCError({ code: 'NOT_FOUND', message: 'Material not found' });
         const findings = evaluateApplication({
@@ -596,7 +596,7 @@ export const appRouter = router({
           getMaterial(input.materialId),
           getProgramMode(input.orchardId),
           applicationHistory(input.orchardId),
-          listMaterials(),
+          listMaterials(input.orchardId),
         ]);
         if (!material) throw new TRPCError({ code: 'NOT_FOUND', message: 'Material not found' });
         const findings = evaluateApplication({

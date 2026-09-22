@@ -56,6 +56,8 @@ export interface SprayMaterial {
   conflicts_after: string[];
   conflict_after_days: number | null;
   max_per_season: number | null;
+  /** Set when this orchard's limit differs from the recommendation. */
+  orchard_limit_note?: string | null;
   notes: string | null;
 }
 
@@ -199,7 +201,11 @@ export function evaluateApplication(args: {
     if (used >= material.max_per_season) {
       findings.push({
         level: 'warning',
-        message: `${material.name} is limited to ${material.max_per_season} application${material.max_per_season === 1 ? '' : 's'} per season and has already been applied ${used} time${used === 1 ? '' : 's'} in ${season}.`,
+        message:
+          `${material.name} is limited to ${material.max_per_season} application${material.max_per_season === 1 ? '' : 's'} per season and has already been applied ${used} time${used === 1 ? '' : 's'} in ${season}.` +
+          // Say whose limit it is. A cap one orchard chose for its own
+          // reasons should not read like published guidance.
+          (material.orchard_limit_note ? ` This is your orchard's own limit: ${material.orchard_limit_note}` : ''),
       });
     }
   }

@@ -51,7 +51,7 @@ export default async function PestDetailPage({ params }: PageProps) {
   // Same keys drive the material library, so "what treats this?" needs no
   // extra mapping — and it arrives already scoped to the program mode.
   const [library, mode, observations, postures, { userId }] = await Promise.all([
-    listMaterials().catch(() => []),
+    listMaterials(id).catch(() => []),
     getProgramMode(orchard.id).catch(() => 'organic_practices' as ProgramMode),
     listObservations(orchard.id, key).catch(() => []),
     listPostures(orchard.id).catch(() => []),
