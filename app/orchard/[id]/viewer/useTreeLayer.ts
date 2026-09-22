@@ -2,17 +2,29 @@ import { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import type { ClientTree, TreeStatus } from '@/lib/types';
 import { treesToFeatureCollection, STATUS_COLORS } from '@/lib/trees-geojson';
+import { BAND_STYLE, type RecencyBand } from '@/lib/inspection-recency';
 import { STATUS_LABEL } from '@/components/StatusBadge';
 
 /** Build the hover-tooltip HTML for a tree feature (values are our own data). */
-function treeTipHtml(p: { tree_id: string; variety: string; row_id: string; position: number; status: string }) {
+function treeTipHtml(
+  p: { tree_id: string; variety: string; row_id: string; position: number; status: string },
+  /** In recency mode, the day it was last looked at — null means never. */
+  lastInspected?: string | null | undefined
+) {
   const status = (p.status in STATUS_LABEL ? p.status : 'unknown') as TreeStatus;
   const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
+  // undefined = not in recency mode, so say nothing about inspections.
+  const seen =
+    lastInspected === undefined
+      ? ''
+      : `<div class="tree-tip-meta">${
+          lastInspected ? `Last looked at ${esc(lastInspected)}` : 'Never inspected'
+        }</div>`;
   return `
     <div class="tree-tip-title">${esc(p.variety || 'Unknown variety')}</div>
     <div class="tree-tip-meta">R${esc(p.row_id)} · P${p.position}
       <span class="tree-tip-dot" style="background:${STATUS_COLORS[status]}"></span>${STATUS_LABEL[status]}
-    </div>`;
+    </div>${seen}`;
 }
 
 const SOURCE_ID = 'trees';
@@ -39,6 +51,20 @@ interface Options extends TreeLayerCallbacks {
   /** Trees picked out with the lasso, painted as a group. */
   multiSelected?: ReadonlySet<string> | null;
   walkProgress?: WalkProgressSets | null;
+  /**
+   * Recency mode: tree_id -> how long since anyone looked at it. When
+   * set, the dots stop reporting condition and start reporting how much
+   * is known, which are different questions with different answers.
+   */
+  recency?: ReadonlyMap<string, RecencyBand> | null;
+  /** Trees to leave off the map entirely (legend chips switched off). */
+  hiddenIds?: ReadonlySet<string> | null;
+  /**
+   * tree_id -> the day it was last looked at, for the hover tooltip.
+   * Set only in recency mode: a date shown out of context invites the
+   * reading that every tree without one has never been touched at all.
+   */
+  lastInspected?: ReadonlyMap<string, string> | null;
 }
 
 /**
@@ -55,11 +81,14 @@ export function useTreeLayer(
   const { editMode, canEdit, statusFilter, selectedTreeId, onSelect, onMove } = options;
   const walkProgress = options.walkProgress ?? null;
   const multiSelected = options.multiSelected ?? null;
+  const recency = options.recency ?? null;
+  const hiddenIds = options.hiddenIds ?? null;
+  const lastInspected = options.lastInspected ?? null;
 
   // Refs so map handlers see fresh values without re-binding
-  const stateRef = useRef({ editMode, canEdit, trees, onSelect, onMove });
+  const stateRef = useRef({ editMode, canEdit, trees, onSelect, onMove, lastInspected });
   useEffect(() => {
-    stateRef.current = { editMode, canEdit, trees, onSelect, onMove };
+    stateRef.current = { editMode, canEdit, trees, onSelect, onMove, lastInspected };
   });
 
   const hoveredIdRef = useRef<number | null>(null);
@@ -109,13 +138,24 @@ export function useTreeLayer(
       source: SOURCE_ID,
       filter: ['!', ['has', 'point_count']],
       paint: {
+        // feature-state.recency, when present, replaces the status
+        // colour: one dot cannot answer "how is it" and "when did we
+        // last look" at the same time without saying neither clearly.
         'circle-color': [
-          'match',
-          ['get', 'status'],
-          'healthy', STATUS_COLORS.healthy,
-          'stressed', STATUS_COLORS.stressed,
-          'dead', STATUS_COLORS.dead,
-          STATUS_COLORS.unknown,
+          'case',
+          ['==', ['coalesce', ['feature-state', 'recency'], ''], 'fresh'], BAND_STYLE.fresh.fill,
+          ['==', ['coalesce', ['feature-state', 'recency'], ''], 'recent'], BAND_STYLE.recent.fill,
+          ['==', ['coalesce', ['feature-state', 'recency'], ''], 'ageing'], BAND_STYLE.ageing.fill,
+          ['==', ['coalesce', ['feature-state', 'recency'], ''], 'stale'], BAND_STYLE.stale.fill,
+          ['==', ['coalesce', ['feature-state', 'recency'], ''], 'never'], BAND_STYLE.never.fill,
+          [
+            'match',
+            ['get', 'status'],
+            'healthy', STATUS_COLORS.healthy,
+            'stressed', STATUS_COLORS.stressed,
+            'dead', STATUS_COLORS.dead,
+            STATUS_COLORS.unknown,
+          ],
         ],
         'circle-radius': [
           'case',
@@ -138,6 +178,9 @@ export function useTreeLayer(
           ['boolean', ['feature-state', 'picked'], false], '#D9481C',
           ['==', ['coalesce', ['feature-state', 'walk'], ''], 'todo'], '#14211A',
           ['==', ['coalesce', ['feature-state', 'walk'], ''], 'done'], '#2F6B3F',
+          // Never inspected gets a ring as well as a colour, so it still
+          // stands out to someone who cannot separate two pale greens.
+          ['==', ['coalesce', ['feature-state', 'recency'], ''], 'never'], BAND_STYLE.never.ring,
           '#ffffff',
         ],
         'circle-stroke-width': [
@@ -145,6 +188,7 @@ export function useTreeLayer(
           ['boolean', ['feature-state', 'selected'], false], 3,
           ['boolean', ['feature-state', 'picked'], false], 3,
           ['==', ['coalesce', ['feature-state', 'walk'], ''], 'todo'], 2.5,
+          ['==', ['coalesce', ['feature-state', 'recency'], ''], 'never'], 2.5,
           2,
         ],
         'circle-stroke-opacity': [
@@ -187,7 +231,14 @@ export function useTreeLayer(
       if (hoverCapable) {
         tip
           .setLngLat((f.geometry as GeoJSON.Point).coordinates as [number, number])
-          .setHTML(treeTipHtml(f.properties as Parameters<typeof treeTipHtml>[0]))
+          .setHTML(
+            treeTipHtml(
+              f.properties as Parameters<typeof treeTipHtml>[0],
+              stateRef.current.lastInspected
+                ? (stateRef.current.lastInspected.get(String(f.properties.tree_id)) ?? null)
+                : undefined
+            )
+          )
           .addTo(map);
       }
     };
@@ -354,8 +405,9 @@ export function useTreeLayer(
   useEffect(() => {
     if (!mapReady || !map) return;
     const source = map.getSource(SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
-    source?.setData(treesToFeatureCollection(trees, statusFilter ?? undefined));
-  }, [map, mapReady, trees, statusFilter]);
+    const visible = hiddenIds?.size ? trees.filter((t) => !hiddenIds.has(t.tree_id)) : trees;
+    source?.setData(treesToFeatureCollection(visible, statusFilter ?? undefined));
+  }, [map, mapReady, trees, statusFilter, hiddenIds]);
 
   // Selection feature-state sync
   useEffect(() => {
@@ -415,4 +467,23 @@ export function useTreeLayer(
       walkMarkedRef.current.push(t.id);
     }
   }, [map, mapReady, walkProgress, trees]);
+
+  // Recency feature-state sync. Same clear-then-mark shape as the walk
+  // channel above; a null map (mode off) just clears, which restores the
+  // status colours without touching the data.
+  const recencyMarkedRef = useRef<number[]>([]);
+  useEffect(() => {
+    if (!mapReady || !map || !map.getSource(SOURCE_ID)) return;
+    for (const id of recencyMarkedRef.current) {
+      map.setFeatureState({ source: SOURCE_ID, id }, { recency: null });
+    }
+    recencyMarkedRef.current = [];
+    if (!recency) return;
+    for (const t of trees) {
+      const band = recency.get(t.tree_id);
+      if (!band) continue;
+      map.setFeatureState({ source: SOURCE_ID, id: t.id }, { recency: band });
+      recencyMarkedRef.current.push(t.id);
+    }
+  }, [map, mapReady, recency, trees]);
 }

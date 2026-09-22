@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { BarChart3, CalendarRange } from 'lucide-react';
+import { BarChart3, CalendarRange, Eye } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { OrchardConfig, ClientTree, TreeStatus } from '@/lib/types';
 import { TREE_STATUSES } from '@/lib/types';
 import { buildMapStyle } from '@/lib/map-style';
+import { STATUS_COLORS } from '@/lib/trees-geojson';
+import { STATUS_LABEL } from '@/components/StatusBadge';
 import { ensurePmtilesProtocol } from '@/lib/pmtiles-protocol';
 import { toast } from 'sonner';
 import { normalizeRowId } from '@/lib/address';
@@ -30,7 +32,17 @@ import EditModePanel from './EditModePanel';
 import TreeGridEditor from './TreeGridEditor';
 import { useLasso, type Ring } from './useLasso';
 import { treesInRing, applyLasso, type LassoMode } from '@/lib/lasso';
-import MapLegend from './MapLegend';
+import MapLegend, { type LegendChip } from './MapLegend';
+import {
+  bandFor,
+  bandCounts,
+  isDormant,
+  BAND_STYLE,
+  RECENCY_BANDS,
+  GROWING_SEASON_BANDS,
+  DORMANT_BANDS,
+  type RecencyBand,
+} from '@/lib/inspection-recency';
 import OrchardSwitcher from './OrchardSwitcher';
 import { useAreaLayer } from './useAreaLayer';
 import { useTrapLayer } from './useTrapLayer';
@@ -58,6 +70,10 @@ export interface OrchardViewerProps {
   allOrchards: OrchardConfig[];
   initialTrees: ClientTree[];
   canEdit: boolean;
+  /** tree_id -> the day it was last looked at. Absent = never. */
+  lastInspected: Record<string, string>;
+  /** The region's dormant window, which sets how forgiving the bands are. */
+  chillWindow: { start: string; end: string };
 }
 
 export default function OrchardViewer({
@@ -65,6 +81,8 @@ export default function OrchardViewer({
   allOrchards,
   initialTrees,
   canEdit,
+  lastInspected: initialLastInspected,
+  chillWindow,
 }: OrchardViewerProps) {
   const router = useRouter();
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -357,6 +375,114 @@ export default function OrchardViewer({
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
   }, []);
 
+  // ---- inspection recency ----
+  //
+  // A second way to read the same dots: not "how is this tree" but "when
+  // did anyone last look at it". Worth having as its own mode because
+  // status colouring cannot distinguish a tree that is genuinely fine
+  // from one nobody has visited — both come out 'unknown' grey, and at
+  // Finn Hall that was 475 trees out of 480.
+  const [recencyMode, setRecencyMode] = useState(false);
+  const [lastSeen, setLastSeen] = useState<Record<string, string>>(initialLastInspected);
+  const [activeBands, setActiveBands] = useState<Set<RecencyBand>>(
+    () => new Set(RECENCY_BANDS)
+  );
+
+  /** Record a fresh look locally, so the map moves the moment one is saved. */
+  const markInspected = useCallback(
+    (treeId: string) => setLastSeen((prev) => ({ ...prev, [treeId]: todayYmd })),
+    [todayYmd]
+  );
+
+  const recencyBands = useMemo(
+    () =>
+      isDormant(todayYmd, chillWindow.start, chillWindow.end)
+        ? DORMANT_BANDS
+        : GROWING_SEASON_BANDS,
+    [todayYmd, chillWindow.start, chillWindow.end]
+  );
+
+  const lastSeenMap = useMemo(() => new Map(Object.entries(lastSeen)), [lastSeen]);
+
+  // A walk paints the same dots with its own done/todo channel, so the
+  // two modes are mutually exclusive rather than stacked.
+  const recencyActive = recencyMode && !walkMode;
+
+  const recencyByTree = useMemo(() => {
+    if (!recencyActive) return null;
+    const m = new Map<string, RecencyBand>();
+    for (const t of trees) {
+      m.set(t.tree_id, bandFor(lastSeen[t.tree_id] ?? null, todayYmd, recencyBands));
+    }
+    return m;
+  }, [recencyActive, trees, lastSeen, todayYmd, recencyBands]);
+
+  const recencyCounts = useMemo(
+    () => bandCounts(lastSeenMap, trees.map((t) => t.tree_id), todayYmd, recencyBands),
+    [lastSeenMap, trees, todayYmd, recencyBands]
+  );
+
+  // Legend chips switched off hide their trees, which is what makes
+  // "Never inspected" useful: tap it and the map becomes the to-do list.
+  const hiddenIds = useMemo(() => {
+    if (!recencyByTree || activeBands.size === RECENCY_BANDS.length) return null;
+    const hidden = new Set<string>();
+    for (const [treeId, band] of recencyByTree) {
+      if (!activeBands.has(band)) hidden.add(treeId);
+    }
+    return hidden;
+  }, [recencyByTree, activeBands]);
+  const toggleBand = useCallback((band: RecencyBand) => {
+    setActiveBands((prev) => {
+      const next = new Set(prev);
+      if (next.has(band)) next.delete(band);
+      else next.add(band);
+      return next;
+    });
+  }, []);
+
+  /**
+   * A walk already reports which trees it has assessed, for the map
+   * styling. Recency rides on that rather than adding a second callback
+   * down the same path.
+   */
+  const handleWalkProgress = useCallback(
+    (progress: WalkProgressView | null) => {
+      setWalkProgress(progress);
+      if (!progress?.done.size) return;
+      setLastSeen((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const treeId of progress.done) {
+          if (next[treeId] === todayYmd) continue;
+          next[treeId] = todayYmd;
+          changed = true;
+        }
+        return changed ? next : prev;
+      });
+    },
+    [todayYmd]
+  );
+
+  const legendChips = useMemo<LegendChip[]>(
+    () =>
+      recencyActive
+        ? RECENCY_BANDS.map((band) => ({
+            key: band,
+            label: BAND_STYLE[band].label,
+            count: recencyCounts[band],
+            fill: BAND_STYLE[band].fill,
+            ring: BAND_STYLE[band].ring === '#FFFFFF' ? undefined : BAND_STYLE[band].ring,
+          }))
+        : TREE_STATUSES.map((status) => ({
+            key: status,
+            label: STATUS_LABEL[status],
+            count: statusCounts[status],
+            fill: STATUS_COLORS[status],
+          })),
+    [recencyActive, recencyCounts, statusCounts]
+  );
+
   const refreshTraps = useCallback(async () => {
     try {
       setTraps(await fetchTraps(orchard.id, season));
@@ -459,6 +585,9 @@ export default function OrchardViewer({
     statusFilter: activeStatuses.size === TREE_STATUSES.length ? null : activeStatuses,
     selectedTreeId,
     walkProgress: walkMode ? walkProgress : null,
+    recency: recencyByTree,
+    hiddenIds,
+    lastInspected: recencyActive ? lastSeenMap : null,
     onSelect: select,
     onMove: handleMove,
   });
@@ -644,6 +773,31 @@ export default function OrchardViewer({
         </button>
 
         {/*
+          Two readings of the same dots. Kept as a mode rather than a
+          separate page so the switch is one tap while standing in the
+          orchard, and so selection and the open panel survive it.
+        */}
+        {trees.length > 0 && !walkMode && !detectMode && (
+          <button
+            onClick={() => setRecencyMode((v) => !v)}
+            aria-pressed={recencyMode}
+            title={
+              recencyMode
+                ? 'Back to colouring by condition'
+                : 'Colour by how long since anyone looked'
+            }
+            className={`inline-flex items-center gap-1.5 rounded-lg shadow-lg px-2.5 py-2 text-sm font-medium ${
+              recencyMode
+                ? 'bg-canopy-600 text-white hover:bg-canopy-700'
+                : 'bg-surface text-ink hover:bg-canopy-50'
+            }`}
+          >
+            <Eye aria-hidden size={18} />
+            {recencyMode ? 'Last looked at' : 'Coverage'}
+          </button>
+        )}
+
+        {/*
           What the program is asking for, on the map itself. Fetched
           after the tiles rather than blocking them, so it appears a
           moment late instead of holding up the map.
@@ -684,8 +838,25 @@ export default function OrchardViewer({
         </div>
       </div>
 
-      {/* Legend / status filter */}
-      <MapLegend counts={statusCounts} active={activeStatuses} onToggle={toggleStatus} />
+      {/* Legend / filter — condition by default, recency in the other mode */}
+      <MapLegend
+        chips={legendChips}
+        active={recencyActive ? activeBands : activeStatuses}
+        onToggle={
+          recencyActive
+            ? (key) => toggleBand(key as RecencyBand)
+            : (key) => toggleStatus(key as TreeStatus)
+        }
+        caption={
+          recencyActive
+            ? `Days since anyone looked. ${
+                isDormant(todayYmd, chillWindow.start, chillWindow.end)
+                  ? 'Dormant season, so the bands are wider'
+                  : 'Growing season, so the bands are tight'
+              } — fresh within ${recencyBands.freshDays}d, stale past ${recencyBands.ageingDays}d.`
+            : undefined
+        }
+      />
 
       {/* Empty state */}
       {trees.length === 0 && !editMode && (
@@ -908,7 +1079,7 @@ export default function OrchardViewer({
           settings={walkSettings}
           startTreeId={selectedTreeId}
           onPathPreview={setWalkPath}
-          onProgress={setWalkProgress}
+          onProgress={handleWalkProgress}
           onSetStatus={walkSetStatus}
           onFocusTree={focusWalkTree}
           pests={pestLibrary.entries}
@@ -980,6 +1151,7 @@ export default function OrchardViewer({
           walkSettings={walkSettings}
           onClose={clear}
           onSetStatus={walkSetStatus}
+          onInspected={markInspected}
           pests={pestLibrary.entries}
           pestSightings={pestLibrary.counts}
           pestsRanked={pestsRanked}

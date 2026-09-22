@@ -113,3 +113,44 @@ export function diffTreeChanges(
   }
   return changes;
 }
+
+/**
+ * Event types that count as having looked at the tree.
+ *
+ * The test is whether the event records something about the tree's
+ * CONDITION, not whether somebody stood next to it. Pruning, spray and
+ * fertilize record work done; a note can be a reminder to order rootstock.
+ * None of those tell you how the tree is, so none of them should make a
+ * tree look freshly inspected on the map.
+ */
+export const INSPECTION_EVENT_TYPES = [
+  'observation',
+  'bloom',
+  'fruit_check',
+  'status_change',
+  'harvest',
+] as const;
+
+/**
+ * The last day each tree in an orchard was looked at.
+ *
+ * Trees with no qualifying event are simply absent from the result —
+ * "never inspected" is the absence of a row, and the map draws it as its
+ * own thing rather than as a very old inspection.
+ */
+export async function lastInspectedByOrchard(
+  orchardId: string
+): Promise<Record<string, string>> {
+  const result = await sql.query<{ tree_id: string; last_inspected: string }>(
+    `SELECT tree_id, MAX(event_date)::text AS last_inspected
+       FROM tree_events
+      WHERE orchard_id = $1
+        AND undone_at IS NULL
+        AND event_type = ANY($2)
+      GROUP BY tree_id`,
+    [orchardId, INSPECTION_EVENT_TYPES as unknown as string[]]
+  );
+  const out: Record<string, string> = {};
+  for (const row of result.rows) out[row.tree_id] = row.last_inspected;
+  return out;
+}
