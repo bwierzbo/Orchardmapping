@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { requireOrchardPage } from '@/lib/orchard-page';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { ArrowLeft, Bug } from 'lucide-react';
@@ -13,6 +14,7 @@ interface PageProps {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params;
+  await requireOrchardPage(id);
   const orchard = await getOrchardConfigById(id).catch(() => null);
   return { title: orchard ? `${orchard.name} — pests & diseases` : 'Pests & diseases' };
 }
@@ -37,6 +39,7 @@ const CATEGORY_LABEL: Record<string, string> = {
 
 export default async function PestsPage({ params }: PageProps) {
   const { id } = await params;
+  await requireOrchardPage(id);
   const orchard = await getOrchardConfigById(id).catch(() => null);
   if (!orchard) notFound();
 

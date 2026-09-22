@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { requireOrchardPage } from '@/lib/orchard-page';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { ArrowLeft, SprayCan } from 'lucide-react';
@@ -15,12 +16,14 @@ interface PageProps {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params;
+  await requireOrchardPage(id);
   const orchard = await getOrchardConfigById(id).catch(() => null);
   return { title: orchard ? `${orchard.name} — spray & IPM` : 'Spray & IPM' };
 }
 
 export default async function SprayPage({ params }: PageProps) {
   const { id } = await params;
+  await requireOrchardPage(id);
   const [orchard, targets] = await Promise.all([
     getOrchardConfigById(id).catch(() => null),
     // The pest library is the vocabulary; the form must not keep its own
