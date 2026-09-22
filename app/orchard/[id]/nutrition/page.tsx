@@ -1,4 +1,8 @@
 import Link from 'next/link';
+import WhatToDo from './WhatToDo';
+import { adviceFor } from '@/lib/db/nutrient-advice';
+import { orchardRegion } from '@/lib/db/regions';
+import { viewerRole, roleAtLeast } from '@/lib/orchard-access';
 import { requireOrchardPage } from '@/lib/orchard-page';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
@@ -64,6 +68,11 @@ export default async function NutritionPage({ params }: PageProps) {
   const problems = assessed.filter(
     (a) => a.verdict === 'deficient' || a.verdict === 'excessive'
   );
+  // What to do about them, where anything is recorded
+  const region = await orchardRegion(orchard.id);
+  const advice = await adviceFor(region?.key ?? null, problems).catch(() => new Map());
+  const role = await viewerRole(orchard.id);
+  const canEdit = !!role && roleAtLeast(role, 'operator');
 
   return (
     <main className="min-h-dvh bg-paper">
@@ -158,6 +167,13 @@ export default async function NutritionPage({ params }: PageProps) {
                 </tbody>
               </table>
             </div>
+
+            <WhatToDo
+              orchardId={orchard.id}
+              problems={problems.map((p) => ({ nutrient: p.nutrient, verdict: p.verdict }))}
+              advice={Object.fromEntries(advice)}
+              canEdit={canEdit}
+            />
 
             {notes.length > 0 && (
               <div className="mt-4 border-l-2 border-canopy-600 pl-3">

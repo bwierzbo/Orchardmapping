@@ -42,6 +42,7 @@ import {
   freeStepKey,
 } from '@/lib/db/program';
 import { triggerSchema } from '@/lib/trigger-schema';
+import { getNutrientAdvice } from '@/lib/db/nutrient-advice';
 import {
   validateTreeRow,
   validateTreeUpdate,
@@ -977,6 +978,59 @@ export const appRouter = router({
    * a reading means, which is interpretation and lives in lib.
    */
   nutrition: router({
+    /**
+     * Take a nutrient recommendation into this orchard's program.
+     *
+     * Mirrors adopting an IPM step: the advice becomes a step the orchard
+     * owns and can retime, rather than a note somebody has to remember.
+     * A recommendation with no timing becomes a step anchored to leaf
+     * fall, which is when most corrective applications go on — and which
+     * the grower can immediately change.
+     */
+    acceptAdvice: orchardOperatorProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          adviceId: z.number().int().positive(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const advice = await getNutrientAdvice(input.adviceId);
+        if (!advice) throw new TRPCError({ code: 'NOT_FOUND', message: 'No such recommendation.' });
+
+        const trigger = advice.triggerSpec ?? {
+          type: 'phenology',
+          stage: 'leaf_fall',
+          windowDays: 30,
+        };
+        const parsed = triggerSchema.safeParse(trigger);
+        if (!parsed.success) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: `That recommendation has a timing the scheduler cannot read: ${parsed.error.issues[0].message}`,
+          });
+        }
+
+        const key = await freeStepKey(input.orchardId, advice.title);
+        await createOrchardStep(input.orchardId, {
+          key,
+          title: advice.title,
+          detail: [
+            advice.detail,
+            advice.rateLow != null
+              ? `Rate: ${advice.rateLow}${advice.rateHigh != null && advice.rateHigh !== advice.rateLow ? `–${advice.rateHigh}` : ''} ${advice.rateUnit ?? ''}`.trim()
+              : null,
+            advice.source ? `Source: ${advice.source}` : null,
+          ]
+            .filter(Boolean)
+            .join('\n\n'),
+          category: 'nutrition',
+          materialKey: advice.materialKey,
+          triggerSpec: parsed.data,
+        });
+        return { key };
+      }),
+
     setIntent: orchardOperatorProcedure
       .input(
         z.object({

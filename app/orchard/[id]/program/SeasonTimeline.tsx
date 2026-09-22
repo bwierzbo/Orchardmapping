@@ -17,9 +17,10 @@ const CATEGORY_LABEL: Record<StepCategory, string> = {
   insect: 'Insect',
   sanitation: 'Sanitation',
   monitoring: 'Monitoring',
+  nutrition: 'Nutrition',
 };
 
-const LANES: StepCategory[] = ['disease', 'insect', 'sanitation', 'monitoring'];
+const LANES: StepCategory[] = ['disease', 'insect', 'nutrition', 'sanitation', 'monitoring'];
 
 /** Status → fill. Never the tree status palette; different question. */
 const STATUS_FILL: Record<StepStatus, string> = {
