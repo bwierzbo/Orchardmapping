@@ -53,6 +53,7 @@ import { formatAddress } from '@/lib/address';
 import { applyTreeEdits } from '@/lib/db/group-actions';
 import { listPeople, setGlobalRole } from '@/lib/db/people';
 import { listVarietyOptions, listFruitTypes } from '@/lib/db/varieties';
+import { listRegions, getRegion, setOrchardRegion } from '@/lib/db/regions';
 import { toYMD } from '@/lib/dates';
 import { TRPCError } from '@trpc/server';
 import { listAreas, insertArea, updateArea, deleteArea, AREA_KINDS } from '@/lib/db/areas';
@@ -121,6 +122,35 @@ export const appRouter = router({
         }
         return config;
       }),
+    /** Regions to choose from, with the settings each one drives. */
+    regions: orchardViewerProcedure
+      .input(z.object({ orchardId: z.string().min(1) }))
+      .query(() => listRegions()),
+
+    /**
+     * Put this orchard in a region, or take it out of one.
+     *
+     * Always a choice, never derived: the published boundary of the
+     * Olympic Rainshadow runs east through Port Townsend, so whether a
+     * given orchard belongs to it is a judgement its owner is better
+     * placed to make than its coordinates are. Null means undecided, and
+     * the program should say so rather than assume.
+     */
+    setRegion: orchardAdminProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          regionKey: z.string().min(1).nullable(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        if (input.regionKey && !(await getRegion(input.regionKey))) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'No such region.' });
+        }
+        await setOrchardRegion(input.orchardId, input.regionKey);
+        return { ok: true };
+      }),
+
     setBoundary: orchardOperatorProcedure
       .input(z.object({ orchardId: z.string().min(1), boundary: z.unknown() }))
       .mutation(async ({ input }) => {

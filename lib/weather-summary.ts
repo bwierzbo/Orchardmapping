@@ -1,4 +1,10 @@
-import { chillPortions, chillHours, chillSeasonWindow, type HourTemp } from './chill';
+import {
+  chillPortions,
+  chillHours,
+  chillSeasonWindow,
+  type ChillWindow,
+  type HourTemp,
+} from './chill';
 import { gdd50, milestoneDates, type MilestoneHit } from './gdd';
 
 /**
@@ -27,7 +33,9 @@ export interface SeasonSummary {
 
 export function buildSeasonSummary(input: {
   asOfYmd: string;
-  /** Hours inside the chill season window (Nov 1 → min(asOf, Apr 30)). */
+  /** The region's chill window; defaults to the maritime PNW one. */
+  chillWindow?: ChillWindow;
+  /** Hours inside the chill season window. */
   chillWindowHours: readonly HourTemp[];
   /** Hours from Jan 1 of the as-of year through asOf. */
   yearHours: readonly HourTemp[];
@@ -36,7 +44,7 @@ export function buildSeasonSummary(input: {
   priorYears: number;
   dataThrough: string | null;
 }): SeasonSummary {
-  const window = chillSeasonWindow(input.asOfYmd);
+  const window = chillSeasonWindow(input.asOfYmd, input.chillWindow);
   return {
     chill: {
       seasonLabel: window.label,

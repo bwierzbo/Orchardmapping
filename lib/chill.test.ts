@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { chillPortions, chillHours, chillSeasonWindow, type HourTemp } from './chill';
+import {
+  chillPortions,
+  chillHours,
+  chillSeasonWindow,
+  MARITIME_PNW_CHILL,
+  type HourTemp,
+} from './chill';
 
 function constantHours(tempC: number, n: number, startDay = 1): HourTemp[] {
   const hours: HourTemp[] = [];
@@ -77,5 +83,40 @@ describe('chillSeasonWindow', () => {
       end: '2026-04-30',
       label: '2025–26',
     });
+  });
+});
+
+describe('chillSeasonWindow across regions', () => {
+  it('defaults to what the app assumed before regions existed', () => {
+    expect(chillSeasonWindow('2026-02-10')).toEqual(
+      chillSeasonWindow('2026-02-10', MARITIME_PNW_CHILL)
+    );
+  });
+
+  it('opens earlier where a region says chill starts earlier', () => {
+    // A continental orchard is banking chill by mid-October; the maritime
+    // window would silently drop those hours.
+    const w = chillSeasonWindow('2026-02-10', { startMmdd: '10-01', endMmdd: '04-30' });
+    expect(w.start).toBe('2025-10-01');
+    expect(w.label).toBe('2025–26');
+  });
+
+  it('handles a season that does not straddle the year end', () => {
+    // Southern hemisphere: chill runs inside one calendar year.
+    const w = chillSeasonWindow('2026-08-15', { startMmdd: '05-01', endMmdd: '09-30' });
+    expect(w).toEqual({ start: '2026-05-01', end: '2026-08-15', label: '2026' });
+  });
+
+  it('caps the end at today, and not beyond the window', () => {
+    const mid = chillSeasonWindow('2026-02-10', MARITIME_PNW_CHILL);
+    expect(mid.end).toBe('2026-02-10');
+    const after = chillSeasonWindow('2026-09-10', MARITIME_PNW_CHILL);
+    expect(after.end).toBe('2026-04-30');
+  });
+
+  it('puts an autumn date in the season that is opening, not the one that closed', () => {
+    const w = chillSeasonWindow('2026-11-15', MARITIME_PNW_CHILL);
+    expect(w.start).toBe('2026-11-01');
+    expect(w.label).toBe('2026–27');
   });
 });

@@ -1,5 +1,6 @@
 import { Snowflake, Thermometer } from 'lucide-react';
 import { chillSeasonWindow } from '@/lib/chill';
+import { orchardRegion } from '@/lib/db/regions';
 import { buildSeasonSummary } from '@/lib/weather-summary';
 import {
   ensureWeatherCurrent,
@@ -28,11 +29,16 @@ export default async function SeasonCard({
   await ensureWeatherCurrent(orchardId, lat, lng);
 
   const asOf = nowLocalIso(await orchardTimezone(orchardId)).slice(0, 10);
-  const window = chillSeasonWindow(asOf);
+  // Chill accumulates over the region's window, not a fixed Nov-Apr
+  const region = await orchardRegion(orchardId);
+  const chillWindow = region
+    ? { startMmdd: region.chillStartMmdd, endMmdd: region.chillEndMmdd }
+    : undefined;
+  const window = chillSeasonWindow(asOf, chillWindow);
   const [chillWindowHours, yearHours, prior, dataThrough] = await Promise.all([
     getHours(orchardId, window.start, window.end),
     getHours(orchardId, `${asOf.slice(0, 4)}-01-01`, asOf),
-    priorSeasonAggregates(orchardId, asOf),
+    priorSeasonAggregates(orchardId, asOf, chillWindow),
     latestHourTs(orchardId),
   ]);
 
@@ -40,6 +46,7 @@ export default async function SeasonCard({
 
   const s = buildSeasonSummary({
     asOfYmd: asOf,
+    chillWindow,
     chillWindowHours,
     yearHours,
     avgChillHours: prior.avgChillHours,

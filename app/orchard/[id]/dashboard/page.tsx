@@ -13,6 +13,8 @@ import { serializeTree } from '@/lib/serialize';
 import { computeOrchardStats } from '@/lib/dashboard-stats';
 import OrchardSwitcher from '../viewer/OrchardSwitcher';
 import SeasonCard from './SeasonCard';
+import RegionCard from './RegionCard';
+import { orchardRegion, listRegions } from '@/lib/db/regions';
 import StageCard from './StageCard';
 import DueNowCard from './DueNowCard';
 import { roleAtLeast, memberOrchardConfigs } from '@/lib/orchard-access';
@@ -41,10 +43,12 @@ export default async function DashboardPage({ params }: PageProps) {
   const { id } = await params;
   const role = await requireOrchardPage(id);
   const { userId } = await auth();
-  const [orchard, allOrchards, dbTrees] = await Promise.all([
+  const [orchard, allOrchards, dbTrees, region, regions] = await Promise.all([
     getOrchard(id),
     userId ? memberOrchardConfigs(userId) : Promise.resolve([]),
     getTreesByOrchard(id),
+    orchardRegion(id),
+    listRegions(),
   ]);
   if (!orchard) notFound();
 
@@ -188,6 +192,15 @@ export default async function DashboardPage({ params }: PageProps) {
         >
           <SeasonCard orchardId={orchard.id} lat={lat} lng={lng} />
         </Suspense>
+
+        <div className="mt-4">
+          <RegionCard
+            orchardId={orchard.id}
+            region={region}
+            regions={regions}
+            canEdit={!!role && roleAtLeast(role, 'admin')}
+          />
+        </div>
 
         {/*
           The census moved to /stats. This page had thirteen cards
