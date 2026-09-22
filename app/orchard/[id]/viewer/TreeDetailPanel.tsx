@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ClientTree, TreeStatus } from '@/lib/types';
 import { TREE_STATUSES } from '@/lib/types';
 import type { WalkSettings } from '@/lib/settings';
@@ -32,20 +32,6 @@ const ALL_INSPECTIONS: ReadonlySet<'health' | 'bloom' | 'fruit'> = new Set([
   'bloom',
   'fruit',
 ] as const);
-
-/** Suggested fruit categories; the field accepts any value. */
-const FRUIT_TYPES = [
-  'apple',
-  'pear',
-  'plum',
-  'persimmon',
-  'apricot',
-  'cherry',
-  'peach',
-  'quince',
-  'fig',
-  'nut',
-];
 
 interface TreeDetailPanelProps {
   tree: ClientTree;
@@ -81,6 +67,23 @@ export default function TreeDetailPanel({
 }: TreeDetailPanelProps) {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Suggested fruit types come from the orchard, not a hardcoded list
+  const [fruitTypes, setFruitTypes] = useState<string[]>([]);
+
+  useEffect(() => {
+    let live = true;
+    trpc.tree.fruitTypes
+      .query({ orchardId: tree.orchard_id })
+      .then((f) => {
+        if (live) setFruitTypes(f);
+      })
+      .catch(() => {
+        // Suggestions only; the field accepts any value regardless.
+      });
+    return () => {
+      live = false;
+    };
+  }, [tree.orchard_id]);
   const [inspecting, setInspecting] = useState(false);
   const [inspectBusy, setInspectBusy] = useState(false);
   const [historyVersion, setHistoryVersion] = useState(0);
@@ -314,7 +317,7 @@ export default function TreeDetailPanel({
                   placeholder="apple"
                 />
                 <datalist id="fruit-types">
-                  {FRUIT_TYPES.map((t) => (
+                  {fruitTypes.map((t) => (
                     <option key={t} value={t} />
                   ))}
                 </datalist>

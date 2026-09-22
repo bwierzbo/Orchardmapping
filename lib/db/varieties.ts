@@ -66,3 +66,45 @@ export async function listVarietyOptions(orchardId: string): Promise<VarietyOpti
     };
   });
 }
+
+/**
+ * Fruit types to offer, in this orchard.
+ *
+ * Whatever is already planted here, plus a common set — so a grower who
+ * has one medlar sees "medlar" the second time without retyping it, and
+ * a grower who has none still gets sensible suggestions. The hardcoded
+ * list this replaces had drifted: it offered fig and apricot while the
+ * orchards actually held hazelnut, huckleberry and gooseberry.
+ */
+const COMMON_FRUIT_TYPES = [
+  'apple',
+  'pear',
+  'quince',
+  'medlar',
+  'plum',
+  'cherry',
+  'peach',
+  'apricot',
+  'fig',
+  'persimmon',
+  'pomegranate',
+  'hazelnut',
+  'walnut',
+  'blueberry',
+  'raspberry',
+  'blackberry',
+  'currant',
+  'gooseberry',
+  'huckleberry',
+] as const;
+
+export async function listFruitTypes(orchardId: string): Promise<string[]> {
+  const { rows } = await sql`
+    SELECT DISTINCT btrim(fruit_type) AS fruit_type
+    FROM trees
+    WHERE orchard_id = ${orchardId} AND btrim(COALESCE(fruit_type, '')) <> ''
+  `;
+  const used = rows.map((r) => String(r.fruit_type));
+  const seen = new Set(used.map((f) => f.toLowerCase()));
+  return [...used.sort(), ...COMMON_FRUIT_TYPES.filter((f) => !seen.has(f))];
+}
