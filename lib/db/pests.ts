@@ -15,7 +15,8 @@ export interface PestEntry {
   name: string;
   scientific_name: string | null;
   category: string;
-  prevalence: string;
+  /** How much of a problem here. Null when this region has not been assessed. */
+  prevalence: string | null;
   summary: string;
   symptoms: string | null;
   lookalikes: string | null;
@@ -45,7 +46,7 @@ function decodeEntry(row: Record<string, unknown>): PestEntry {
     name: String(row.name),
     scientific_name: (row.scientific_name as string | null) ?? null,
     category: String(row.category),
-    prevalence: String(row.prevalence),
+    prevalence: row.prevalence == null ? null : String(row.prevalence),
     summary: String(row.summary),
     symptoms: (row.symptoms as string | null) ?? null,
     lookalikes: (row.lookalikes as string | null) ?? null,
@@ -58,15 +59,42 @@ function decodeEntry(row: Record<string, unknown>): PestEntry {
   };
 }
 
-export async function listPests(): Promise<PestEntry[]> {
+/**
+ * The pest library, with prevalence for a given region.
+ *
+ * What a pest IS — biology, symptoms, lookalikes, how to monitor it — is
+ * the same everywhere and comes from pest_library. How much of a problem
+ * it is comes from the region, and is NULL when that region has not been
+ * assessed. Null means unknown, and must not fall back to another
+ * region's answer: "fire blight, absent" is true west of the Cascades and
+ * dangerous in Michigan.
+ */
+export async function listPests(regionKey?: string | null): Promise<PestEntry[]> {
   const { rows } = await sql`
-    SELECT * FROM pest_library ORDER BY sort_order, name
+    SELECT p.key, p.name, p.scientific_name, p.category,
+           rp.prevalence,
+           p.summary, p.symptoms, p.lookalikes, p.lifecycle, p.timing,
+           p.monitoring, p.management, p.cider_note, p.refs, p.sort_order
+    FROM pest_library p
+    LEFT JOIN region_pests rp
+      ON rp.pest_key = p.key AND rp.region_key = ${regionKey ?? null}
+    ORDER BY p.sort_order, p.name
   `;
   return rows.map(decodeEntry);
 }
 
-export async function getPest(key: string): Promise<PestEntry | null> {
-  const { rows } = await sql`SELECT * FROM pest_library WHERE key = ${key} LIMIT 1`;
+export async function getPest(key: string, regionKey?: string | null): Promise<PestEntry | null> {
+  const { rows } = await sql`
+    SELECT p.key, p.name, p.scientific_name, p.category,
+           rp.prevalence,
+           p.summary, p.symptoms, p.lookalikes, p.lifecycle, p.timing,
+           p.monitoring, p.management, p.cider_note, p.refs, p.sort_order
+    FROM pest_library p
+    LEFT JOIN region_pests rp
+      ON rp.pest_key = p.key AND rp.region_key = ${regionKey ?? null}
+    WHERE p.key = ${key}
+    LIMIT 1
+  `;
   return rows[0] ? decodeEntry(rows[0]) : null;
 }
 

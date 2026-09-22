@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { orchardRegion } from '@/lib/db/regions';
 import { requireOrchardPage } from '@/lib/orchard-page';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
@@ -28,6 +29,13 @@ const PREVALENCE_STYLE: Record<string, { label: string; className: string }> = {
   beneficial: { label: 'Beneficial', className: 'bg-canopy-600/20 text-canopy-700 dark:text-canopy-100' },
 };
 
+/**
+ * Shown when this orchard's region has no assessment for a pest — which
+ * is not the same as "not found here", and must not borrow another
+ * region's answer.
+ */
+const UNASSESSED = { label: 'Not assessed here', className: 'bg-line text-bark' };
+
 const CATEGORY_ORDER = ['disease', 'insect', 'mite', 'beneficial', 'vertebrate'];
 const CATEGORY_LABEL: Record<string, string> = {
   disease: 'Diseases',
@@ -43,8 +51,9 @@ export default async function PestsPage({ params }: PageProps) {
   const orchard = await getOrchardConfigById(id).catch(() => null);
   if (!orchard) notFound();
 
+  const region = await orchardRegion(id);
   const [entries, counts] = await Promise.all([
-    listPests(),
+    listPests(region?.key ?? null),
     observationCounts(orchard.id).catch(() => ({} as Record<string, number>)),
   ]);
 
@@ -83,7 +92,7 @@ export default async function PestsPage({ params }: PageProps) {
             </h2>
             <ul className="grid gap-2 sm:grid-cols-2">
               {group.items.map((e) => {
-                const style = PREVALENCE_STYLE[e.prevalence] ?? PREVALENCE_STYLE.moderate;
+                const style = (e.prevalence && PREVALENCE_STYLE[e.prevalence]) || UNASSESSED;
                 const seen = counts[e.key] ?? 0;
                 return (
                   <li key={e.key}>

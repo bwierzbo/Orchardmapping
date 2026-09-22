@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { findCoverageGaps, type CoverageInputs } from './program-coverage';
 
-const pest = (key: string, prevalence: string, category = 'insect') => ({
+const pest = (key: string, prevalence: string | null, category = 'insect') => ({
   key,
   name: key,
   category,
@@ -114,5 +114,25 @@ describe('findCoverageGaps', () => {
       materials: [],
     });
     expect(gaps.map((g) => g.pestKey)).toEqual(['high_one', 'moderate_one']);
+  });
+});
+
+describe('a region with no assessment', () => {
+  it('reports no gap for a pest it knows nothing about', () => {
+    // Not the same as "absent". An orchard outside any assessed region
+    // should get silence, not another region's answer.
+    const gaps = findCoverageGaps({
+      ...THE_LEAFROLLER_CASE,
+      pests: [pest('fire_blight', null, 'disease')],
+    });
+    expect(gaps).toEqual([]);
+  });
+
+  it('still reports gaps for the pests its region did assess', () => {
+    const gaps = findCoverageGaps({
+      ...THE_LEAFROLLER_CASE,
+      pests: [pest('fire_blight', null, 'disease'), pest('apple_scab', 'high', 'disease')],
+    });
+    expect(gaps.map((g) => g.pestKey)).toEqual(['apple_scab']);
   });
 });

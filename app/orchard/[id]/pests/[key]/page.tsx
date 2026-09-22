@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { orchardRegion } from '@/lib/db/regions';
 import { requireOrchardPage } from '@/lib/orchard-page';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
@@ -40,9 +41,10 @@ function Section({ title, body }: { title: string; body: string | null }) {
 export default async function PestDetailPage({ params }: PageProps) {
   const { id, key } = await params;
   await requireOrchardPage(id);
+  const region = await orchardRegion(id);
   const [orchard, entry] = await Promise.all([
     getOrchardConfigById(id).catch(() => null),
-    getPest(key).catch(() => null),
+    getPest(key, region?.key ?? null).catch(() => null),
   ]);
   if (!orchard || !entry) notFound();
 

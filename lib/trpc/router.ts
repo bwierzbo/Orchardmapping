@@ -53,7 +53,7 @@ import { formatAddress } from '@/lib/address';
 import { applyTreeEdits } from '@/lib/db/group-actions';
 import { listPeople, setGlobalRole } from '@/lib/db/people';
 import { listVarietyOptions, listFruitTypes } from '@/lib/db/varieties';
-import { listRegions, getRegion, setOrchardRegion } from '@/lib/db/regions';
+import { listRegions, getRegion, setOrchardRegion, orchardRegion } from '@/lib/db/regions';
 import { toYMD } from '@/lib/dates';
 import { TRPCError } from '@trpc/server';
 import { listAreas, insertArea, updateArea, deleteArea, AREA_KINDS } from '@/lib/db/areas';
@@ -637,7 +637,9 @@ export const appRouter = router({
     list: orchardViewerProcedure
       .input(z.object({ orchardId: z.string().min(1).optional() }).optional())
       .query(async ({ input }) => {
-        const entries = await listPests();
+        // Prevalence is the region's answer, not the library's
+        const region = input?.orchardId ? await orchardRegion(input.orchardId) : null;
+        const entries = await listPests(region?.key ?? null);
         const counts = input?.orchardId
           ? await observationCounts(input.orchardId)
           : {};
@@ -647,7 +649,8 @@ export const appRouter = router({
     get: orchardViewerProcedure
       .input(z.object({ key: z.string().min(1), orchardId: z.string().min(1).optional() }))
       .query(async ({ input }) => {
-        const entry = await getPest(input.key);
+        const region = input.orchardId ? await orchardRegion(input.orchardId) : null;
+        const entry = await getPest(input.key, region?.key ?? null);
         if (!entry) throw new TRPCError({ code: 'NOT_FOUND', message: 'Entry not found' });
         const observations = input.orchardId
           ? await listObservations(input.orchardId, input.key)
