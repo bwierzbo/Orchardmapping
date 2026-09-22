@@ -39,36 +39,51 @@ function decode(row: Record<string, unknown>): ProgramStep {
  * local. A missing settings row means enabled, so the override table
  * only ever holds deliberate opt-outs.
  */
+/**
+ * The steps this orchard is actually running.
+ *
+ * Its own rows, not a global calendar filtered by an opt-out list. An
+ * orchard with no steps has none — which is what a new orchard in an
+ * unassessed region should get, rather than somebody else's program.
+ */
 export async function listProgramSteps(orchardId: string): Promise<ProgramStep[]> {
   const { rows } = await sql`
-    SELECT s.key, s.title, s.detail, s.category, s.pest_key, s.material_key,
-           s.trigger_spec, s.repeat_days, s.sort_order
-    FROM program_steps s
-    LEFT JOIN orchard_step_settings o
-      ON o.step_key = s.key AND o.orchard_id = ${orchardId}
-    WHERE s.is_active AND COALESCE(o.enabled, TRUE)
-    ORDER BY s.sort_order, s.key
+    SELECT key, title, detail, category, pest_key, material_key,
+           trigger_spec, repeat_days, sort_order
+    FROM orchard_program_steps
+    WHERE orchard_id = ${orchardId} AND enabled
+    ORDER BY sort_order, key
   `;
   return rows.map(decode);
 }
 
 export interface ProgramStepChoice extends ProgramStep {
   enabled: boolean;
+  /** The recommended step this came from; null when the orchard invented it. */
+  sourceStepKey: string | null;
+  /** The region that recommended it, at the time it was adopted. */
+  recommendedBy: string | null;
+  /** Changed since it was adopted, so the recommendation no longer describes it. */
+  customised: boolean;
 }
 
 /** Every step with its on/off state — what the settings UI lists. */
 export async function listAllProgramSteps(orchardId: string): Promise<ProgramStepChoice[]> {
   const { rows } = await sql`
-    SELECT s.key, s.title, s.detail, s.category, s.pest_key, s.material_key,
-           s.trigger_spec, s.repeat_days, s.sort_order,
-           COALESCE(o.enabled, TRUE) AS enabled
-    FROM program_steps s
-    LEFT JOIN orchard_step_settings o
-      ON o.step_key = s.key AND o.orchard_id = ${orchardId}
-    WHERE s.is_active
-    ORDER BY s.sort_order, s.key
+    SELECT key, title, detail, category, pest_key, material_key,
+           trigger_spec, repeat_days, sort_order, enabled,
+           source_step_key, recommended_by, customised
+    FROM orchard_program_steps
+    WHERE orchard_id = ${orchardId}
+    ORDER BY sort_order, key
   `;
-  return rows.map((r) => ({ ...decode(r), enabled: Boolean(r.enabled) }));
+  return rows.map((r) => ({
+    ...decode(r),
+    enabled: Boolean(r.enabled),
+    sourceStepKey: (r.source_step_key as string | null) ?? null,
+    recommendedBy: (r.recommended_by as string | null) ?? null,
+    customised: Boolean(r.customised),
+  }));
 }
 
 /** Turn a step on or off for one orchard. */
@@ -78,11 +93,77 @@ export async function setStepEnabled(
   enabled: boolean
 ): Promise<void> {
   await sql`
-    INSERT INTO orchard_step_settings (orchard_id, step_key, enabled)
-    VALUES (${orchardId}, ${stepKey}, ${enabled})
-    ON CONFLICT (orchard_id, step_key)
-    DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = NOW()
+    UPDATE orchard_program_steps
+    SET enabled = ${enabled}, updated_at = NOW()
+    WHERE orchard_id = ${orchardId} AND key = ${stepKey}
   `;
+}
+
+/**
+ * Give an orchard the program its region recommends.
+ *
+ * Adds steps it does not have; leaves alone every step it already has,
+ * customised or not, because adopting a recommendation must never
+ * silently undo a decision somebody made. Returns what it added, so the
+ * caller can say so rather than claim more than it did.
+ */
+export async function adoptRegionProgram(orchardId: string): Promise<string[]> {
+  const { rows } = await sql`
+    INSERT INTO orchard_program_steps (
+      orchard_id, key, source_step_key, recommended_by,
+      title, detail, category, pest_key, material_key,
+      trigger_spec, repeat_days, sort_order, enabled
+    )
+    SELECT o.id, s.key, s.key, s.region_key,
+           s.title, s.detail, s.category, s.pest_key, s.material_key,
+           s.trigger_spec, s.repeat_days, s.sort_order, TRUE
+    FROM orchards o
+    JOIN program_steps s ON s.region_key = o.region_key AND s.is_active
+    WHERE o.id = ${orchardId}
+    ON CONFLICT (orchard_id, key) DO NOTHING
+    RETURNING key
+  `;
+  return rows.map((r) => String(r.key));
+}
+
+/**
+ * How this orchard's program compares with what its region recommends:
+ * steps it has never adopted, and steps it has changed since adopting.
+ * Neither is a problem — this is for showing, not correcting.
+ */
+export async function programDrift(orchardId: string): Promise<{
+  notAdopted: Array<{ key: string; title: string }>;
+  customised: Array<{ key: string; title: string }>;
+  invented: Array<{ key: string; title: string }>;
+}> {
+  const [missing, changed, own] = await Promise.all([
+    sql`
+      SELECT s.key, s.title
+      FROM orchards o
+      JOIN program_steps s ON s.region_key = o.region_key AND s.is_active
+      LEFT JOIN orchard_program_steps ops
+        ON ops.orchard_id = o.id AND ops.key = s.key
+      WHERE o.id = ${orchardId} AND ops.id IS NULL
+      ORDER BY s.sort_order
+    `,
+    sql`
+      SELECT key, title FROM orchard_program_steps
+      WHERE orchard_id = ${orchardId} AND customised AND source_step_key IS NOT NULL
+      ORDER BY sort_order
+    `,
+    sql`
+      SELECT key, title FROM orchard_program_steps
+      WHERE orchard_id = ${orchardId} AND source_step_key IS NULL
+      ORDER BY sort_order
+    `,
+  ]);
+  const shape = (rows: Record<string, unknown>[]) =>
+    rows.map((r) => ({ key: String(r.key), title: String(r.title) }));
+  return {
+    notAdopted: shape(missing.rows),
+    customised: shape(changed.rows),
+    invented: shape(own.rows),
+  };
 }
 
 /**
