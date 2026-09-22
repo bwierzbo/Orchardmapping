@@ -52,6 +52,15 @@ This app is being aligned with CiderPilot (see the cidery repo's practices).
 - `@vercel/postgres` tagged-template `sql` everywhere; dynamic UPDATEs via `buildUpdateSet()` (`lib/db/sql-helpers.ts`) against the column whitelists `TREE_UPDATABLE_COLUMNS` / `ORCHARD_UPDATABLE_COLUMNS` — **never interpolate request-supplied column names**.
 - Tables: `sites` (a grower; holds orchards), `orchards` (config lives in DB, not code — id is a slug of the name; carries `site_id`, `code`, `next_tree_no`), `trees`, `_migrations`.
 
+### Regions (migrations 055-057) — read before touching agronomy
+- **A region is a bundle of SETTINGS, not a copy of a program** (`regions`). Chill window, codling-moth accumulation (`jan1` = no-biofix, valid north of ~46°N, vs `biofix`), generations, scab inoculum, wetness proxies. Vocabulary is EPA/Omernik Level IV — Finn Hall is `2d Olympic Rainshadow`.
+- **Wired so far: the chill window only.** `chillSeasonWindow(asOf, window)` and the SQL in `lib/db/weather.ts` both take it. The rest are recorded and still hardcoded elsewhere; the region card says which is which. Don't claim a setting is live without checking.
+- **`orchards.region_key` is a suggestion, never derived silently.** The published boundary of 2d runs east through Port Townsend, so the edge is a judgement. NULL means undecided, and the program is not offered — see `RegionBanner`.
+- **Pest prevalence is regional** (`region_pests`), and NULL means *unassessed*, which is not *absent*. `pest_library.prevalence` is deprecated. `findCoverageGaps` skips null so an unassessed orchard gets silence rather than another region's judgement.
+- **Each orchard owns its program** (`orchard_program_steps`), materialised from its region's recommendation. `program_steps` is now the recommendation, tagged `region_key`. Steps carry `source_step_key`, `recommended_by` and `customised`; `programDrift()` reports not-adopted / customised / invented.
+- **`adoptRegionProgram()` adapts as it copies** (`lib/region-program.ts`) and never touches a step already present.
+- **Triggers are validated at runtime** (`lib/trigger-schema.ts`) because growers can now invent steps. All 23 seeded steps validate against it.
+
 ### Tree identity vs. tree address (migration 049) — read before touching trees
 - **`tree_id` is permanent and opaque**: `OBC-001-0142` = site code, orchard code, tree number. Issued once by `allocateTreeIds()` (`lib/db/trees.ts`), which bumps `orchards.next_tree_no` in the same statement it reads. **Never regenerate it, never derive it from anything, never parse it.** Numbers are never reused, even after a delete.
 - `trees.tree_no` is the same number as a column — that is what the UI shows ("Tree 142"). `trees.legacy_tree_id` holds the pre-049 address-shaped id so old links and exports still resolve; `getTreeById()` falls back to it.
