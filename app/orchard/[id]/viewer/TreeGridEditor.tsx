@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Loader2, X } from 'lucide-react';
 import type { ClientTree, TreeStatus } from '@/lib/types';
@@ -61,6 +61,24 @@ export default function TreeGridEditor({
 }) {
   const [edits, setEdits] = useState<Record<string, Partial<Record<Field, string>>>>({});
   const [saving, setSaving] = useState(false);
+  // Autocomplete for the Variety column. A popover per row would be
+  // heavy at 480 rows; a datalist gives the same suggestions natively.
+  const [varieties, setVarieties] = useState<string[]>([]);
+
+  useEffect(() => {
+    let live = true;
+    trpc.tree.varieties
+      .query({ orchardId })
+      .then((v) => {
+        if (live) setVarieties(v.map((o) => o.name));
+      })
+      .catch(() => {
+        // Suggestions are a convenience; typing still works without them.
+      });
+    return () => {
+      live = false;
+    };
+  }, [orchardId]);
 
   const rows = useMemo(
     () => trees.filter((t) => selectedIds.has(t.tree_id)),
@@ -240,6 +258,12 @@ export default function TreeGridEditor({
         </p>
       )}
 
+      <datalist id="grid-varieties">
+        {varieties.map((v) => (
+          <option key={v} value={v} />
+        ))}
+      </datalist>
+
       <div className="flex-1 overflow-auto overscroll-contain">
         <table className="w-full text-xs border-separate border-spacing-0">
           <thead className="sticky top-0 z-10 bg-paper">
@@ -308,6 +332,7 @@ export default function TreeGridEditor({
                           onChange={(e) => setCell(tree.tree_id, col.field, e.target.value)}
                           onPaste={(e) => handlePaste(e, rowIndex, colIndex)}
                           placeholder={col.field === 'planted_date' ? 'YYYY-MM-DD' : undefined}
+                          list={col.field === 'variety' ? 'grid-varieties' : undefined}
                           className={cell}
                           aria-label={`${col.label} for tree ${tree.tree_no ?? tree.tree_id}`}
                         />

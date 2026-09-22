@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ClientTree, TreeStatus } from '@/lib/types';
 import { TREE_STATUSES } from '@/lib/types';
 import type { WalkSettings } from '@/lib/settings';
@@ -12,6 +12,7 @@ import StatusBadge, { STATUS_LABEL } from '@/components/StatusBadge';
 import TreeHistory from './TreeHistory';
 import { formatAddress, formatTreeLabel } from '@/lib/address';
 import { trpc } from '@/lib/trpc/client';
+import VarietyPicker from './VarietyPicker';
 import type { TreeUpdateInput } from '@/lib/api/trees';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,20 +32,6 @@ const ALL_INSPECTIONS: ReadonlySet<'health' | 'bloom' | 'fruit'> = new Set([
   'bloom',
   'fruit',
 ] as const);
-
-/** Suggested fruit categories; the field accepts any value. */
-const FRUIT_TYPES = [
-  'apple',
-  'pear',
-  'plum',
-  'persimmon',
-  'apricot',
-  'cherry',
-  'peach',
-  'quince',
-  'fig',
-  'nut',
-];
 
 interface TreeDetailPanelProps {
   tree: ClientTree;
@@ -80,6 +67,23 @@ export default function TreeDetailPanel({
 }: TreeDetailPanelProps) {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Suggested fruit types come from the orchard, not a hardcoded list
+  const [fruitTypes, setFruitTypes] = useState<string[]>([]);
+
+  useEffect(() => {
+    let live = true;
+    trpc.tree.fruitTypes
+      .query({ orchardId: tree.orchard_id })
+      .then((f) => {
+        if (live) setFruitTypes(f);
+      })
+      .catch(() => {
+        // Suggestions only; the field accepts any value regardless.
+      });
+    return () => {
+      live = false;
+    };
+  }, [tree.orchard_id]);
   const [inspecting, setInspecting] = useState(false);
   const [inspectBusy, setInspectBusy] = useState(false);
   const [historyVersion, setHistoryVersion] = useState(0);
@@ -294,7 +298,14 @@ export default function TreeDetailPanel({
               Leave all three blank to take this tree out of the layout without deleting it.
             </p>
             <div className="grid grid-cols-2 gap-3">
-              {input('Variety', 'variety')}
+              <div className="space-y-1">
+                <Label className="text-xs text-bark">Variety</Label>
+                <VarietyPicker
+                  orchardId={tree.orchard_id}
+                  value={(form.variety as string) ?? ''}
+                  onChange={(v) => setForm((f) => ({ ...f, variety: v }))}
+                />
+              </div>
               <div className="space-y-1">
                 <Label className="text-xs text-bark">Fruit</Label>
                 <Input
@@ -306,7 +317,7 @@ export default function TreeDetailPanel({
                   placeholder="apple"
                 />
                 <datalist id="fruit-types">
-                  {FRUIT_TYPES.map((t) => (
+                  {fruitTypes.map((t) => (
                     <option key={t} value={t} />
                   ))}
                 </datalist>
