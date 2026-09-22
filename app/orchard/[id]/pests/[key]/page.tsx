@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { orchardRegion } from '@/lib/db/regions';
 import { requireOrchardPage } from '@/lib/orchard-page';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
@@ -40,16 +41,17 @@ function Section({ title, body }: { title: string; body: string | null }) {
 export default async function PestDetailPage({ params }: PageProps) {
   const { id, key } = await params;
   await requireOrchardPage(id);
+  const region = await orchardRegion(id);
   const [orchard, entry] = await Promise.all([
     getOrchardConfigById(id).catch(() => null),
-    getPest(key).catch(() => null),
+    getPest(key, region?.key ?? null).catch(() => null),
   ]);
   if (!orchard || !entry) notFound();
 
   // Same keys drive the material library, so "what treats this?" needs no
   // extra mapping — and it arrives already scoped to the program mode.
   const [library, mode, observations, postures, { userId }] = await Promise.all([
-    listMaterials().catch(() => []),
+    listMaterials(id).catch(() => []),
     getProgramMode(orchard.id).catch(() => 'organic_practices' as ProgramMode),
     listObservations(orchard.id, key).catch(() => []),
     listPostures(orchard.id).catch(() => []),

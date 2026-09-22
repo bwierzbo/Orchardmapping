@@ -1,4 +1,11 @@
 import Link from 'next/link';
+import RegionBanner from './RegionBanner';
+import { orchardRegion } from '@/lib/db/regions';
+import { programDrift, stepsNeedingReview } from '@/lib/db/program';
+import RevisionNotice from './RevisionNotice';
+import WhyThisStep from './WhyThisStep';
+import { provenanceForSteps } from '@/lib/db/provenance';
+import { viewerRole, roleAtLeast } from '@/lib/orchard-access';
 import { requireOrchardPage } from '@/lib/orchard-page';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
@@ -16,6 +23,8 @@ import { formatYMD } from '@/lib/dates';
 import type { StepStatus } from '@/lib/ipm-schedule';
 import SeasonTimeline, { type TimelineMarker } from './SeasonTimeline';
 import StepToggle from './StepToggle';
+import { StepControls } from './StepEditor';
+import AddStep from './AddStep';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,6 +60,14 @@ export default async function ProgramPage({ params }: PageProps) {
   const today = nowLocalIso(orchard.timezone).slice(0, 10);
   const season = seasonOf(today);
 
+  const [region, drift, revisions] = await Promise.all([
+    orchardRegion(orchard.id),
+    programDrift(orchard.id).catch(() => ({ notAdopted: [], customised: [], invented: [] })),
+    stepsNeedingReview(orchard.id).catch(() => []),
+  ]);
+  const role = await viewerRole(orchard.id);
+  const canEdit = !!role && roleAtLeast(role, 'operator');
+
   const [schedule, marks, hours, allSteps] = await Promise.all([
     resolveSchedule(orchard.id, today).catch(() => []),
     listMarks(orchard.id).catch(() => []),
@@ -60,6 +77,11 @@ export default async function ProgramPage({ params }: PageProps) {
     listAllProgramSteps(orchard.id).catch(() => []),
   ]);
   const resolvedByKey = new Map(schedule.map((r) => [r.step.key, r]));
+  // Where each step's numbers came from — shown with the step, because
+  // that is where somebody is deciding whether to act on them.
+  const provenance = await provenanceForSteps(
+    allSteps.map((s) => ({ key: s.key, materialKey: s.materialKey }))
+  ).catch(() => new Map());
 
   // Two kinds of anchor the program hangs off, on one rail: stages the
   // orchard was observed to reach, and heat totals it accumulated.
@@ -103,6 +125,16 @@ export default async function ProgramPage({ params }: PageProps) {
           spring, monitor-only in summer. Bars are windows, not appointments — the red
           line is today.
         </p>
+
+        {canEdit && <RevisionNotice orchardId={orchard.id} steps={revisions} />}
+
+        <RegionBanner
+          orchardId={orchard.id}
+          regionName={region?.name ?? null}
+          stepCount={allSteps.length}
+          drift={drift}
+          canEdit={canEdit}
+        />
 
         <section className="bg-surface border border-line rounded-lg p-4 mb-5">
           <SeasonTimeline
@@ -152,6 +184,8 @@ export default async function ProgramPage({ params }: PageProps) {
             chart and the due list, and keeps its history for whenever you switch it
             back on.
           </p>
+          {canEdit && <AddStep orchardId={orchard.id} />}
+
           <ul className="divide-y divide-line">
             {allSteps.map((step) => {
               const r = resolvedByKey.get(step.key);
@@ -163,6 +197,22 @@ export default async function ProgramPage({ params }: PageProps) {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-baseline gap-x-2">
                       <span className="text-ink font-medium">{step.title}</span>
+                      {step.customised && (
+                        <span
+                          className="font-mono text-[10px] uppercase tracking-widest text-bark"
+                          title="Changed from what your region recommends"
+                        >
+                          yours
+                        </span>
+                      )}
+                      {!step.sourceStepKey && (
+                        <span
+                          className="font-mono text-[10px] uppercase tracking-widest text-bark"
+                          title="A step you added; not part of any recommendation"
+                        >
+                          own
+                        </span>
+                      )}
                       {r ? (
                         <span className="font-mono text-[10px] uppercase tracking-widest text-bark">
                           {STATUS_LABEL[r.status]}
@@ -186,6 +236,7 @@ export default async function ProgramPage({ params }: PageProps) {
                         {r.dueAgainOn && r.status === 'done' && ` · again ${formatYMD(r.dueAgainOn)}`}
                       </p>
                     )}
+                    <WhyThisStep notes={provenance.get(step.key) ?? []} />
                     {step.pestKey && (
                       <Link
                         href={`/orchard/${orchard.id}/pests/${step.pestKey}`}
@@ -196,12 +247,28 @@ export default async function ProgramPage({ params }: PageProps) {
                     )}
                   </div>
                   {userId && (
-                    <StepToggle
-                      orchardId={orchard.id}
-                      stepKey={step.key}
-                      enabled={step.enabled}
-                      title={step.title}
-                    />
+                    <div className="flex items-center gap-1 shrink-0">
+                      {canEdit && (
+                        <StepControls
+                          orchardId={orchard.id}
+                          step={{
+                            key: step.key,
+                            title: step.title,
+                            detail: step.detail ?? null,
+                            triggerSpec: step.trigger,
+                            repeatDays: step.repeatDays ?? null,
+                            customised: step.customised,
+                            sourceStepKey: step.sourceStepKey,
+                          }}
+                        />
+                      )}
+                      <StepToggle
+                        orchardId={orchard.id}
+                        stepKey={step.key}
+                        enabled={step.enabled}
+                        title={step.title}
+                      />
+                    </div>
                   )}
                 </li>
               );

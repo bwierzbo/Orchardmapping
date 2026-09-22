@@ -55,13 +55,29 @@ function decodeMaterial(row: Record<string, unknown>): SprayMaterial {
       row.conflict_after_days == null ? null : Number(row.conflict_after_days),
     conflict_days: num(row.conflict_days),
     max_per_season: num(row.max_per_season),
+    orchard_limit_note: (row.orchard_limit_note as string | null) ?? null,
     notes: (row.notes as string | null) ?? null,
   };
 }
 
-export async function listMaterials(): Promise<SprayMaterial[]> {
+/**
+ * The material library, with this orchard's own limits applied.
+ *
+ * A material carries what is recommended; an orchard that runs something
+ * different holds its own row. Without the orchard id you get the
+ * recommendation, which is right for a general library view and wrong
+ * for checking a spray — so the spray paths always pass one.
+ */
+export async function listMaterials(orchardId?: string): Promise<SprayMaterial[]> {
   const { rows } = await sql`
-    SELECT * FROM spray_materials WHERE is_active = TRUE ORDER BY material_type, name
+    SELECT m.*,
+           CASE WHEN oms.orchard_id IS NOT NULL
+                THEN oms.max_per_season ELSE m.max_per_season END AS max_per_season,
+           oms.note AS orchard_limit_note
+    FROM spray_materials m
+    LEFT JOIN orchard_material_settings oms
+      ON oms.material_key = m.material_key AND oms.orchard_id = ${orchardId ?? null}
+    WHERE m.is_active = TRUE ORDER BY m.material_type, m.name
   `;
   return rows.map(decodeMaterial);
 }

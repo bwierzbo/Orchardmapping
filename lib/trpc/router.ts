@@ -31,6 +31,18 @@ import {
 } from '@/lib/db/trees';
 import { diffTreeChanges } from '@/lib/db/tree-events';
 import {
+  programDrift,
+  adoptRegionProgram,
+  stepsNeedingReview,
+  acceptRevision,
+  keepMine,
+  updateOrchardStep,
+  deleteOrchardStep,
+  createOrchardStep,
+  freeStepKey,
+} from '@/lib/db/program';
+import { triggerSchema } from '@/lib/trigger-schema';
+import {
   validateTreeRow,
   validateTreeUpdate,
   formatValidationErrors,
@@ -53,6 +65,7 @@ import { formatAddress } from '@/lib/address';
 import { applyTreeEdits } from '@/lib/db/group-actions';
 import { listPeople, setGlobalRole } from '@/lib/db/people';
 import { listVarietyOptions, listFruitTypes } from '@/lib/db/varieties';
+import { listRegions, getRegion, setOrchardRegion, orchardRegion } from '@/lib/db/regions';
 import { toYMD } from '@/lib/dates';
 import { TRPCError } from '@trpc/server';
 import { listAreas, insertArea, updateArea, deleteArea, AREA_KINDS } from '@/lib/db/areas';
@@ -121,6 +134,35 @@ export const appRouter = router({
         }
         return config;
       }),
+    /** Regions to choose from, with the settings each one drives. */
+    regions: orchardViewerProcedure
+      .input(z.object({ orchardId: z.string().min(1) }))
+      .query(() => listRegions()),
+
+    /**
+     * Put this orchard in a region, or take it out of one.
+     *
+     * Always a choice, never derived: the published boundary of the
+     * Olympic Rainshadow runs east through Port Townsend, so whether a
+     * given orchard belongs to it is a judgement its owner is better
+     * placed to make than its coordinates are. Null means undecided, and
+     * the program should say so rather than assume.
+     */
+    setRegion: orchardAdminProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          regionKey: z.string().min(1).nullable(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        if (input.regionKey && !(await getRegion(input.regionKey))) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'No such region.' });
+        }
+        await setOrchardRegion(input.orchardId, input.regionKey);
+        return { ok: true };
+      }),
+
     setBoundary: orchardOperatorProcedure
       .input(z.object({ orchardId: z.string().min(1), boundary: z.unknown() }))
       .mutation(async ({ input }) => {
@@ -485,7 +527,7 @@ export const appRouter = router({
       .input(z.object({ orchardId: z.string().min(1) }))
       .query(async ({ input }) => {
         const [library, mode] = await Promise.all([
-          listMaterials(),
+          listMaterials(input.orchardId),
           getProgramMode(input.orchardId),
         ]);
         return { mode, materials: availableMaterials(library, mode), all: library };
@@ -496,7 +538,7 @@ export const appRouter = router({
       .input(z.object({ orchardId: z.string().min(1), target: z.string().min(1) }))
       .query(async ({ input }) => {
         const [library, mode] = await Promise.all([
-          listMaterials(),
+          listMaterials(input.orchardId),
           getProgramMode(input.orchardId),
         ]);
         return { mode, options: recommendFor(library, input.target, mode) };
@@ -521,7 +563,7 @@ export const appRouter = router({
           getMaterial(input.materialId),
           getProgramMode(input.orchardId),
           applicationHistory(input.orchardId),
-          listMaterials(),
+          listMaterials(input.orchardId),
         ]);
         if (!material) throw new TRPCError({ code: 'NOT_FOUND', message: 'Material not found' });
         const findings = evaluateApplication({
@@ -557,7 +599,7 @@ export const appRouter = router({
           getMaterial(input.materialId),
           getProgramMode(input.orchardId),
           applicationHistory(input.orchardId),
-          listMaterials(),
+          listMaterials(input.orchardId),
         ]);
         if (!material) throw new TRPCError({ code: 'NOT_FOUND', message: 'Material not found' });
         const findings = evaluateApplication({
@@ -603,11 +645,134 @@ export const appRouter = router({
    * library targets, so an entry can answer "what treats this?" through
    * spray.recommend without a second mapping.
    */
+  /** An orchard's own program, and how it compares with its region's. */
+  program2: router({
+    drift: orchardViewerProcedure
+      .input(z.object({ orchardId: z.string().min(1) }))
+      .query(({ input }) => programDrift(input.orchardId)),
+
+    /**
+     * Take the region's recommended steps this orchard has not got.
+     *
+     * Never overwrites a step the orchard already holds, customised or
+     * not: adopting a recommendation must not quietly undo a decision.
+     */
+    /** Adopted steps whose recommendation has been revised since. */
+    needsReview: orchardViewerProcedure
+      .input(z.object({ orchardId: z.string().min(1) }))
+      .query(({ input }) => stepsNeedingReview(input.orchardId)),
+
+    /**
+     * Resolve one revision: take the new advice, or keep your version.
+     *
+     * Either way the orchard stops being asked about that revision.
+     * Nothing is ever applied without this being called, because the
+     * orchard's version may be deliberate.
+     */
+    resolveRevision: orchardOperatorProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          key: z.string().min(1),
+          choice: z.enum(['accept', 'keep']),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const ok =
+          input.choice === 'accept'
+            ? await acceptRevision(input.orchardId, input.key)
+            : await keepMine(input.orchardId, input.key);
+        if (!ok) throw new TRPCError({ code: 'NOT_FOUND', message: 'No such step here.' });
+        return { ok: true };
+      }),
+
+    /** Change one of this orchard's steps. Marks it customised. */
+    updateStep: orchardOperatorProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          key: z.string().min(1),
+          patch: z.object({
+            title: z.string().min(1).max(120).optional(),
+            detail: z.string().max(4000).nullable().optional(),
+            pestKey: z.string().max(60).nullable().optional(),
+            materialKey: z.string().max(60).nullable().optional(),
+            triggerSpec: triggerSchema.optional(),
+            repeatDays: z.number().int().min(1).max(3650).nullable().optional(),
+            sortOrder: z.number().int().min(0).max(10000).optional(),
+            enabled: z.boolean().optional(),
+          }),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const ok = await updateOrchardStep(input.orchardId, input.key, input.patch);
+        if (!ok) throw new TRPCError({ code: 'NOT_FOUND', message: 'No such step here.' });
+        return { ok: true };
+      }),
+
+    /**
+     * Remove a step from this orchard. A recommended one stays
+     * recommended and reappears as not-adopted, so "I decided against
+     * this" stays distinguishable from "I never saw it".
+     */
+    deleteStep: orchardOperatorProcedure
+      .input(z.object({ orchardId: z.string().min(1), key: z.string().min(1) }))
+      .mutation(async ({ input }) => {
+        const ok = await deleteOrchardStep(input.orchardId, input.key);
+        if (!ok) throw new TRPCError({ code: 'NOT_FOUND', message: 'No such step here.' });
+        return { ok: true };
+      }),
+
+    /** A step of the orchard's own devising. */
+    createStep: orchardOperatorProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          title: z.string().min(1).max(120),
+          detail: z.string().max(4000).optional(),
+          pestKey: z.string().max(60).optional(),
+          materialKey: z.string().max(60).optional(),
+          triggerSpec: triggerSchema,
+          repeatDays: z.number().int().min(1).max(3650).optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const key = await freeStepKey(input.orchardId, input.title);
+        await createOrchardStep(input.orchardId, {
+          key,
+          title: input.title,
+          detail: input.detail ?? null,
+          pestKey: input.pestKey ?? null,
+          materialKey: input.materialKey ?? null,
+          triggerSpec: input.triggerSpec,
+          repeatDays: input.repeatDays ?? null,
+        });
+        return { key };
+      }),
+
+    adopt: orchardOperatorProcedure
+      .input(z.object({ orchardId: z.string().min(1) }))
+      .mutation(async ({ input }) => {
+        const region = await orchardRegion(input.orchardId);
+        if (!region) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message:
+              'This orchard has no region, so there is no recommendation to adopt. Set one first.',
+          });
+        }
+        const added = await adoptRegionProgram(input.orchardId);
+        return { added, region: region.name };
+      }),
+  }),
+
   pest: router({
     list: orchardViewerProcedure
       .input(z.object({ orchardId: z.string().min(1).optional() }).optional())
       .query(async ({ input }) => {
-        const entries = await listPests();
+        // Prevalence is the region's answer, not the library's
+        const region = input?.orchardId ? await orchardRegion(input.orchardId) : null;
+        const entries = await listPests(region?.key ?? null);
         const counts = input?.orchardId
           ? await observationCounts(input.orchardId)
           : {};
@@ -617,7 +782,8 @@ export const appRouter = router({
     get: orchardViewerProcedure
       .input(z.object({ key: z.string().min(1), orchardId: z.string().min(1).optional() }))
       .query(async ({ input }) => {
-        const entry = await getPest(input.key);
+        const region = input.orchardId ? await orchardRegion(input.orchardId) : null;
+        const entry = await getPest(input.key, region?.key ?? null);
         if (!entry) throw new TRPCError({ code: 'NOT_FOUND', message: 'Entry not found' });
         const observations = input.orchardId
           ? await listObservations(input.orchardId, input.key)

@@ -13,7 +13,13 @@
  */
 
 export interface CoverageInputs {
-  pests: readonly { key: string; name: string; category: string; prevalence: string }[];
+  pests: readonly {
+    key: string;
+    name: string;
+    category: string;
+    /** Null when this orchard's region has no assessment for the pest. */
+    prevalence: string | null;
+  }[];
   /** Steps that are ACTIVE — a step switched off is not coverage. */
   steps: readonly { key: string; pestKey: string | null; materialKey: string | null }[];
   /** Materials, so "nothing treats it" is distinguishable from
@@ -80,7 +86,11 @@ export function findCoverageGaps(input: CoverageInputs): CoverageGap[] {
   const gaps: CoverageGap[] = [];
   for (const pest of input.pests) {
     if (pest.category === 'beneficial') continue;
-    if (!DEMANDS_COVERAGE.has(pest.prevalence)) continue;
+    // Null is unknown, not absent. An orchard whose region has not been
+    // assessed gets no gaps reported, because we have nothing to say —
+    // rather than inheriting another region's judgement that a pest is
+    // not a problem here.
+    if (!pest.prevalence || !DEMANDS_COVERAGE.has(pest.prevalence)) continue;
     if (covered.has(pest.key)) continue;
     if (decided.has(pest.key)) continue;
 

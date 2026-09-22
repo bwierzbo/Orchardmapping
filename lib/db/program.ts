@@ -1,4 +1,7 @@
 import { sql } from '@vercel/postgres';
+import { orchardRegion } from './regions';
+import { triggerSchema } from '../trigger-schema';
+import { adjustTriggerForRegion } from '../region-program';
 import type { ProgramStep, StepCategory, StepCompletion, Trigger } from '../ipm-schedule';
 import { STEP_CATEGORIES } from '../ipm-schedule';
 
@@ -39,36 +42,51 @@ function decode(row: Record<string, unknown>): ProgramStep {
  * local. A missing settings row means enabled, so the override table
  * only ever holds deliberate opt-outs.
  */
+/**
+ * The steps this orchard is actually running.
+ *
+ * Its own rows, not a global calendar filtered by an opt-out list. An
+ * orchard with no steps has none — which is what a new orchard in an
+ * unassessed region should get, rather than somebody else's program.
+ */
 export async function listProgramSteps(orchardId: string): Promise<ProgramStep[]> {
   const { rows } = await sql`
-    SELECT s.key, s.title, s.detail, s.category, s.pest_key, s.material_key,
-           s.trigger_spec, s.repeat_days, s.sort_order
-    FROM program_steps s
-    LEFT JOIN orchard_step_settings o
-      ON o.step_key = s.key AND o.orchard_id = ${orchardId}
-    WHERE s.is_active AND COALESCE(o.enabled, TRUE)
-    ORDER BY s.sort_order, s.key
+    SELECT key, title, detail, category, pest_key, material_key,
+           trigger_spec, repeat_days, sort_order
+    FROM orchard_program_steps
+    WHERE orchard_id = ${orchardId} AND enabled
+    ORDER BY sort_order, key
   `;
   return rows.map(decode);
 }
 
 export interface ProgramStepChoice extends ProgramStep {
   enabled: boolean;
+  /** The recommended step this came from; null when the orchard invented it. */
+  sourceStepKey: string | null;
+  /** The region that recommended it, at the time it was adopted. */
+  recommendedBy: string | null;
+  /** Changed since it was adopted, so the recommendation no longer describes it. */
+  customised: boolean;
 }
 
 /** Every step with its on/off state — what the settings UI lists. */
 export async function listAllProgramSteps(orchardId: string): Promise<ProgramStepChoice[]> {
   const { rows } = await sql`
-    SELECT s.key, s.title, s.detail, s.category, s.pest_key, s.material_key,
-           s.trigger_spec, s.repeat_days, s.sort_order,
-           COALESCE(o.enabled, TRUE) AS enabled
-    FROM program_steps s
-    LEFT JOIN orchard_step_settings o
-      ON o.step_key = s.key AND o.orchard_id = ${orchardId}
-    WHERE s.is_active
-    ORDER BY s.sort_order, s.key
+    SELECT key, title, detail, category, pest_key, material_key,
+           trigger_spec, repeat_days, sort_order, enabled,
+           source_step_key, recommended_by, customised
+    FROM orchard_program_steps
+    WHERE orchard_id = ${orchardId}
+    ORDER BY sort_order, key
   `;
-  return rows.map((r) => ({ ...decode(r), enabled: Boolean(r.enabled) }));
+  return rows.map((r) => ({
+    ...decode(r),
+    enabled: Boolean(r.enabled),
+    sourceStepKey: (r.source_step_key as string | null) ?? null,
+    recommendedBy: (r.recommended_by as string | null) ?? null,
+    customised: Boolean(r.customised),
+  }));
 }
 
 /** Turn a step on or off for one orchard. */
@@ -78,11 +96,185 @@ export async function setStepEnabled(
   enabled: boolean
 ): Promise<void> {
   await sql`
-    INSERT INTO orchard_step_settings (orchard_id, step_key, enabled)
-    VALUES (${orchardId}, ${stepKey}, ${enabled})
-    ON CONFLICT (orchard_id, step_key)
-    DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = NOW()
+    UPDATE orchard_program_steps
+    SET enabled = ${enabled}, updated_at = NOW()
+    WHERE orchard_id = ${orchardId} AND key = ${stepKey}
   `;
+}
+
+/**
+ * Give an orchard the program its region recommends.
+ *
+ * Adds steps it does not have; leaves alone every step it already has,
+ * customised or not, because adopting a recommendation must never
+ * silently undo a decision somebody made. Returns what it added, so the
+ * caller can say so rather than claim more than it did.
+ */
+/**
+ * How a recommended step is fingerprinted.
+ *
+ * Written once and used by both adoption and the revision check, so the
+ * two can never disagree about what "changed" means. It covers what a
+ * grower would want to hear about — timing, material, target, wording —
+ * and nothing cosmetic.
+ */
+const FINGERPRINT_SQL = `md5(
+  COALESCE(s.title, '') || '|' || COALESCE(s.detail, '') || '|' ||
+  COALESCE(s.material_key, '') || '|' || COALESCE(s.pest_key, '') || '|' ||
+  s.trigger_spec::text || '|' || COALESCE(s.repeat_days::text, '')
+)`;
+
+/**
+ * Adopted steps whose recommendation has been revised since.
+ *
+ * Reported, never applied. The orchard's version may be deliberate, and
+ * silently reverting somebody's decision is worse than not telling them.
+ */
+export async function stepsNeedingReview(
+  orchardId: string
+): Promise<Array<{ key: string; title: string; customised: boolean }>> {
+  const { rows } = await sql.query(
+    `SELECT ops.key, ops.title, ops.customised
+       FROM orchard_program_steps ops
+       JOIN program_steps s
+         ON s.key = ops.source_step_key AND s.is_active
+      WHERE ops.orchard_id = $1
+        AND ops.adopted_fingerprint IS NOT NULL
+        AND ops.adopted_fingerprint <> ${FINGERPRINT_SQL}
+      ORDER BY ops.sort_order`,
+    [orchardId]
+  );
+  return rows.map((r) => ({
+    key: String(r.key),
+    title: String(r.title),
+    customised: Boolean(r.customised),
+  }));
+}
+
+/** Take the current recommendation for one step, replacing this orchard's. */
+export async function acceptRevision(orchardId: string, key: string): Promise<boolean> {
+  const { rowCount } = await sql.query(
+    `UPDATE orchard_program_steps ops SET
+       title = s.title, detail = s.detail, category = s.category,
+       pest_key = s.pest_key, material_key = s.material_key,
+       trigger_spec = s.trigger_spec, repeat_days = s.repeat_days,
+       customised = FALSE,
+       adopted_fingerprint = ${FINGERPRINT_SQL},
+       updated_at = NOW()
+     FROM program_steps s
+     WHERE s.key = ops.source_step_key
+       AND ops.orchard_id = $1 AND ops.key = $2`,
+    [orchardId, key]
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/** Keep this orchard's version, and stop being told about that revision. */
+export async function keepMine(orchardId: string, key: string): Promise<boolean> {
+  const { rowCount } = await sql.query(
+    `UPDATE orchard_program_steps ops
+        SET adopted_fingerprint = ${FINGERPRINT_SQL}, customised = TRUE, updated_at = NOW()
+       FROM program_steps s
+      WHERE s.key = ops.source_step_key
+        AND ops.orchard_id = $1 AND ops.key = $2`,
+    [orchardId, key]
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+export async function adoptRegionProgram(orchardId: string): Promise<string[]> {
+  const region = await orchardRegion(orchardId);
+  if (!region) return [];
+
+  // What the region recommends and this orchard has not got
+  const { rows: candidates } = await sql`
+    SELECT s.key, s.title, s.detail, s.category, s.pest_key, s.material_key,
+           s.trigger_spec, s.repeat_days, s.sort_order, s.region_key
+    FROM program_steps s
+    LEFT JOIN orchard_program_steps ops
+      ON ops.orchard_id = ${orchardId} AND ops.key = s.key
+    WHERE s.region_key = ${region.key} AND s.is_active AND ops.id IS NULL
+    ORDER BY s.sort_order
+  `;
+  if (candidates.length === 0) return [];
+
+  const added: string[] = [];
+  for (const c of candidates) {
+    // Fit the recommendation to the region rather than copying it. A
+    // seeded trigger was written for the region it came from; where the
+    // adopting region states something different — counting heat from a
+    // biofix rather than January 1 — the step is adjusted and says so.
+    const parsed = triggerSchema.safeParse(c.trigger_spec);
+    let trigger: unknown = c.trigger_spec;
+    let detail = (c.detail as string | null) ?? null;
+    if (parsed.success) {
+      const adjusted = adjustTriggerForRegion(
+        parsed.data,
+        (c.pest_key as string | null) ?? null,
+        region
+      );
+      trigger = adjusted.trigger;
+      if (adjusted.note) detail = detail ? `${detail}\n\n${adjusted.note}` : adjusted.note;
+    }
+
+    // The fingerprint is of the RECOMMENDATION, while the stored trigger
+    // may have been adapted for this region. That is the point: a later
+    // revision of the recommendation is still detectable.
+    await sql.query(
+      `INSERT INTO orchard_program_steps (
+         orchard_id, key, source_step_key, recommended_by,
+         title, detail, category, pest_key, material_key,
+         trigger_spec, repeat_days, sort_order, enabled, adopted_fingerprint
+       )
+       SELECT $1, s.key, s.key, $2, $3, $4, s.category, s.pest_key, s.material_key,
+              $5::jsonb, s.repeat_days, s.sort_order, TRUE, ${FINGERPRINT_SQL}
+         FROM program_steps s WHERE s.key = $6
+       ON CONFLICT (orchard_id, key) DO NOTHING`,
+      [orchardId, region.key, c.title, detail, JSON.stringify(trigger), c.key]
+    );
+    added.push(String(c.key));
+  }
+  return added;
+}
+
+/**
+ * How this orchard's program compares with what its region recommends:
+ * steps it has never adopted, and steps it has changed since adopting.
+ * Neither is a problem — this is for showing, not correcting.
+ */
+export async function programDrift(orchardId: string): Promise<{
+  notAdopted: Array<{ key: string; title: string }>;
+  customised: Array<{ key: string; title: string }>;
+  invented: Array<{ key: string; title: string }>;
+}> {
+  const [missing, changed, own] = await Promise.all([
+    sql`
+      SELECT s.key, s.title
+      FROM orchards o
+      JOIN program_steps s ON s.region_key = o.region_key AND s.is_active
+      LEFT JOIN orchard_program_steps ops
+        ON ops.orchard_id = o.id AND ops.key = s.key
+      WHERE o.id = ${orchardId} AND ops.id IS NULL
+      ORDER BY s.sort_order
+    `,
+    sql`
+      SELECT key, title FROM orchard_program_steps
+      WHERE orchard_id = ${orchardId} AND customised AND source_step_key IS NOT NULL
+      ORDER BY sort_order
+    `,
+    sql`
+      SELECT key, title FROM orchard_program_steps
+      WHERE orchard_id = ${orchardId} AND source_step_key IS NULL
+      ORDER BY sort_order
+    `,
+  ]);
+  const shape = (rows: Record<string, unknown>[]) =>
+    rows.map((r) => ({ key: String(r.key), title: String(r.title) }));
+  return {
+    notAdopted: shape(missing.rows),
+    customised: shape(changed.rows),
+    invented: shape(own.rows),
+  };
 }
 
 /**
@@ -140,4 +332,117 @@ export async function uncompleteStep(
       AND completed_on = ${completedOn}::date
   `;
   return (rowCount ?? 0) > 0;
+}
+
+export interface StepPatch {
+  title?: string;
+  detail?: string | null;
+  category?: string | null;
+  pestKey?: string | null;
+  materialKey?: string | null;
+  triggerSpec?: unknown;
+  repeatDays?: number | null;
+  sortOrder?: number;
+  enabled?: boolean;
+}
+
+/**
+ * Change one of an orchard's steps.
+ *
+ * Anything that came from a recommendation is marked customised the
+ * moment it is changed, so the program page can keep saying what was
+ * advised and where this orchard differs. Turning a step off is not a
+ * customisation — it is the decision the step is there to support.
+ */
+export async function updateOrchardStep(
+  orchardId: string,
+  key: string,
+  patch: StepPatch
+): Promise<boolean> {
+  const substantive =
+    patch.title !== undefined ||
+    patch.detail !== undefined ||
+    patch.pestKey !== undefined ||
+    patch.materialKey !== undefined ||
+    patch.triggerSpec !== undefined ||
+    patch.repeatDays !== undefined;
+
+  const { rowCount } = await sql`
+    UPDATE orchard_program_steps SET
+      title        = COALESCE(${patch.title ?? null}, title),
+      detail       = CASE WHEN ${patch.detail !== undefined} THEN ${patch.detail ?? null} ELSE detail END,
+      category     = CASE WHEN ${patch.category !== undefined} THEN ${patch.category ?? null} ELSE category END,
+      pest_key     = CASE WHEN ${patch.pestKey !== undefined} THEN ${patch.pestKey ?? null} ELSE pest_key END,
+      material_key = CASE WHEN ${patch.materialKey !== undefined} THEN ${patch.materialKey ?? null} ELSE material_key END,
+      trigger_spec = COALESCE(${patch.triggerSpec ? JSON.stringify(patch.triggerSpec) : null}::jsonb, trigger_spec),
+      repeat_days  = CASE WHEN ${patch.repeatDays !== undefined} THEN ${patch.repeatDays ?? null} ELSE repeat_days END,
+      sort_order   = COALESCE(${patch.sortOrder ?? null}, sort_order),
+      enabled      = COALESCE(${patch.enabled ?? null}, enabled),
+      customised   = customised OR (${substantive} AND source_step_key IS NOT NULL),
+      updated_at   = NOW()
+    WHERE orchard_id = ${orchardId} AND key = ${key}
+  `;
+  return (rowCount ?? 0) > 0;
+}
+
+/**
+ * Remove a step from this orchard's program.
+ *
+ * Only from this orchard's. A recommended step deleted here stays
+ * recommended, and shows up as not-adopted rather than vanishing — which
+ * is how you tell "I decided against this" from "I never saw it".
+ */
+export async function deleteOrchardStep(orchardId: string, key: string): Promise<boolean> {
+  const { rowCount } = await sql`
+    DELETE FROM orchard_program_steps WHERE orchard_id = ${orchardId} AND key = ${key}
+  `;
+  return (rowCount ?? 0) > 0;
+}
+
+/** A step this orchard invented. No source, so nothing to be customised from. */
+export async function createOrchardStep(
+  orchardId: string,
+  input: {
+    key: string;
+    title: string;
+    detail?: string | null;
+    category?: string | null;
+    pestKey?: string | null;
+    materialKey?: string | null;
+    triggerSpec: unknown;
+    repeatDays?: number | null;
+    sortOrder?: number;
+  }
+): Promise<void> {
+  await sql`
+    INSERT INTO orchard_program_steps (
+      orchard_id, key, source_step_key, recommended_by,
+      title, detail, category, pest_key, material_key,
+      trigger_spec, repeat_days, sort_order, enabled
+    ) VALUES (
+      ${orchardId}, ${input.key}, NULL, NULL,
+      ${input.title}, ${input.detail ?? null}, ${input.category ?? null},
+      ${input.pestKey ?? null}, ${input.materialKey ?? null},
+      ${JSON.stringify(input.triggerSpec)}::jsonb, ${input.repeatDays ?? null},
+      ${input.sortOrder ?? 100}, TRUE
+    )
+  `;
+}
+
+/** A key that is free within this orchard, derived from the title. */
+export async function freeStepKey(orchardId: string, title: string): Promise<string> {
+  const base =
+    title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 40) || 'step';
+  const { rows } = await sql`
+    SELECT key FROM orchard_program_steps
+    WHERE orchard_id = ${orchardId} AND key LIKE ${base + '%'}
+  `;
+  const taken = new Set(rows.map((r) => String(r.key)));
+  if (!taken.has(base)) return base;
+  for (let n = 2; n < 100; n++) if (!taken.has(`${base}_${n}`)) return `${base}_${n}`;
+  throw new Error(`Could not find a free step key near "${base}"`);
 }

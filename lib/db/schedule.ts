@@ -19,6 +19,7 @@ import {
 import { seasonOf } from '../phenology';
 import { nowLocalIso } from '../openmeteo';
 import { orchardTimezone } from './orchards';
+import { orchardRegion } from './regions';
 
 /**
  * This orchard's program, placed on this season.
@@ -121,7 +122,21 @@ export async function resolveSchedule(
   let infectionEvents: InfectionWindow[] = [];
   if (steps.some((s) => s.trigger.type === 'condition')) {
     const hours = await getHours(orchardId, `${season}-01-01`, asOfYmd).catch(() => []);
-    infectionEvents = infectionPeriods(hours, 'light').map((p) => ({
+    // What counts as a wet hour is a regional judgement, not a constant.
+    // The 90% RH threshold is supported across continents, but the
+    // sensitivity analysis that chose it was run on six seasons of one
+    // orchard's weather — in a drier continental spring it fires far less
+    // often, in a British one far more.
+    const region = await orchardRegion(orchardId);
+    const wetness = region
+      ? {
+          rhPct: region.wetnessRhPct ?? undefined,
+          precipMm: region.wetnessPrecipMm ?? undefined,
+          breakHours: region.wetnessBreakHours ?? undefined,
+          leafWetnessPct: region.modelledLeafWetness ? 50 : null,
+        }
+      : {};
+    infectionEvents = infectionPeriods(hours, 'light', wetness).map((p) => ({
       startTs: p.startTs,
       endTs: p.endTs,
       severity: p.severity as InfectionWindow['severity'],

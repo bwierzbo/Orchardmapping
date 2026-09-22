@@ -9,17 +9,22 @@ config({ path: '.env.local' });
 import { getHours, priorSeasonAggregates, latestHourTs } from '../lib/db/weather';
 import { buildSeasonSummary } from '../lib/weather-summary';
 import { chillSeasonWindow } from '../lib/chill';
+import { orchardRegion } from '../lib/db/regions';
 import { nowLocalIso } from '../lib/openmeteo';
 import { orchardTimezone } from '../lib/db/orchards';
 
 async function main() {
   const orchardId = process.argv[2] ?? 'finn-hall';
   const asOf = nowLocalIso(await orchardTimezone(orchardId)).slice(0, 10);
-  const w = chillSeasonWindow(asOf);
+  const region = await orchardRegion(orchardId);
+  const chillWindow = region
+    ? { startMmdd: region.chillStartMmdd, endMmdd: region.chillEndMmdd }
+    : undefined;
+  const w = chillSeasonWindow(asOf, chillWindow);
   const [cw, yh, prior, latest] = await Promise.all([
     getHours(orchardId, w.start, w.end),
     getHours(orchardId, `${asOf.slice(0, 4)}-01-01`, asOf),
-    priorSeasonAggregates(orchardId, asOf),
+    priorSeasonAggregates(orchardId, asOf, chillWindow),
     latestHourTs(orchardId),
   ]);
   const s = buildSeasonSummary({

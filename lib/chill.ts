@@ -57,14 +57,39 @@ export function chillHours(hours: readonly HourTemp[]): number {
 }
 
 /**
- * Chill season window for a given "as of" local date: Nov 1 through
- * Apr 30. Returns [startYmd, endYmd] where end is capped at `asOf`.
+ * When a region accumulates chill. Nov 1 to Apr 30 in the maritime
+ * Pacific Northwest, but this is climate- and hemisphere-specific: a
+ * continental orchard is banking chill well before November, and south
+ * of the equator the season runs through the middle of the year.
  */
-export function chillSeasonWindow(asOfYmd: string): { start: string; end: string; label: string } {
-  const [y, m] = asOfYmd.split('-').map(Number);
-  const startYear = m >= 11 ? y : y - 1;
-  const start = `${startYear}-11-01`;
-  const hardEnd = `${startYear + 1}-04-30`;
+export interface ChillWindow {
+  startMmdd: string;
+  endMmdd: string;
+}
+
+/** What this app assumed everywhere before regions existed. */
+export const MARITIME_PNW_CHILL: ChillWindow = { startMmdd: '11-01', endMmdd: '04-30' };
+
+/**
+ * Chill season window for a given "as of" local date, in the region's
+ * own window. Returns [startYmd, endYmd] where end is capped at `asOf`.
+ */
+export function chillSeasonWindow(
+  asOfYmd: string,
+  window: ChillWindow = MARITIME_PNW_CHILL
+): { start: string; end: string; label: string } {
+  const [y] = asOfYmd.split('-').map(Number);
+  const mmdd = asOfYmd.slice(5);
+  // A season that opens in the autumn belongs to the year it opened in;
+  // one that opens and closes inside a calendar year does not straddle.
+  const straddlesYearEnd = window.startMmdd > window.endMmdd;
+  const startYear = straddlesYearEnd ? (mmdd >= window.startMmdd ? y : y - 1) : y;
+  const endYear = straddlesYearEnd ? startYear + 1 : startYear;
+  const start = `${startYear}-${window.startMmdd}`;
+  const hardEnd = `${endYear}-${window.endMmdd}`;
   const end = asOfYmd < hardEnd ? asOfYmd : hardEnd;
-  return { start, end, label: `${startYear}–${String((startYear + 1) % 100).padStart(2, '0')}` };
+  const label = straddlesYearEnd
+    ? `${startYear}–${String(endYear % 100).padStart(2, '0')}`
+    : String(startYear);
+  return { start, end, label };
 }

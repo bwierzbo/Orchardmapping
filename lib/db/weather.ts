@@ -7,6 +7,7 @@ import {
 } from '../weather-source';
 import { fetchRecentHours, nowLocalIso } from '../openmeteo';
 import { orchardTimezone } from './orchards';
+import { MARITIME_PNW_CHILL, type ChillWindow } from '../chill';
 
 /**
  * Storage + sync for per-orchard hourly temperatures (weather_hours).
@@ -140,9 +141,15 @@ export interface PriorSeasonAggregates {
  */
 export async function priorSeasonAggregates(
   orchardId: string,
-  asOfYmd: string
+  asOfYmd: string,
+  chillWindow: ChillWindow = MARITIME_PNW_CHILL
 ): Promise<PriorSeasonAggregates> {
   const doy = `${asOfYmd.slice(5)}`; // MM-DD
+  // The window's month bounds, so this agrees with chillSeasonWindow
+  // rather than restating Nov-Apr in SQL and drifting from it.
+  const startMonth = Number(chillWindow.startMmdd.slice(0, 2));
+  const endMonth = Number(chillWindow.endMmdd.slice(0, 2));
+  const endMmdd = chillWindow.endMmdd;
   const gdd = await sql`
     SELECT AVG(season_gdd)::float AS avg_gdd, COUNT(*)::int AS years FROM (
       SELECT date_part('year', ts) AS yr,
@@ -159,29 +166,29 @@ export async function priorSeasonAggregates(
   const chill = await sql`
     SELECT AVG(season_hours)::float AS avg_hours, COUNT(*)::int AS years FROM (
       SELECT season_year, COUNT(*) AS season_hours FROM (
-        SELECT CASE WHEN date_part('month', ts) >= 11
+        SELECT CASE WHEN date_part('month', ts) >= ${startMonth}
                     THEN date_part('year', ts)
                     ELSE date_part('year', ts) - 1 END AS season_year,
                ts, temp_c
         FROM weather_hours
         WHERE orchard_id = ${orchardId}
           AND temp_c >= 0 AND temp_c <= 7.222
-          AND (date_part('month', ts) >= 11 OR date_part('month', ts) <= 4)
+          AND (date_part('month', ts) >= ${startMonth} OR date_part('month', ts) <= ${endMonth})
       ) h
       WHERE
-        CASE WHEN ${doy} >= '11-01'
-             THEN to_char(ts, 'MM-DD') <= ${doy} AND date_part('month', ts) >= 11
-             ELSE date_part('month', ts) >= 11
-                  OR to_char(ts, 'MM-DD') <= (CASE WHEN ${doy} > '04-30' THEN '04-30' ELSE ${doy} END)
+        CASE WHEN ${doy} >= ${chillWindow.startMmdd}
+             THEN to_char(ts, 'MM-DD') <= ${doy} AND date_part('month', ts) >= ${startMonth}
+             ELSE date_part('month', ts) >= ${startMonth}
+                  OR to_char(ts, 'MM-DD') <= (CASE WHEN ${doy} > ${endMmdd} THEN ${endMmdd} ELSE ${doy} END)
         END
-        AND season_year < (CASE WHEN ${doy} >= '11-01'
+        AND season_year < (CASE WHEN ${doy} >= ${chillWindow.startMmdd}
                                 THEN date_part('year', ${asOfYmd}::date)
                                 ELSE date_part('year', ${asOfYmd}::date) - 1 END)
         -- only seasons whose November is actually in the data — the
         -- backfill's first winter is a Jan-Apr fragment otherwise
         AND season_year IN (
           SELECT DISTINCT date_part('year', ts) FROM weather_hours
-          WHERE orchard_id = ${orchardId} AND date_part('month', ts) = 11
+          WHERE orchard_id = ${orchardId} AND date_part('month', ts) = ${startMonth}
         )
       GROUP BY season_year
     ) s

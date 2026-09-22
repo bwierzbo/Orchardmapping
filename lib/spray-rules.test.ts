@@ -266,6 +266,41 @@ describe('per-season caps', () => {
     expect(f.some((x) => /per season/.test(x.message))).toBe(true);
   });
 
+  it("says whose limit it is when the orchard set it itself", () => {
+    // A cap one orchard chose for harvest reasons must not read like
+    // published guidance to anybody, including that orchard six months on.
+    const f = evaluateApplication({
+      material: material({
+        ...COPPER,
+        max_per_season: 1,
+        orchard_limit_note: 'One copper a season rather than the recommended two, for harvest reasons.',
+      }),
+      appliedAt: new Date('2026-11-15T10:00:00Z'),
+      mode: 'organic_practices',
+      history: [
+        { material_key: 'copper', material_name: 'Basic copper sulfate', applied_at: '2026-03-01T10:00:00Z', applied_on: '2026-03-01' },
+      ],
+      library: LIBRARY,
+    });
+    const warning = f.find((x) => /per season/.test(x.message))!;
+    expect(warning.message).toContain("your orchard's own limit");
+    expect(warning.message).toContain('harvest reasons');
+  });
+
+  it('does not claim a limit is the orchard\'s when it is the recommendation', () => {
+    const f = evaluateApplication({
+      material: COPPER,
+      appliedAt: new Date('2026-11-15T10:00:00Z'),
+      mode: 'organic_practices',
+      history: [
+        { material_key: 'copper', material_name: 'Basic copper sulfate', applied_at: '2026-03-01T10:00:00Z', applied_on: '2026-03-01' },
+      ],
+      library: LIBRARY,
+    });
+    const warning = f.find((x) => /per season/.test(x.message))!;
+    expect(warning.message).not.toContain("your orchard's own limit");
+  });
+
   it('does not count last season against this one', () => {
     const f = evaluateApplication({
       material: COPPER,
