@@ -1,4 +1,8 @@
 import Link from 'next/link';
+import RegionBanner from './RegionBanner';
+import { orchardRegion } from '@/lib/db/regions';
+import { programDrift } from '@/lib/db/program';
+import { viewerRole, roleAtLeast } from '@/lib/orchard-access';
 import { requireOrchardPage } from '@/lib/orchard-page';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
@@ -50,6 +54,13 @@ export default async function ProgramPage({ params }: PageProps) {
 
   const today = nowLocalIso(orchard.timezone).slice(0, 10);
   const season = seasonOf(today);
+
+  const [region, drift] = await Promise.all([
+    orchardRegion(orchard.id),
+    programDrift(orchard.id).catch(() => ({ notAdopted: [], customised: [], invented: [] })),
+  ]);
+  const role = await viewerRole(orchard.id);
+  const canEdit = !!role && roleAtLeast(role, 'operator');
 
   const [schedule, marks, hours, allSteps] = await Promise.all([
     resolveSchedule(orchard.id, today).catch(() => []),
@@ -103,6 +114,14 @@ export default async function ProgramPage({ params }: PageProps) {
           spring, monitor-only in summer. Bars are windows, not appointments — the red
           line is today.
         </p>
+
+        <RegionBanner
+          orchardId={orchard.id}
+          regionName={region?.name ?? null}
+          stepCount={allSteps.length}
+          drift={drift}
+          canEdit={canEdit}
+        />
 
         <section className="bg-surface border border-line rounded-lg p-4 mb-5">
           <SeasonTimeline

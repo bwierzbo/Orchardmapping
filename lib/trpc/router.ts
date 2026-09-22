@@ -30,6 +30,7 @@ import {
   TreeInsertData,
 } from '@/lib/db/trees';
 import { diffTreeChanges } from '@/lib/db/tree-events';
+import { programDrift, adoptRegionProgram } from '@/lib/db/program';
 import {
   validateTreeRow,
   validateTreeUpdate,
@@ -633,6 +634,34 @@ export const appRouter = router({
    * library targets, so an entry can answer "what treats this?" through
    * spray.recommend without a second mapping.
    */
+  /** An orchard's own program, and how it compares with its region's. */
+  program2: router({
+    drift: orchardViewerProcedure
+      .input(z.object({ orchardId: z.string().min(1) }))
+      .query(({ input }) => programDrift(input.orchardId)),
+
+    /**
+     * Take the region's recommended steps this orchard has not got.
+     *
+     * Never overwrites a step the orchard already holds, customised or
+     * not: adopting a recommendation must not quietly undo a decision.
+     */
+    adopt: orchardOperatorProcedure
+      .input(z.object({ orchardId: z.string().min(1) }))
+      .mutation(async ({ input }) => {
+        const region = await orchardRegion(input.orchardId);
+        if (!region) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message:
+              'This orchard has no region, so there is no recommendation to adopt. Set one first.',
+          });
+        }
+        const added = await adoptRegionProgram(input.orchardId);
+        return { added, region: region.name };
+      }),
+  }),
+
   pest: router({
     list: orchardViewerProcedure
       .input(z.object({ orchardId: z.string().min(1).optional() }).optional())
