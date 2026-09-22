@@ -86,6 +86,30 @@ export default function TreeDetailPanel({
   }, [tree.orchard_id]);
   const [inspecting, setInspecting] = useState(false);
   const [inspectBusy, setInspectBusy] = useState(false);
+  // Answers tapped out but not recorded. A photo saves on its own, so
+  // without this the panel could close over an assessment and say nothing.
+  const [inspectDirty, setInspectDirty] = useState(false);
+
+  /** Closing the panel mid-inspection loses exactly as much as Done does. */
+  const closePanel = () => {
+    if (!leaveInspection()) return;
+    onClose();
+  };
+
+  /** Refuse to leave an inspection on top of unrecorded answers. */
+  const leaveInspection = () => {
+    if (
+      inspectDirty &&
+      !window.confirm(
+        'This inspection has not been recorded yet. Leave without saving it?\n\nA photo you took is already saved; the health, fruit and measurements are not.'
+      )
+    ) {
+      return false;
+    }
+    setInspectDirty(false);
+    setInspecting(false);
+    return true;
+  };
   const [historyVersion, setHistoryVersion] = useState(0);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [form, setForm] = useState<TreeUpdateInput>({});
@@ -224,7 +248,7 @@ export default function TreeDetailPanel({
           </div>
         </div>
         <button
-          onClick={onClose}
+          onClick={closePanel}
           aria-label="Close tree details"
           className="p-2 -m-1 rounded-lg text-bark/70 hover:text-ink hover:bg-canopy-50"
         >
@@ -246,6 +270,7 @@ export default function TreeDetailPanel({
             recordLabel="Record"
             onSetStatus={onSetStatus}
             onBusyChange={setInspectBusy}
+            onDirtyChange={setInspectDirty}
             onSaved={({ saved, inspected, photo }) => {
               setHistoryVersion((v) => v + 1);
               if (photo) return;
@@ -372,7 +397,7 @@ export default function TreeDetailPanel({
             <span className="text-xs text-bark">Same form and records as a walk survey.</span>
             <Button
               variant="secondary"
-              onClick={() => setInspecting(false)}
+              onClick={leaveInspection}
               disabled={inspectBusy}
             >
               Done
