@@ -1,0 +1,1617 @@
+{
+ "source": "CiderPilot base_fruit_varieties",
+ "exported": "2026-09-22",
+ "count": 161,
+ "varieties": [
+  {
+   "name": "Akane",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Amère de Berthecourt",
+   "fruit_type": "apple",
+   "cider_category": "bittersweet",
+   "tannin": "medium-high",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Strong bittersweet character; structure for blends."
+  },
+  {
+   "name": "Antonovka",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Arkansas Black",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low-medium",
+   "acid": "medium",
+   "sugar_brix": "medium",
+   "harvest_window": "Late",
+   "variety_notes": "Firm, late; spicy; good aging potential in cider."
+  },
+  {
+   "name": "Ashmead's Kernel",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low-medium",
+   "acid": "medium",
+   "sugar_brix": "medium-high",
+   "harvest_window": "Late",
+   "variety_notes": "High-aroma russet; great single-varietal cider; also a dessert apple."
+  },
+  {
+   "name": "Avrolles",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "high",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "High acid; good for keeving blends in some regions."
+  },
+  {
+   "name": "Baldwin",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low-medium",
+   "acid": "medium",
+   "sugar_brix": "medium",
+   "harvest_window": "Late",
+   "variety_notes": "Spicy, robust; good for blends; resilient tree."
+  },
+  {
+   "name": "Bedan",
+   "fruit_type": "apple",
+   "cider_category": "bittersweet",
+   "tannin": "medium",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Early-Mid",
+   "variety_notes": "Early bittersweet; helps with early-season pressing."
+  },
+  {
+   "name": "Belle de Boskoop",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low-medium",
+   "acid": "medium-high",
+   "sugar_brix": "medium",
+   "harvest_window": "Late",
+   "variety_notes": "Sharp, aromatic; good in higher-acid ciders; distinct from 'Boscoop' misspelling."
+  },
+  {
+   "name": "Belle de Jardin",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Ben Davis",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": "Added from workbook/heirloom expansion; fill in details."
+  },
+  {
+   "name": "Bentley King",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Binet Rouge",
+   "fruit_type": "apple",
+   "cider_category": "bittersweet",
+   "tannin": "medium-high",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Rich bittersweet juice; contributes color."
+  },
+  {
+   "name": "Bitter Pear",
+   "fruit_type": "pear",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": "Testing"
+  },
+  {
+   "name": "Black Oxford",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low-medium",
+   "acid": "medium",
+   "sugar_brix": "medium",
+   "harvest_window": "Late",
+   "variety_notes": "Dark-skinned heirloom; spicy; good blending apple."
+  },
+  {
+   "name": "Black Twig",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": "Added from workbook/heirloom expansion; fill in details."
+  },
+  {
+   "name": "Bolero",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Bosc",
+   "fruit_type": "pear",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Braeburn",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "medium",
+   "sugar_brix": "medium",
+   "harvest_window": "Late",
+   "variety_notes": "Good balance; adds baked-spice tones after fermentation."
+  },
+  {
+   "name": "Brown Snout",
+   "fruit_type": "apple",
+   "cider_category": "bittersweet",
+   "tannin": "medium",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Gentle tannin; nutty notes; helps mouthfeel."
+  },
+  {
+   "name": "Brown's Apple",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "medium-high",
+   "sugar_brix": "medium",
+   "harvest_window": "Early-Mid",
+   "variety_notes": "Clean, bright acidity; citrusy/sharp; lifts blends."
+  },
+  {
+   "name": "Burford Red",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Calville Blanc d'Hiver",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": "French sharp apple"
+  },
+  {
+   "name": "Canada Gris",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Champlain",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "medium",
+   "sugar_brix": "medium",
+   "harvest_window": "Early-Mid",
+   "variety_notes": "Crisp dessert; pleasant aromatic profile."
+  },
+  {
+   "name": "Chehalis",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Chisel Jersey",
+   "fruit_type": "apple",
+   "cider_category": "bittersweet",
+   "tannin": "high",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Firm tannins; can be rustic; useful in small proportions."
+  },
+  {
+   "name": "Cimetière",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Cinnamon Spice",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Clapp's Favorite",
+   "fruit_type": "pear",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Cortland",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "medium",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "McIntosh cross; stable aromatics; nice for fresh blends."
+  },
+  {
+   "name": "Cosmic Crisp",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Cox's Orange Pippin",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "medium",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Aromatic, complex; delicate; lovely in aromatic blends."
+  },
+  {
+   "name": "Crown Prince Rudolph",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "medium",
+   "sugar_brix": "medium",
+   "harvest_window": "Early-Mid",
+   "variety_notes": "Attractive skin color; primarily dessert/ornamental."
+  },
+  {
+   "name": "Dabinett",
+   "fruit_type": "apple",
+   "cider_category": "bittersweet",
+   "tannin": "medium",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Late",
+   "variety_notes": "Reliable cropper; soft tannin, low acid; blends well, low vigor."
+  },
+  {
+   "name": "Dabinette",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Dayton",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "medium",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Disease-resistant dessert apple; clean juice."
+  },
+  {
+   "name": "Discovery",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Dold",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Dolgo Crab",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "high",
+   "sugar_brix": "medium",
+   "harvest_window": "Early",
+   "variety_notes": "Early, high-acid crab; floral aromatics; good for fresh ciders."
+  },
+  {
+   "name": "Domaines (generic French bittersweets)",
+   "fruit_type": "apple",
+   "cider_category": "bittersweet",
+   "tannin": "medium-high",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Late",
+   "variety_notes": "Placeholder row to enter specific French clones you source."
+  },
+  {
+   "name": "Duchess of Oldenburg",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Durona de Tresali",
+   "fruit_type": "apple",
+   "cider_category": "bittersweet",
+   "tannin": "medium",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Body and structure for sidra natural."
+  },
+  {
+   "name": "Egremont Russet",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low-medium",
+   "acid": "medium",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Russeted; nutty/pear skin notes; characterful."
+  },
+  {
+   "name": "Ellis Bitter",
+   "fruit_type": "apple",
+   "cider_category": "bittersweet",
+   "tannin": "medium",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Adds body and softness; can reduce astringency."
+  },
+  {
+   "name": "Empire",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "medium",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Mac × Red Delicious; berry aromatics; mid acid."
+  },
+  {
+   "name": "Enterprise",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "medium",
+   "sugar_brix": "medium",
+   "harvest_window": "Late",
+   "variety_notes": "Scab-resistant; sturdy; neutral to spicy juice."
+  },
+  {
+   "name": "Errezil (Reineta)",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "medium-high",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Known as 'Errezila'; also eaten fresh; bright acidity."
+  },
+  {
+   "name": "Esopus Spitzenburg",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "medium",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Complex aromatics; reputed Jefferson favorite; excels in blends."
+  },
+  {
+   "name": "Fameuse (Snow Apple)",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": "Added from workbook/heirloom expansion; fill in details."
+  },
+  {
+   "name": "Farm House Misc",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Fillbarrel",
+   "fruit_type": "apple",
+   "cider_category": "bittersweet",
+   "tannin": "medium-high",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Old bittersweet; structural tannin; sometimes alternate bearing."
+  },
+  {
+   "name": "Finn Hall Apple",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Flemish Beauty",
+   "fruit_type": "pear",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Foxwhelp",
+   "fruit_type": "apple",
+   "cider_category": "bittersharp",
+   "tannin": "medium-high",
+   "acid": "high",
+   "sugar_brix": "medium",
+   "harvest_window": "Early",
+   "variety_notes": "Iconic high-acid, high-phenolic English cider apple; intense; use sparingly."
+  },
+  {
+   "name": "Fréquin Rouge",
+   "fruit_type": "apple",
+   "cider_category": "bittersweet",
+   "tannin": "high",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Late",
+   "variety_notes": "Late; color and strong phenolics; needs mellowing in blend."
+  },
+  {
+   "name": "Fuji",
+   "fruit_type": "apple",
+   "cider_category": "sweet",
+   "tannin": "low",
+   "acid": "low-medium",
+   "sugar_brix": "high",
+   "harvest_window": "Late",
+   "variety_notes": "High sugar; low acid; use with sharps/bittersharps to balance."
+  },
+  {
+   "name": "Gala",
+   "fruit_type": "apple",
+   "cider_category": "sweet",
+   "tannin": "low",
+   "acid": "low-medium",
+   "sugar_brix": "medium-high",
+   "harvest_window": "Early-Mid",
+   "variety_notes": "Aromatic, honeyed; good for easy-drinking blends."
+  },
+  {
+   "name": "Geneva Crab",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Geneva Tremlett's",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "medium-high",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "American selection with bittersweet character."
+  },
+  {
+   "name": "Ginger Nehous",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "medium",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Workbook entry—verify canonical name/spelling (possible 'Gingergold' or 'Nehou')."
+  },
+  {
+   "name": "Golden Delicious",
+   "fruit_type": "apple",
+   "cider_category": "sweet",
+   "tannin": "low",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Neutral, blend-friendly; yeast-expressive; low acid."
+  },
+  {
+   "name": "Golden Plum",
+   "fruit_type": "plum",
+   "cider_category": null,
+   "tannin": "medium",
+   "acid": "low-medium",
+   "sugar_brix": "high",
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Golden Russet",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low-medium",
+   "acid": "medium",
+   "sugar_brix": "high",
+   "harvest_window": "Late",
+   "variety_notes": "High brix russet; golden, honeyed notes; excellent for higher ABV."
+  },
+  {
+   "name": "GoldRush",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "high",
+   "sugar_brix": "high",
+   "harvest_window": "Late",
+   "variety_notes": "High brix & acid; ferments beautifully; excellent for dry ciders."
+  },
+  {
+   "name": "Granny Smith",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "high",
+   "sugar_brix": "medium",
+   "harvest_window": "Late",
+   "variety_notes": "Reliable acidity; lime/green apple notes; boosts malic acid."
+  },
+  {
+   "name": "Gravenstein",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "high",
+   "sugar_brix": "medium",
+   "harvest_window": "Early",
+   "variety_notes": "Early ripening; bright, aromatic; great for fresh, semi-dry ciders."
+  },
+  {
+   "name": "Green Apple",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Grimes Golden",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low-medium",
+   "acid": "medium",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Ancestral to Golden Delicious; floral; nice balance."
+  },
+  {
+   "name": "Harrison",
+   "fruit_type": "apple",
+   "cider_category": "bittersweet",
+   "tannin": "medium-high",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Late",
+   "variety_notes": "Famous American cider apple; rich color and body; user uses."
+  },
+  {
+   "name": "Harry Masters' Jersey",
+   "fruit_type": "apple",
+   "cider_category": "bittersweet",
+   "tannin": "medium-high",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid-Late",
+   "variety_notes": "Rich soft tannins; good body; also called 'Port Wine' in some sources."
+  },
+  {
+   "name": "Herefordshire Redstreak",
+   "fruit_type": "apple",
+   "cider_category": "bittersweet",
+   "tannin": "medium-high",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Historic bittersweet distinct from Somerset Redstreak."
+  },
+  {
+   "name": "Honeycrisp",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "low-medium",
+   "sugar_brix": "medium-high",
+   "harvest_window": "Mid",
+   "variety_notes": "Juicy, aromatic; adds fruitiness; watch low tannin."
+  },
+  {
+   "name": "Hyslop Crab",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "high",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Small fruit; boosts color and acid; use sparingly."
+  },
+  {
+   "name": "Idared",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "medium-high",
+   "sugar_brix": "medium",
+   "harvest_window": "Late",
+   "variety_notes": "Good acid and color; later harvest; storage friendly."
+  },
+  {
+   "name": "Isle of Wight Jersey",
+   "fruit_type": "apple",
+   "cider_category": "bittersweet",
+   "tannin": "medium",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Jersey-type bittersweet; verify specific clone."
+  },
+  {
+   "name": "Italian Plum",
+   "fruit_type": "plum",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Jersey (generic)",
+   "fruit_type": "apple",
+   "cider_category": "bittersweet",
+   "tannin": "medium",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Catch-all for 'Jersey' bittersweets; verify clone when sourcing."
+  },
+  {
+   "name": "Jonagold",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "medium",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Aromatically expressive; blends well with bittersweets."
+  },
+  {
+   "name": "Jonathan",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "medium-high",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Bright red-fruit aromatics; good acid."
+  },
+  {
+   "name": "Karmijn de Sonneville",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Kermerrien",
+   "fruit_type": "apple",
+   "cider_category": "bittersharp",
+   "tannin": "medium",
+   "acid": "high",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Bright acid; useful for freshness."
+  },
+  {
+   "name": "King",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "King David",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low-medium",
+   "acid": "medium",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Spicy, cherry-like aromatics; great color; good single-varietal."
+  },
+  {
+   "name": "Kingston Black",
+   "fruit_type": "apple",
+   "cider_category": "bittersharp",
+   "tannin": "medium",
+   "acid": "medium-high",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid-Late",
+   "variety_notes": "Famed 'single-varietal' cider apple; complex but low yields; can be shy-bearing."
+  },
+  {
+   "name": "Lady Apple",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": "Added from workbook/heirloom expansion; fill in details."
+  },
+  {
+   "name": "Lambrook Pippin",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low-medium",
+   "acid": "medium",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Aromatic heirloom; verify rootstock and disease notes."
+  },
+  {
+   "name": "Liberty",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "medium",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Disease resistant; bright acid; good for low-spray orchards."
+  },
+  {
+   "name": "Major",
+   "fruit_type": "apple",
+   "cider_category": "bittersweet",
+   "tannin": "medium",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Good bittersweet character; color and body."
+  },
+  {
+   "name": "Marie Ménard",
+   "fruit_type": "apple",
+   "cider_category": "bittersweet",
+   "tannin": "medium",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Classic French bittersweet; soft tannins; aromatic."
+  },
+  {
+   "name": "McIntosh",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "medium-high",
+   "sugar_brix": "medium",
+   "harvest_window": "Early",
+   "variety_notes": "Soft flesh; aromatic; can go 'mousy' if hygiene poor—watch nutrients."
+  },
+  {
+   "name": "Melrose",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Michelin",
+   "fruit_type": "apple",
+   "cider_category": "bittersweet",
+   "tannin": "medium",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Late",
+   "variety_notes": "High-yield bittersweet; neutral aromatics; base juice apple."
+  },
+  {
+   "name": "Misc.",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Moko",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "high",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Traditional; contributes freshness."
+  },
+  {
+   "name": "Mountain Rose",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Muscat de Bernay",
+   "fruit_type": "apple",
+   "cider_category": "bittersweet",
+   "tannin": "medium",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Muscat-like aroma in some sites; bittersweet profile."
+  },
+  {
+   "name": "Muscat de Dieppe",
+   "fruit_type": "apple",
+   "cider_category": "bittersweet",
+   "tannin": "medium",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Traditional Dieppe-region bittersweet."
+  },
+  {
+   "name": "Mutsu",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Médaille d'Or",
+   "fruit_type": "apple",
+   "cider_category": "bittersweet",
+   "tannin": "high",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Very tannic; powerful; often used sparingly for structure."
+  },
+  {
+   "name": "Nehou",
+   "fruit_type": "apple",
+   "cider_category": "bittersweet",
+   "tannin": "medium",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Classic French bittersweet; soft tannin; aromatic."
+  },
+  {
+   "name": "Newtown Pippin",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "medium",
+   "sugar_brix": "medium",
+   "harvest_window": "Late",
+   "variety_notes": "Classic American apple; citrus/pine; good single-varietal still cider."
+  },
+  {
+   "name": "Nieekyma",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Northern Spy",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "medium",
+   "sugar_brix": "medium",
+   "harvest_window": "Late",
+   "variety_notes": "Crisp, clean juice; excellent for long ferments; user uses."
+  },
+  {
+   "name": "OBC Misc",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Perry Pear",
+   "fruit_type": "pear",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Pink Lady (Cripps Pink)",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "medium",
+   "sugar_brix": "medium",
+   "harvest_window": "Late",
+   "variety_notes": "Good acid for a dessert apple; helpful in fresh styles."
+  },
+  {
+   "name": "Pink Pearl",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Pippin",
+   "fruit_type": "apple",
+   "cider_category": "sweet",
+   "tannin": "low",
+   "acid": null,
+   "sugar_brix": "medium",
+   "harvest_window": null,
+   "variety_notes": "Generic Aromatic Pippin"
+  },
+  {
+   "name": "Porter's Perfection",
+   "fruit_type": "apple",
+   "cider_category": "bittersharp",
+   "tannin": "medium",
+   "acid": "high",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Distinctive 'two-eye' fruits; spicy, high acid bittersharp."
+  },
+  {
+   "name": "Puget Spice",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Quince",
+   "fruit_type": "quince",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Raxao",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "high",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Traditional Asturian variety; aromatic, high acid."
+  },
+  {
+   "name": "Red Bartlett",
+   "fruit_type": "pear",
+   "cider_category": "sweet",
+   "tannin": "low",
+   "acid": null,
+   "sugar_brix": "medium",
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Red Delicious",
+   "fruit_type": "apple",
+   "cider_category": "sweet",
+   "tannin": "low",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Neutral; use sparingly; benefits from sharp/tannin partners."
+  },
+  {
+   "name": "Red Gravenstein",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "high",
+   "sugar_brix": "medium",
+   "harvest_window": "Early",
+   "variety_notes": "Early ripening; bright, aromatic; great for fresh, semi-dry ciders."
+  },
+  {
+   "name": "Red Vein Crab",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "high",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Crabapple; boosts acid and color in blends."
+  },
+  {
+   "name": "Redfield",
+   "fruit_type": "apple",
+   "cider_category": "bittersharp",
+   "tannin": "low",
+   "acid": "high",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Red-fleshed juice; color and berry aromatics; sharp."
+  },
+  {
+   "name": "Regona",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "high",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Adds freshness and length; bright malic acid."
+  },
+  {
+   "name": "Reine des Pommes",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "medium",
+   "acid": "high",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "French bittersharp; aromatic lift; used in traditional blends."
+  },
+  {
+   "name": "Reine des Reinettes",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Rhode Island Greening",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": "Added from workbook/heirloom expansion; fill in details."
+  },
+  {
+   "name": "Rome Beauty",
+   "fruit_type": "apple",
+   "cider_category": "sweet",
+   "tannin": "low",
+   "acid": "low-medium",
+   "sugar_brix": "medium",
+   "harvest_window": "Late",
+   "variety_notes": "Neutral; body not aroma; blend extender."
+  },
+  {
+   "name": "Row 5",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Roxbury Russet",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low-medium",
+   "acid": "medium",
+   "sugar_brix": "medium-high",
+   "harvest_window": "Mid",
+   "variety_notes": "Oldest named American apple; russet; aromatic; good fermentation kinetics."
+  },
+  {
+   "name": "Royal Gala",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Small Red",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Smokehouse",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": "Added from workbook/heirloom expansion; fill in details."
+  },
+  {
+   "name": "Somerset Redstreak",
+   "fruit_type": "apple",
+   "cider_category": "bittersweet",
+   "tannin": "high",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Historic bittersweet; color stability and soft bitters; adds depth."
+  },
+  {
+   "name": "Sops of Wine",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Spartan",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "medium",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Crisp, berry-like aromatics; pleasant in blends."
+  },
+  {
+   "name": "Stayman Winesap",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low-medium",
+   "acid": "medium",
+   "sugar_brix": "medium",
+   "harvest_window": "Late",
+   "variety_notes": "Spicy 'Winesap' character; color and aromatics; blending workhorse."
+  },
+  {
+   "name": "Stembridge Cluster",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "medium",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Historic cluster-bearing variety; verify ID."
+  },
+  {
+   "name": "Stoke Red",
+   "fruit_type": "apple",
+   "cider_category": "bittersharp",
+   "tannin": "medium",
+   "acid": "high",
+   "sugar_brix": "medium",
+   "harvest_window": "Late",
+   "variety_notes": "Intense acid and aromatics; late ripening; user mentioned using."
+  },
+  {
+   "name": "Summer Red",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Supreme Delicious",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Sweet Alford",
+   "fruit_type": "apple",
+   "cider_category": "sweet",
+   "tannin": "low",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Sweet juice; used to temper acid and tannin."
+  },
+  {
+   "name": "Sweet Coppin",
+   "fruit_type": "apple",
+   "cider_category": "sweet",
+   "tannin": "low",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Low acid, low tannin; balances sharp/bitter components."
+  },
+  {
+   "name": "Sweet Greening",
+   "fruit_type": "apple",
+   "cider_category": "sweet",
+   "tannin": "low",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Traditional sweet; used to temper high-acid blends."
+  },
+  {
+   "name": "Test Apple",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Test Apple 2",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Tiny Bittersweet",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Tolman Sweet",
+   "fruit_type": "apple",
+   "cider_category": "sweet",
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": "Added from workbook/heirloom expansion; fill in details."
+  },
+  {
+   "name": "Tompkins King",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low-medium",
+   "acid": "medium",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Large fruit; aromatic; good for blends and fresh."
+  },
+  {
+   "name": "Transcendent Crab",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": "Added from workbook/heirloom expansion; fill in details."
+  },
+  {
+   "name": "Tree #2",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Tremlett's Bitter",
+   "fruit_type": "apple",
+   "cider_category": "bittersweet",
+   "tannin": "high",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Early-Mid",
+   "variety_notes": "Very high tannin; can be harsh solo; good for structure in blends."
+  },
+  {
+   "name": "Twenty Ounce",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": "Added from workbook/heirloom expansion; fill in details."
+  },
+  {
+   "name": "Tydeman's Red",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Urtebi Txikia",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "high",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Classic Basque sharp; lifts blends."
+  },
+  {
+   "name": "Vilberie",
+   "fruit_type": "apple",
+   "cider_category": "bittersweet",
+   "tannin": "high",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Late",
+   "variety_notes": "Strong tannin, late; contributes structure and color."
+  },
+  {
+   "name": "Virginia Hewe's Crab",
+   "fruit_type": "apple",
+   "cider_category": "bittersharp",
+   "tannin": "medium",
+   "acid": "high",
+   "sugar_brix": "medium",
+   "harvest_window": "Late",
+   "variety_notes": "Small fruit; intense acid and aroma; excellent for sparkle; user uses."
+  },
+  {
+   "name": "Wagener",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Wealthy",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": "Added from workbook/heirloom expansion; fill in details."
+  },
+  {
+   "name": "Whitney Crab",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Wickson Crab",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "high",
+   "sugar_brix": "high",
+   "harvest_window": "Late",
+   "variety_notes": "Very high brix crabapple; great for acidity & sugar; aromatic."
+  },
+  {
+   "name": "Winesap",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low-medium",
+   "acid": "medium",
+   "sugar_brix": "medium",
+   "harvest_window": "Late",
+   "variety_notes": "Spicy 'winey' note; color; heritage character."
+  },
+  {
+   "name": "Winter Banana",
+   "fruit_type": "apple",
+   "cider_category": null,
+   "tannin": null,
+   "acid": null,
+   "sugar_brix": null,
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Yarlington Mill",
+   "fruit_type": "apple",
+   "cider_category": "bittersweet",
+   "tannin": "medium-high",
+   "acid": "low",
+   "sugar_brix": "medium",
+   "harvest_window": "Mid",
+   "variety_notes": "Strong tannin; fruity aromatics; can be assertive; watch for biennial tendency."
+  },
+  {
+   "name": "Yellow Bartlett",
+   "fruit_type": "pear",
+   "cider_category": "sweet",
+   "tannin": "low",
+   "acid": null,
+   "sugar_brix": "medium",
+   "harvest_window": null,
+   "variety_notes": null
+  },
+  {
+   "name": "Yellow Gravenstein",
+   "fruit_type": "apple",
+   "cider_category": "sharp",
+   "tannin": "low",
+   "acid": "high",
+   "sugar_brix": "medium",
+   "harvest_window": "Early",
+   "variety_notes": "Early ripening; bright, aromatic; great for fresh, semi-dry ciders."
+  }
+ ]
+}
