@@ -912,6 +912,7 @@ export default function OrchardViewer({
 
       {editMode && canEdit && (
         <EditModePanel
+          orchardId={orchard.id}
           row={row}
           position={position}
           autoIncrement={autoIncrement}

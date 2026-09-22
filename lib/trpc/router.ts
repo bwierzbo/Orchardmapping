@@ -52,6 +52,7 @@ import { serializeTree } from '@/lib/serialize';
 import { formatAddress } from '@/lib/address';
 import { applyTreeEdits } from '@/lib/db/group-actions';
 import { listPeople, setGlobalRole } from '@/lib/db/people';
+import { listVarietyOptions } from '@/lib/db/varieties';
 import { toYMD } from '@/lib/dates';
 import { TRPCError } from '@trpc/server';
 import { listAreas, insertArea, updateArea, deleteArea, AREA_KINDS } from '@/lib/db/areas';
@@ -330,6 +331,11 @@ export const appRouter = router({
      * save, so one path checks for address collisions, defers the
      * constraint so trees can swap, and records the change in history.
      */
+    /** Variety options for the picker: the library plus what is already here. */
+    varieties: orchardViewerProcedure
+      .input(z.object({ orchardId: z.string().min(1) }))
+      .query(({ input }) => listVarietyOptions(input.orchardId)),
+
     editMany: orchardOperatorProcedure
       .input(
         z.object({

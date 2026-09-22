@@ -2,6 +2,7 @@
 
 import { Undo2 } from 'lucide-react';
 import { formatAddress } from '@/lib/address';
+import VarietyPicker from './VarietyPicker';
 import type { TreeStatus } from '@/lib/types';
 import { TREE_STATUSES } from '@/lib/types';
 
@@ -16,6 +17,7 @@ interface EditModePanelProps {
   row: string;
   position: string;
   autoIncrement: boolean;
+  orchardId: string;
   variety: string;
   status: TreeStatus;
   existingRows: string[];
@@ -35,6 +37,7 @@ export default function EditModePanel({
   row,
   position,
   autoIncrement,
+  orchardId,
   variety,
   status,
   existingRows,
@@ -96,16 +99,17 @@ export default function EditModePanel({
       </div>
 
       <div className="grid grid-cols-2 gap-2 mb-2">
-        <label className="block">
+        <div className="block">
           <span className="text-xs font-medium text-bark">Variety</span>
-          <input
-            type="text"
-            value={variety}
-            onChange={(e) => onVarietyChange(e.target.value)}
-            placeholder="optional"
-            className="mt-1 w-full text-sm px-2.5 py-1.5 bg-surface text-ink border border-line rounded-md focus:outline-none focus:ring-2 focus:ring-flag-600"
-          />
-        </label>
+          <div className="mt-1">
+            <VarietyPicker
+              orchardId={orchardId}
+              value={variety}
+              onChange={onVarietyChange}
+              placeholder="optional"
+            />
+          </div>
+        </div>
         <label className="block">
           <span className="text-xs font-medium text-bark">Status</span>
           <select

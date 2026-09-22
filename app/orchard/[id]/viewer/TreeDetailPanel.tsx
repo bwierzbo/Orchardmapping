@@ -12,6 +12,7 @@ import StatusBadge, { STATUS_LABEL } from '@/components/StatusBadge';
 import TreeHistory from './TreeHistory';
 import { formatAddress, formatTreeLabel } from '@/lib/address';
 import { trpc } from '@/lib/trpc/client';
+import VarietyPicker from './VarietyPicker';
 import type { TreeUpdateInput } from '@/lib/api/trees';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -294,7 +295,14 @@ export default function TreeDetailPanel({
               Leave all three blank to take this tree out of the layout without deleting it.
             </p>
             <div className="grid grid-cols-2 gap-3">
-              {input('Variety', 'variety')}
+              <div className="space-y-1">
+                <Label className="text-xs text-bark">Variety</Label>
+                <VarietyPicker
+                  orchardId={tree.orchard_id}
+                  value={(form.variety as string) ?? ''}
+                  onChange={(v) => setForm((f) => ({ ...f, variety: v }))}
+                />
+              </div>
               <div className="space-y-1">
                 <Label className="text-xs text-bark">Fruit</Label>
                 <Input
