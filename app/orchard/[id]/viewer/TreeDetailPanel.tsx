@@ -46,6 +46,8 @@ interface TreeDetailPanelProps {
   onMoved: () => void;
   /** Status change from the Inspect form (same path as a walk). */
   onSetStatus: (treeId: string, status: TreeStatus) => Promise<boolean>;
+  /** A spot check landed, so the recency map should stop calling it unvisited. */
+  onInspected: (treeId: string) => void;
 }
 
 /**
@@ -64,6 +66,7 @@ export default function TreeDetailPanel({
   onStartMove,
   onMoved,
   onSetStatus,
+  onInspected,
 }: TreeDetailPanelProps) {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -249,6 +252,7 @@ export default function TreeDetailPanel({
             onSaved={({ saved, inspected, photo }) => {
               setHistoryVersion((v) => v + 1);
               if (photo) return;
+              if (inspected) onInspected(tree.tree_id);
               const where = `R${tree.row_id ?? '—'} P${tree.position ?? '—'}`;
               if (saved > 0) toast.success(`Recorded for ${where}`);
               setInspecting(false);

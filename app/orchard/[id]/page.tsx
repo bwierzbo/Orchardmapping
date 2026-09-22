@@ -5,6 +5,8 @@ import type { Metadata } from 'next';
 import { auth } from '@clerk/nextjs/server';
 import { getOrchardConfigById } from '@/lib/db/orchards';
 import { getTreesByOrchard } from '@/lib/db/trees';
+import { lastInspectedByOrchard } from '@/lib/db/tree-events';
+import { orchardRegion } from '@/lib/db/regions';
 import { serializeTree } from '@/lib/serialize';
 import OrchardViewerLoader from './viewer/OrchardViewerLoader';
 import { roleAtLeast, memberOrchardConfigs } from '@/lib/orchard-access';
@@ -42,10 +44,14 @@ export default async function OrchardPage({ params }: PageProps) {
   const role = await requireOrchardPage(id);
 
   const { userId } = await auth();
-  const [orchard, allOrchards, trees] = await Promise.all([
+  const [orchard, allOrchards, trees, lastInspected, region] = await Promise.all([
     getOrchard(id),
     userId ? memberOrchardConfigs(userId) : Promise.resolve([]),
     getTreesByOrchard(id),
+    lastInspectedByOrchard(id),
+    // Only for the chill window, which decides how forgiving the recency
+    // bands are. An orchard with no region falls back to the defaults.
+    orchardRegion(id).catch(() => null),
   ]);
 
   // A genuine miss (query succeeded, no row) — DB failures throw to error.tsx
@@ -59,6 +65,12 @@ export default async function OrchardPage({ params }: PageProps) {
       allOrchards={allOrchards}
       initialTrees={trees.map(serializeTree)}
       canEdit={canEdit}
+      lastInspected={lastInspected}
+      chillWindow={
+        region
+          ? { start: region.chillStartMmdd, end: region.chillEndMmdd }
+          : { start: '11-01', end: '04-30' }
+      }
     />
   );
 }
