@@ -82,11 +82,17 @@ export default function RegionCard({
             />
             <Row label="generations" value={current.cmGenerations ?? 'unknown'} />
             <Row label="scab" value={`${current.scabInoculum ?? 'unset'} inoculum`} />
+            <Row
+              label="wet hour"
+              value={`${current.wetnessRhPct ?? 90}% RH, ${current.wetnessPrecipMm ?? 0.2}mm rain`}
+              wired
+            />
           </dl>
 
           <p className="mt-2 text-xs text-bark">
-            Only the chill window is read by the models so far. The rest are recorded here
-            and still hardcoded elsewhere — they move across as the program is rebuilt.
+            Marked settings are read by the models. The rest are recorded here and still
+            hardcoded elsewhere — they move across as the program is rebuilt. Codling moth
+            accumulation is read when a program is adopted, not afterwards.
           </p>
         </>
       ) : (
