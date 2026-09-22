@@ -1,4 +1,5 @@
 import { sql } from '@vercel/postgres';
+import { applyRegionalExclusions } from '../region-program';
 import type { ProgramMode, SprayMaterial, PriorApplication } from '../spray-rules';
 
 /**
@@ -48,7 +49,13 @@ function decodeMaterial(row: Record<string, unknown>): SprayMaterial {
     rate_low: num(row.rate_low),
     rate_high: num(row.rate_high),
     rate_unit: (row.rate_unit as string | null) ?? null,
-    targets: (row.targets as string[] | null) ?? [],
+    targets: applyRegionalExclusions(
+      (row.targets as string[] | null) ?? [],
+      (row.regional_exclusions as Array<{ pest: string }> | null) ?? []
+    ),
+    regional_exclusions: (row.regional_exclusions as
+      | Array<{ pest: string; reason: string | null }>
+      | null) ?? [],
     conflicts_with: (row.conflicts_with as string[] | null) ?? [],
     conflicts_after: (row.conflicts_after as string[] | null) ?? [],
     conflict_after_days:
@@ -73,7 +80,18 @@ export async function listMaterials(orchardId?: string): Promise<SprayMaterial[]
     SELECT m.*,
            CASE WHEN oms.orchard_id IS NOT NULL
                 THEN oms.max_per_season ELSE m.max_per_season END AS max_per_season,
-           oms.note AS orchard_limit_note
+           oms.note AS orchard_limit_note,
+           -- Targets this material does not hold in this orchard's region.
+           -- A material lists what it treats; a region may record that it
+           -- does not work there, with the finding behind it.
+           COALESCE((
+             SELECT json_agg(json_build_object('pest', rme.pest_key, 'reason', rme.reason))
+             FROM region_material_efficacy rme
+             JOIN orchards o ON o.region_key = rme.region_key
+             WHERE o.id = ${orchardId ?? null}
+               AND rme.material_key = m.material_key
+               AND rme.effective = FALSE
+           ), '[]'::json) AS regional_exclusions
     FROM spray_materials m
     LEFT JOIN orchard_material_settings oms
       ON oms.material_key = m.material_key AND oms.orchard_id = ${orchardId ?? null}
