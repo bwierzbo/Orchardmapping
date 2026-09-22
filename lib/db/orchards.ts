@@ -64,6 +64,10 @@ export interface Orchard {
   ortho_api_path?: string;
   // Planted footprint traced from imagery (JSONB GeoJSON Polygon)
   boundary_geojson?: unknown;
+  // Does this orchard run a spray / nutrition programme here? Both
+  // opt-in since migration 063 — see the column comments for why.
+  ipm_enabled?: boolean;
+  nutrition_enabled?: boolean;
   // Timestamps
   created_at?: Date;
   updated_at?: Date;
@@ -137,6 +141,10 @@ export function dbRowToOrchardConfig(row: Orchard): OrchardConfig {
     pmtilesPath: row.vector_pmtiles_url || '',
     previewImage: row.preview_image_url,
     boundary: parseBoundary(row.boundary_geojson),
+    // A row read before migration 063 has neither column; off is the
+    // safe reading, matching the column default.
+    ipmEnabled: row.ipm_enabled === true,
+    nutritionEnabled: row.nutrition_enabled === true,
   };
 }
 
@@ -384,4 +392,34 @@ export async function getAllOrchardConfigs(): Promise<OrchardConfig[]> {
     SELECT * FROM orchards ORDER BY created_at DESC
   `;
   return result.rows.map((row) => dbRowToOrchardConfig(row as Orchard));
+}
+
+/**
+ * Turn this orchard's IPM / nutrition programmes on or off.
+ *
+ * Deliberately its own function rather than two more entries in
+ * ORCHARD_UPDATABLE_COLUMNS: these are not map metadata, they decide
+ * whether the app gives spray advice for these trees at all, and that
+ * deserves its own call site and its own permission check.
+ *
+ * An omitted field is left alone, so one switch can move without the
+ * caller having to restate the other.
+ */
+export async function setOrchardFeatures(
+  id: string,
+  features: { ipm?: boolean; nutrition?: boolean }
+): Promise<{ ipmEnabled: boolean; nutritionEnabled: boolean } | null> {
+  const { rows } = await sql`
+    UPDATE orchards
+       SET ipm_enabled       = COALESCE(${features.ipm ?? null}, ipm_enabled),
+           nutrition_enabled = COALESCE(${features.nutrition ?? null}, nutrition_enabled),
+           updated_at        = NOW()
+     WHERE id = ${id}
+     RETURNING ipm_enabled, nutrition_enabled
+  `;
+  if (rows.length === 0) return null;
+  return {
+    ipmEnabled: rows[0].ipm_enabled === true,
+    nutritionEnabled: rows[0].nutrition_enabled === true,
+  };
 }

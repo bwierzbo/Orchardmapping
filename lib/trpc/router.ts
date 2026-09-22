@@ -53,6 +53,7 @@ import {
   getAllOrchardConfigs,
   getOrchardConfigById,
   getOrchardById,
+  setOrchardFeatures,
   updateOrchard,
 } from '@/lib/db/orchards';
 import { boundaryBounds } from '@/lib/orchard-boundary';
@@ -162,6 +163,33 @@ export const appRouter = router({
         }
         await setOrchardRegion(input.orchardId, input.regionKey);
         return { ok: true };
+      }),
+
+    /**
+     * Turn this orchard's IPM / nutrition programmes on or off.
+     *
+     * Admin-only, like setRegion, and for the same reason: it decides
+     * whether the app gives spray advice for these trees. Mapping
+     * somebody's orchard is a favour; running their spray programme is
+     * not, and the owner of THIS orchard is the one who gets to say.
+     */
+    setFeatures: orchardAdminProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          ipm: z.boolean().optional(),
+          nutrition: z.boolean().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const updated = await setOrchardFeatures(input.orchardId, {
+          ipm: input.ipm,
+          nutrition: input.nutrition,
+        });
+        if (!updated) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Orchard not found' });
+        }
+        return updated;
       }),
 
     setBoundary: orchardOperatorProcedure
