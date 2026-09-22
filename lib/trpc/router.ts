@@ -28,7 +28,6 @@ import {
   deleteTree,
 
   TreeInsertData,
-  setTreeAddress,
 } from '@/lib/db/trees';
 import { diffTreeChanges } from '@/lib/db/tree-events';
 import {
@@ -242,8 +241,9 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         // Same flow as REST PUT /api/trees/[id]: strip the fields that are
         // not field edits, shared validators, then the whitelisted
-        // updateTree. The address goes through tree.setAddress, which
-        // checks for a collision and logs the move.
+        // updateTree. The address goes through tree.editMany, which
+        // checks for a collision, defers the constraint so trees can swap,
+        // and records the move.
         const {
           id: _id,
           tree_id: _treeId,
@@ -322,39 +322,13 @@ export const appRouter = router({
         return { success: true };
       }),
     /**
-     * Move a tree to a different block, row and position.
-     *
-     * Separate from `update` so there is one place that checks for a
-     * collision, defers the address constraint (which is what lets two
-     * trees swap in one step) and logs the move to the tree's history.
-     * An omitted part clears it: a tree can be taken out of its row.
-     */
-    setAddress: treeOperatorProcedure
-      .input(
-        z.object({
-          treeId: z.string().min(1),
-          blockId: z.string().trim().max(50).nullish(),
-          rowId: z.string().trim().max(50).nullish(),
-          position: z.string().trim().max(50).nullish(),
-        })
-      )
-      .mutation(async ({ input, ctx }) => {
-        const r = await setTreeAddress(
-          input.treeId,
-          { block_id: input.blockId, row_id: input.rowId, position: input.position },
-          { actor: ctx.userId }
-        );
-        if (!r.ok) throw new TRPCError({ code: 'BAD_REQUEST', message: r.reason });
-        return r;
-      }),
-
-    /**
-     * Save a grid of per-tree edits as one action.
+     * Save per-tree edits as one action.
      *
      * Different trees get different values, which neither group actions
      * (one field, one value, whole filter) nor the bulk import (matched
-     * by address, no history) could express. Lands as a single entry in
-     * the activity list, a diff on each tree's own history, and one undo.
+     * by address, no history) could express. Also the single-tree editor's
+     * save, so one path checks for address collisions, defers the
+     * constraint so trees can swap, and records the change in history.
      */
     editMany: orchardOperatorProcedure
       .input(
@@ -372,7 +346,7 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input, ctx }) => {
-        // Same field rules the single-tree editor uses
+        // Same field rules the grid and the panel both rely on
         for (const edit of input.edits) {
           const validation = validateTreeUpdate(edit.fields as Partial<TreeRowData>);
           if (!validation.isValid) {

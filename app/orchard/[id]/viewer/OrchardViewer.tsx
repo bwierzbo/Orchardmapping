@@ -542,20 +542,6 @@ export default function OrchardViewer({
   );
 
   // ---- panel actions ----
-  const handleSave = useCallback(
-    async (patch: Parameters<typeof update>[1]) => {
-      if (!selectedTreeId) return false;
-      setSaving(true);
-      try {
-        const ok = await update(selectedTreeId, patch);
-        if (ok) showToast('success', 'Tree updated');
-        return ok;
-      } finally {
-        setSaving(false);
-      }
-    },
-    [selectedTreeId, update, showToast]
-  );
 
   const handleUndoLast = useCallback(async () => {
     if (!lastPlacedId) return;
@@ -955,7 +941,6 @@ export default function OrchardViewer({
           walkSettings={walkSettings}
           onClose={clear}
           onSetStatus={walkSetStatus}
-          onSave={handleSave}
           onDelete={handleDelete}
           onStartMove={() => {
             setMovingTree(selectedTree);

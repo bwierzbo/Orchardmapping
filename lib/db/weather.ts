@@ -6,6 +6,7 @@ import {
   type WeatherSourceMeta,
 } from '../weather-source';
 import { fetchRecentHours, nowLocalIso } from '../openmeteo';
+import { orchardTimezone } from './orchards';
 
 /**
  * Storage + sync for per-orchard hourly temperatures (weather_hours).
@@ -209,11 +210,12 @@ export async function ensureWeatherCurrent(
   try {
     const latest = await latestHourTs(orchardId);
     if (!latest) return 0;
-    const now = nowLocalIso();
+    const timezone = await orchardTimezone(orchardId);
+    const now = nowLocalIso(timezone);
     const ageHours = (Date.parse(now) - Date.parse(latest)) / 3_600_000;
     if (ageHours < STALE_AFTER_HOURS) return 0;
     const pastDays = Math.min(92, Math.ceil(ageHours / 24) + 1);
-    const hours = await fetchRecentHours(lat, lng, pastDays, now);
+    const hours = await fetchRecentHours(lat, lng, pastDays, now, timezone);
     const fresh = hours.filter((h) => h.ts > latest);
     if (fresh.length === 0) return 0;
     return await insertHours(orchardId, fresh);

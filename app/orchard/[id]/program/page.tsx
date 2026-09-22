@@ -45,7 +45,7 @@ export default async function ProgramPage({ params }: PageProps) {
   ]);
   if (!orchard) notFound();
 
-  const today = nowLocalIso().slice(0, 10);
+  const today = nowLocalIso(orchard.timezone).slice(0, 10);
   const season = seasonOf(today);
 
   const [schedule, marks, hours, allSteps] = await Promise.all([

@@ -10,8 +10,8 @@ import { recordInspectionInSavedWalk } from '@/lib/api/walk-progress';
 import { formatYMD } from '@/lib/dates';
 import StatusBadge, { STATUS_LABEL } from '@/components/StatusBadge';
 import TreeHistory from './TreeHistory';
-import AddressControl from './AddressControl';
 import { formatAddress, formatTreeLabel } from '@/lib/address';
+import { trpc } from '@/lib/trpc/client';
 import type { TreeUpdateInput } from '@/lib/api/trees';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -53,7 +53,6 @@ interface TreeDetailPanelProps {
   /** Walk-survey settings (bloom scale, fruit metrics) — the Inspect form shares them. */
   walkSettings: WalkSettings;
   onClose: () => void;
-  onSave: (patch: TreeUpdateInput) => Promise<boolean>;
   onDelete: () => Promise<boolean>;
   onStartMove: () => void;
   /** Reload trees after an address change, which no longer alters the id. */
@@ -74,13 +73,13 @@ export default function TreeDetailPanel({
   saving,
   walkSettings,
   onClose,
-  onSave,
   onDelete,
   onStartMove,
   onMoved,
   onSetStatus,
 }: TreeDetailPanelProps) {
   const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [inspecting, setInspecting] = useState(false);
   const [inspectBusy, setInspectBusy] = useState(false);
   const [historyVersion, setHistoryVersion] = useState(0);
@@ -105,21 +104,54 @@ export default function TreeDetailPanel({
       rootstock: tree.rootstock ?? '',
       source: tree.source ?? '',
       acquired_date: tree.acquired_date ?? '',
+      block_id: tree.block_id ?? '',
+      row_id: tree.row_id ?? '',
+      position: tree.position ?? '',
     });
     setEditing(true);
   };
 
+  /** Fields the form can change, address included — one save, one approval. */
+  const EDITABLE = [
+    'block_id', 'row_id', 'position',
+    'variety', 'fruit_type', 'status', 'rootstock', 'source', 'notes',
+    'planted_date', 'acquired_date', 'last_pruned', 'last_harvest',
+    'age', 'height', 'yield_estimate',
+  ] as const;
+
   const submit = async () => {
-    // Empty strings mean "clear" for text, but dates must be null-ed via undefined-skip
-    const patch: TreeUpdateInput = {
-      ...form,
-      planted_date: form.planted_date || undefined,
-      last_pruned: form.last_pruned || undefined,
-      last_harvest: form.last_harvest || undefined,
-      acquired_date: form.acquired_date || undefined,
-    };
-    const ok = await onSave(patch);
-    if (ok) setEditing(false);
+    // Only what actually changed, so a field you merely looked at does
+    // not appear in this tree's history as edited. Empty means cleared.
+    const fields: Record<string, string | null> = {};
+    for (const key of EDITABLE) {
+      const raw = (form as Record<string, unknown>)[key];
+      const next = raw === undefined || raw === '' ? null : String(raw);
+      const before = (tree as unknown as Record<string, unknown>)[key];
+      const current = before === undefined || before === null || before === '' ? null : String(before);
+      if (next !== current) fields[key] = next;
+    }
+    if (Object.keys(fields).length === 0) {
+      setEditing(false);
+      return;
+    }
+
+    setBusy(true);
+    try {
+      // Same path as the grid editor: one transaction, the address
+      // constraint deferred, a collision reported as a collision, and the
+      // whole edit recorded as one entry in this tree's history.
+      await trpc.tree.editMany.mutate({
+        orchardId: tree.orchard_id,
+        edits: [{ treeId: tree.tree_id, fields }],
+      });
+      toast.success('Saved');
+      setEditing(false);
+      onMoved();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not save this tree');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const field = (label: string, value: string | number | null | undefined) => {
@@ -167,19 +199,7 @@ export default function TreeDetailPanel({
     >
       <div className="flex items-start justify-between px-5 pt-4 pb-3 border-b border-line">
         <div>
-          {canEdit ? (
-            <AddressControl
-              treeId={tree.tree_id}
-              blockId={tree.block_id ?? null}
-              rowId={tree.row_id ?? null}
-              position={tree.position ?? null}
-              onMoved={onMoved}
-            />
-          ) : (
-            <p className="font-mono text-xs text-bark tracking-wide">
-              {formatAddress(tree)}
-            </p>
-          )}
+          <p className="font-mono text-xs text-bark tracking-wide">{formatAddress(tree)}</p>
           <h2 className="text-lg font-semibold text-ink">
             {tree.variety ? (
               <a
@@ -265,6 +285,14 @@ export default function TreeDetailPanel({
           </>
         ) : (
           <div className="space-y-3">
+            <div className="grid grid-cols-3 gap-2">
+              {input('Block', 'block_id')}
+              {input('Row', 'row_id')}
+              {input('Position', 'position')}
+            </div>
+            <p className="text-xs text-bark -mt-1">
+              Leave all three blank to take this tree out of the layout without deleting it.
+            </p>
             <div className="grid grid-cols-2 gap-3">
               {input('Variety', 'variety')}
               <div className="space-y-1">
@@ -388,8 +416,8 @@ export default function TreeDetailPanel({
               <Button variant="secondary" onClick={() => setEditing(false)}>
                 Cancel
               </Button>
-              <Button onClick={submit} disabled={saving}>
-                {saving ? 'Saving…' : 'Save changes'}
+              <Button onClick={submit} disabled={saving || busy}>
+                {busy ? 'Saving…' : 'Save changes'}
               </Button>
             </div>
           </div>

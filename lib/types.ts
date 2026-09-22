@@ -26,6 +26,8 @@ export interface OrchardBoundary {
 export interface OrchardConfig {
   id: string;
   name: string;
+  /** IANA zone for this orchard's local clock. Weather hours are stored in it. */
+  timezone: string;
   location: string;
   description: string;
   center: [number, number]; // [lng, lat]

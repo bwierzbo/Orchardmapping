@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { ClipboardCheck, Eye } from 'lucide-react';
 import { resolveSchedule } from '@/lib/db/schedule';
 import { nowLocalIso } from '@/lib/openmeteo';
+import { orchardTimezone } from '@/lib/db/orchards';
 import { formatYMD } from '@/lib/dates';
 import StepDoneButton from './StepDoneButton';
 
@@ -21,7 +22,7 @@ export default async function DueNowCard({
   orchardId: string;
   canEdit: boolean;
 }) {
-  const today = nowLocalIso().slice(0, 10);
+  const today = nowLocalIso(await orchardTimezone(orchardId)).slice(0, 10);
   const schedule = await resolveSchedule(orchardId, today).catch(() => []);
   const due = schedule.filter((r) => r.status === 'due');
   const watches = schedule.filter((r) => r.status === 'monitor');

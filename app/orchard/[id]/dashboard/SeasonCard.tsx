@@ -8,6 +8,7 @@ import {
   priorSeasonAggregates,
 } from '@/lib/db/weather';
 import { nowLocalIso } from '@/lib/openmeteo';
+import { orchardTimezone } from '@/lib/db/orchards';
 
 /**
  * Server-rendered chill + degree-day season card. Tops up recent hours
@@ -26,7 +27,7 @@ export default async function SeasonCard({
 }) {
   await ensureWeatherCurrent(orchardId, lat, lng);
 
-  const asOf = nowLocalIso().slice(0, 10);
+  const asOf = nowLocalIso(await orchardTimezone(orchardId)).slice(0, 10);
   const window = chillSeasonWindow(asOf);
   const [chillWindowHours, yearHours, prior, dataThrough] = await Promise.all([
     getHours(orchardId, window.start, window.end),

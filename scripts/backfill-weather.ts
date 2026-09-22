@@ -25,19 +25,22 @@ const ARCHIVE_LAG_DAYS = 7; // ERA5 publishes with a ~5-day delay
 
 async function main() {
   const { rows: orchards } = await sql`
-    SELECT id, name, center_lat::float AS lat, center_lng::float AS lng FROM orchards
+    SELECT id, name, timezone, center_lat::float AS lat, center_lng::float AS lng FROM orchards
   `;
-  const now = nowLocalIso();
-  const today = now.slice(0, 10);
-  const archiveEnd = new Date(Date.parse(`${today}T00:00:00Z`) - ARCHIVE_LAG_DAYS * 86_400_000)
-    .toISOString()
-    .slice(0, 10);
-
   for (const o of orchards) {
     if (o.lat == null || o.lng == null) {
       console.log(`- ${o.id}: no center coordinates, skipping`);
       continue;
     }
+    // Hours are stored in each orchard's own clock, so the window that
+    // bounds them is read in that clock — orchards in different zones
+    // are backfilled to different last hours, which is correct.
+    const now = nowLocalIso(o.timezone);
+    const archiveEnd = new Date(
+      Date.parse(`${now.slice(0, 10)}T00:00:00Z`) - ARCHIVE_LAG_DAYS * 86_400_000
+    )
+      .toISOString()
+      .slice(0, 10);
     const existing = REFETCH ? null : await latestHourTs(o.id as string);
     const start = existing && existing.slice(0, 10) > START_YMD ? existing.slice(0, 10) : START_YMD;
     console.log(`- ${o.id} (${o.name}): archive ${start} → ${archiveEnd}`);
@@ -48,7 +51,7 @@ async function main() {
     while (chunkStart <= archiveEnd) {
       const endYear = Math.min(Number(chunkStart.slice(0, 4)) + 1, Number(archiveEnd.slice(0, 4)));
       const chunkEnd = `${endYear}-12-31` < archiveEnd ? `${endYear}-12-31` : archiveEnd;
-      const hours = await fetchArchiveHours(o.lat, o.lng, chunkStart, chunkEnd);
+      const hours = await fetchArchiveHours(o.lat, o.lng, chunkStart, chunkEnd, o.timezone);
       const inserted = await insertHours(o.id as string, hours);
       total += inserted;
       console.log(`    ${chunkStart} → ${chunkEnd}: ${hours.length} hours fetched, ${inserted} written`);
@@ -56,7 +59,7 @@ async function main() {
     }
 
     // Bridge the archive lag with recent observed hours
-    const recent = await fetchRecentHours(o.lat, o.lng, ARCHIVE_LAG_DAYS + 2, now);
+    const recent = await fetchRecentHours(o.lat, o.lng, ARCHIVE_LAG_DAYS + 2, now, o.timezone);
     const recentInserted = await insertHours(o.id as string, recent);
     total += recentInserted;
     console.log(`    recent top-up: ${recentInserted} written · total ${total} rows written`);

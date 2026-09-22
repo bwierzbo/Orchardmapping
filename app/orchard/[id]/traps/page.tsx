@@ -43,7 +43,7 @@ export default async function TrapsPage({ params }: PageProps) {
   const role = await viewerRole(id);
   const canEdit = !!role && roleAtLeast(role, 'operator');
 
-  const today = nowLocalIso().slice(0, 10);
+  const today = nowLocalIso(orchard.timezone).slice(0, 10);
   const season = seasonOf(today);
   const [traps, steps] = await Promise.all([
     listTraps(orchard.id, season).catch(() => []),

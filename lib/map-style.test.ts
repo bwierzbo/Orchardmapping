@@ -19,6 +19,7 @@ function orchard(overrides: Partial<OrchardConfig> = {}): OrchardConfig {
   return {
     id: 'finn-hall',
     name: 'Finn Hall',
+    timezone: 'America/Los_Angeles',
     location: '1027 Finn Hall Road, Agnew, WA 98362',
     description: '',
     center: [-123.253226, 48.113384],
