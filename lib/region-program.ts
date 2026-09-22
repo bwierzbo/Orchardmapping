@@ -59,3 +59,20 @@ export function adjustTriggerForRegion(
 
   return { trigger, note: null };
 }
+
+/**
+ * Drop the targets a material does not hold in this region.
+ *
+ * The material says what it treats; the region may record that it does
+ * not work there. Keeping those as two facts rather than one edited list
+ * is what lets the app say "sulfur treats scab, but not here, and here is
+ * the finding" instead of silently not offering it.
+ */
+export function applyRegionalExclusions(
+  targets: readonly string[],
+  exclusions: ReadonlyArray<{ pest: string }>
+): string[] {
+  if (exclusions.length === 0) return [...targets];
+  const excluded = new Set(exclusions.map((e) => e.pest));
+  return targets.filter((t) => !excluded.has(t));
+}

@@ -62,6 +62,8 @@ import PhotoDropController from './PhotoDropController';
 import MoveTreeController from './MoveTreeController';
 import DetectTreesController from './DetectTreesController';
 import { fetchAreas, type OrchardArea } from '@/lib/api/areas';
+import { trpc } from '@/lib/trpc/client';
+import type { PickablePest } from '@/lib/pest-picker';
 
 export interface OrchardViewerProps {
   orchard: OrchardConfig;
@@ -494,6 +496,39 @@ export default function OrchardViewer({
       .then(setTraps)
       .catch(() => {}); // map works without traps
   }, [orchard.id, season]);
+
+  // ---- pest library ----
+  //
+  // Fetched once for the orchard. The inspection form remounts per tree
+  // (key={tree_id}), so fetching it in there would hit the API at every
+  // step of a walk.
+  const [pestLibrary, setPestLibrary] = useState<{
+    entries: PickablePest[];
+    counts: Record<string, number>;
+  }>({ entries: [], counts: {} });
+
+  useEffect(() => {
+    let live = true;
+    trpc.pest.list
+      .query({ orchardId: orchard.id })
+      .then((r) => {
+        if (live) setPestLibrary({ entries: r.entries, counts: r.counts });
+      })
+      .catch(() => {
+        /* the form hides the section rather than showing an empty one */
+      });
+    return () => {
+      live = false;
+    };
+  }, [orchard.id]);
+
+  // Prevalence comes from the region. With none set, nothing ranks the
+  // list, and the form says so rather than implying an order it has not
+  // earned.
+  const pestsRanked = useMemo(
+    () => pestLibrary.entries.some((p) => p.prevalence !== null),
+    [pestLibrary.entries]
+  );
 
   useEffect(() => {
     fetchScheduleSummary(orchard.id)
@@ -1047,6 +1082,9 @@ export default function OrchardViewer({
           onProgress={handleWalkProgress}
           onSetStatus={walkSetStatus}
           onFocusTree={focusWalkTree}
+          pests={pestLibrary.entries}
+          pestSightings={pestLibrary.counts}
+          pestsRanked={pestsRanked}
           onExit={() => {
             setWalkMode(false);
             clear();
@@ -1114,6 +1152,9 @@ export default function OrchardViewer({
           onClose={clear}
           onSetStatus={walkSetStatus}
           onInspected={markInspected}
+          pests={pestLibrary.entries}
+          pestSightings={pestLibrary.counts}
+          pestsRanked={pestsRanked}
           onDelete={handleDelete}
           onStartMove={() => {
             setMovingTree(selectedTree);

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { adjustTriggerForRegion } from './region-program';
+import { adjustTriggerForRegion, applyRegionalExclusions } from './region-program';
 import { triggerSchema, type ValidatedTrigger } from './trigger-schema';
 
 const cm = (): ValidatedTrigger =>
@@ -68,5 +68,34 @@ describe('adjustTriggerForRegion', () => {
       expect(r.trigger).toEqual(parsed);
       expect(r.note).toBeNull();
     }
+  });
+});
+
+describe('applyRegionalExclusions', () => {
+  it('leaves a material alone where the region says nothing', () => {
+    expect(applyRegionalExclusions(['powdery_mildew', 'apple_scab'], [])).toEqual([
+      'powdery_mildew',
+      'apple_scab',
+    ]);
+  });
+
+  it('drops a target the region has found does not hold', () => {
+    // Wettable sulfur treats scab — but not west of the Cascades, which
+    // is a fact about pressure and rainfall, not about the chemical.
+    expect(
+      applyRegionalExclusions(['powdery_mildew', 'apple_scab'], [{ pest: 'apple_scab' }])
+    ).toEqual(['powdery_mildew']);
+  });
+
+  it('does not mutate the list it was given', () => {
+    const targets = ['powdery_mildew', 'apple_scab'];
+    applyRegionalExclusions(targets, [{ pest: 'apple_scab' }]);
+    expect(targets).toHaveLength(2);
+  });
+
+  it('ignores an exclusion for something the material never treated', () => {
+    expect(applyRegionalExclusions(['powdery_mildew'], [{ pest: 'fire_blight' }])).toEqual([
+      'powdery_mildew',
+    ]);
   });
 });

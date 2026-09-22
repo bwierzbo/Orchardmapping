@@ -27,6 +27,7 @@ import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check, ChevronRight, X } fro
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import InspectionEntry from './InspectionEntry';
+import type { PickablePest } from '@/lib/pest-picker';
 
 export type Inspection = WalkInspection;
 
@@ -67,6 +68,11 @@ interface WalkModeProps {
   /** Pan the map + highlight the current tree. */
   onFocusTree: (tree: ClientTree) => void;
   onExit: () => void;
+  /** This orchard's pest library, for the "what did you see" section. */
+  pests: readonly PickablePest[];
+  pestSightings: Readonly<Record<string, number>>;
+  /** False when the orchard has no region, so nothing ranks the list. */
+  pestsRanked: boolean;
 }
 
 /**
@@ -104,6 +110,9 @@ export default function WalkMode({
   onSetStatus,
   onFocusTree,
   onExit,
+  pests,
+  pestSightings,
+  pestsRanked,
 }: WalkModeProps) {
   // ---- setup selections ----
   const [chosen, setChosen] = useState<Set<Inspection>>(() => new Set(['health']));
@@ -495,6 +504,9 @@ export default function WalkMode({
         autoSave
         recordLabel="Record & next"
         onSetStatus={onSetStatus}
+        pests={pests}
+        pestSightings={pestSightings}
+        pestsRanked={pestsRanked}
         onBusyChange={setBusy}
         onSaved={({ saved, inspected, photo }) => {
           if (saved > 0) setRecorded((n) => n + saved);

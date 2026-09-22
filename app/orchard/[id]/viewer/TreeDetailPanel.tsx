@@ -6,6 +6,7 @@ import { TREE_STATUSES } from '@/lib/types';
 import type { WalkSettings } from '@/lib/settings';
 import { toast } from 'sonner';
 import InspectionEntry from './InspectionEntry';
+import type { PickablePest } from '@/lib/pest-picker';
 import { recordInspectionInSavedWalk } from '@/lib/api/walk-progress';
 import { formatYMD } from '@/lib/dates';
 import StatusBadge, { STATUS_LABEL } from '@/components/StatusBadge';
@@ -48,6 +49,12 @@ interface TreeDetailPanelProps {
   onSetStatus: (treeId: string, status: TreeStatus) => Promise<boolean>;
   /** A spot check landed, so the recency map should stop calling it unvisited. */
   onInspected: (treeId: string) => void;
+  /** This orchard's pest library, for the "what did you see" section. */
+  pests: readonly PickablePest[];
+  /** How many of each have been logged here, for the ranking. */
+  pestSightings: Readonly<Record<string, number>>;
+  /** False when the orchard has no region, so nothing ranks the list. */
+  pestsRanked: boolean;
 }
 
 /**
@@ -67,6 +74,9 @@ export default function TreeDetailPanel({
   onMoved,
   onSetStatus,
   onInspected,
+  pests,
+  pestSightings,
+  pestsRanked,
 }: TreeDetailPanelProps) {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -89,6 +99,30 @@ export default function TreeDetailPanel({
   }, [tree.orchard_id]);
   const [inspecting, setInspecting] = useState(false);
   const [inspectBusy, setInspectBusy] = useState(false);
+  // Answers tapped out but not recorded. A photo saves on its own, so
+  // without this the panel could close over an assessment and say nothing.
+  const [inspectDirty, setInspectDirty] = useState(false);
+
+  /** Closing the panel mid-inspection loses exactly as much as Done does. */
+  const closePanel = () => {
+    if (!leaveInspection()) return;
+    onClose();
+  };
+
+  /** Refuse to leave an inspection on top of unrecorded answers. */
+  const leaveInspection = () => {
+    if (
+      inspectDirty &&
+      !window.confirm(
+        'This inspection has not been recorded yet. Leave without saving it?\n\nA photo you took is already saved; the health, fruit and measurements are not.'
+      )
+    ) {
+      return false;
+    }
+    setInspectDirty(false);
+    setInspecting(false);
+    return true;
+  };
   const [historyVersion, setHistoryVersion] = useState(0);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [form, setForm] = useState<TreeUpdateInput>({});
@@ -227,7 +261,7 @@ export default function TreeDetailPanel({
           </div>
         </div>
         <button
-          onClick={onClose}
+          onClick={closePanel}
           aria-label="Close tree details"
           className="p-2 -m-1 rounded-lg text-bark/70 hover:text-ink hover:bg-canopy-50"
         >
@@ -248,7 +282,11 @@ export default function TreeDetailPanel({
             autoSave={false}
             recordLabel="Record"
             onSetStatus={onSetStatus}
+            pests={pests}
+            pestSightings={pestSightings}
+            pestsRanked={pestsRanked}
             onBusyChange={setInspectBusy}
+            onDirtyChange={setInspectDirty}
             onSaved={({ saved, inspected, photo }) => {
               setHistoryVersion((v) => v + 1);
               if (photo) return;
@@ -373,13 +411,22 @@ export default function TreeDetailPanel({
       <div className="px-5 py-3 border-t border-line space-y-2">
         {inspecting ? (
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs text-bark">Same form and records as a walk survey.</span>
+            <span className="text-xs text-bark">
+              {inspectDirty
+                ? 'Not recorded yet — use Record below.'
+                : 'Same form and records as a walk survey.'}
+            </span>
+            {/*
+              This used to say "Done", which reads as "save and finish"
+              and is neither: Record saves, this only leaves. The label
+              now says what pressing it costs.
+            */}
             <Button
-              variant="secondary"
-              onClick={() => setInspecting(false)}
+              variant={inspectDirty ? 'destructive' : 'secondary'}
+              onClick={leaveInspection}
               disabled={inspectBusy}
             >
-              Done
+              {inspectDirty ? 'Discard' : 'Close'}
             </Button>
           </div>
         ) : !editing ? (
