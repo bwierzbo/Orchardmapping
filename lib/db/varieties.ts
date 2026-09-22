@@ -127,3 +127,68 @@ export async function listFruitTypes(orchardId: string): Promise<string[]> {
   const seen = new Set(used.map((f) => f.toLowerCase()));
   return [...used.sort(), ...COMMON_FRUIT_TYPES.filter((f) => !seen.has(f))];
 }
+
+/** A measurement of a variety's juice, with where it came from. */
+export interface VarietyObservation {
+  scopeKind: 'trial' | 'region' | 'site';
+  scopeValue: string;
+  seasonFrom: number | null;
+  seasonTo: number | null;
+  tanninPct: number | null;
+  tanninMethod: string | null;
+  acidPct: number | null;
+  ph: number | null;
+  sg: number | null;
+  brix: number | null;
+  source: string | null;
+  url: string | null;
+  note: string | null;
+}
+
+/**
+ * Measured juice for a variety, most specific scope first.
+ *
+ * Your own ground outranks your region, which outranks somebody else's
+ * trial. That order is the point: the reader should meet the most
+ * relevant evidence before the most authoritative-sounding.
+ */
+export async function listVarietyObservations(variety: string): Promise<VarietyObservation[]> {
+  const { rows } = await sql`
+    SELECT scope_kind, scope_value, season_from, season_to,
+           tannin_pct, tannin_method, acid_pct, ph, sg, brix, source, url, note
+    FROM variety_observations
+    WHERE lower(variety) = ${variety.toLowerCase()}
+    ORDER BY CASE scope_kind WHEN 'site' THEN 0 WHEN 'region' THEN 1 ELSE 2 END,
+             season_to DESC NULLS LAST
+  `;
+  const num = (v: unknown) => (v == null ? null : Number(v));
+  return rows.map((r) => ({
+    scopeKind: r.scope_kind as VarietyObservation['scopeKind'],
+    scopeValue: String(r.scope_value),
+    seasonFrom: num(r.season_from),
+    seasonTo: num(r.season_to),
+    tanninPct: num(r.tannin_pct),
+    tanninMethod: (r.tannin_method as string | null) ?? null,
+    acidPct: num(r.acid_pct),
+    ph: num(r.ph),
+    sg: num(r.sg),
+    brix: num(r.brix),
+    source: (r.source as string | null) ?? null,
+    url: (r.url as string | null) ?? null,
+    note: (r.note as string | null) ?? null,
+  }));
+}
+
+/** Sites growing this variety, so a page can say "and no juice recorded yet". */
+export async function sitesGrowing(variety: string): Promise<Array<{ site: string; trees: number }>> {
+  const { rows } = await sql`
+    SELECT COALESCE(s.name, o.site_id) AS site, count(*)::int AS trees
+    FROM trees t
+    JOIN orchards o ON o.id = t.orchard_id
+    LEFT JOIN sites s ON s.id = o.site_id
+    WHERE lower(t.variety) = ${variety.toLowerCase()}
+    GROUP BY 1
+    ORDER BY trees DESC
+  `;
+  return rows.map((r) => ({ site: String(r.site), trees: Number(r.trees) }));
+}

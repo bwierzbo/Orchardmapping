@@ -1,4 +1,7 @@
 import Link from 'next/link';
+import HowItPresents from './HowItPresents';
+import { listVarietyObservations, sitesGrowing } from '@/lib/db/varieties';
+import type { CiderClass } from '@/lib/cider-class';
 import { notFound } from 'next/navigation';
 import { sql } from '@vercel/postgres';
 import { ArrowLeft, ExternalLink } from 'lucide-react';
@@ -98,6 +101,10 @@ export default async function VarietyDetailPage({
     SELECT COUNT(*)::int AS n FROM trees WHERE variety = ${name}
   `;
   const treeCount = countRows[0]?.n ?? 0;
+  const [observations, sites] = await Promise.all([
+    listVarietyObservations(name),
+    sitesGrowing(name),
+  ]);
 
   return (
     <main className="min-h-dvh bg-paper">
@@ -124,6 +131,12 @@ export default async function VarietyDetailPage({
           <Field label="Biennial tendency" value={v.biennial_tendency !== 'unknown' ? v.biennial_tendency : null} />
           <Field label="Pollinator pairing" value={v.pollinator} />
         </div>
+
+        <HowItPresents
+          canonical={(v.cider_type as CiderClass | null) ?? null}
+          observations={observations}
+          sites={sites}
+        />
 
         <div className="mt-4 space-y-3 text-sm text-ink">
           {v.description && <p className="whitespace-pre-wrap">{v.description}</p>}

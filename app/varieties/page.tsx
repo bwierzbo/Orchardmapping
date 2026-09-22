@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { classify } from '@/lib/cider-class';
 import { sql } from '@vercel/postgres';
 import { ArrowLeft } from 'lucide-react';
 
@@ -48,6 +49,33 @@ export default async function VarietiesPage() {
     ) t ON t.variety = va.variety
     ORDER BY t.n DESC NULLS LAST, va.variety
   `;
+  // Varieties whose measured juice disagrees with their canonical class.
+  // Few rows today, so this is one query and a map rather than a join.
+  const { rows: measured } = await sql<{
+    variety: string;
+    cider_type: string | null;
+    tannin_pct: string | null;
+    acid_pct: string | null;
+  }>`
+    SELECT vo.variety, va.cider_type, vo.tannin_pct, vo.acid_pct
+    FROM variety_observations vo
+    JOIN variety_attributes va
+      ON va.site_id IS NULL AND lower(va.variety) = lower(vo.variety)
+  `;
+  const divergent = new Set(
+    measured
+      .filter((m) => {
+        const r = classify({
+          tanninPct: m.tannin_pct == null ? null : Number(m.tannin_pct),
+          acidPct: m.acid_pct == null ? null : Number(m.acid_pct),
+        });
+        return (
+          r.ciderClass && m.cider_type && r.ciderClass !== m.cider_type
+        );
+      })
+      .map((m) => m.variety.toLowerCase())
+  );
+
   const { rows: rootstocks } = await sql<RootstockRow>`
     SELECT ra.rootstock, ra.vigor_pct, ra.precocity, ra.anchorage,
            COALESCE(t.n, 0)::int AS tree_count
@@ -97,6 +125,14 @@ export default async function VarietiesPage() {
                     </Link>
                     {v.confidence === 'low' && (
                       <span className="ml-1.5 text-[10px] text-flag-600 font-mono uppercase">low conf</span>
+                    )}
+                    {divergent.has(v.variety.toLowerCase()) && (
+                      <span
+                        className="ml-1.5 text-[10px] text-bark font-mono uppercase"
+                        title="Measured juice classifies differently from the canonical class — see the variety page"
+                      >
+                        presents differently
+                      </span>
                     )}
                   </td>
                   <td className="px-3 py-2 text-bark">{v.cider_type ? (TYPE_LABEL[v.cider_type] ?? v.cider_type) : '—'}</td>
