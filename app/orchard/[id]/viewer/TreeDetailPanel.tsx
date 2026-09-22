@@ -6,6 +6,7 @@ import { TREE_STATUSES } from '@/lib/types';
 import type { WalkSettings } from '@/lib/settings';
 import { toast } from 'sonner';
 import InspectionEntry from './InspectionEntry';
+import type { PickablePest } from '@/lib/pest-picker';
 import { recordInspectionInSavedWalk } from '@/lib/api/walk-progress';
 import { formatYMD } from '@/lib/dates';
 import StatusBadge, { STATUS_LABEL } from '@/components/StatusBadge';
@@ -46,6 +47,12 @@ interface TreeDetailPanelProps {
   onMoved: () => void;
   /** Status change from the Inspect form (same path as a walk). */
   onSetStatus: (treeId: string, status: TreeStatus) => Promise<boolean>;
+  /** This orchard's pest library, for the "what did you see" section. */
+  pests: readonly PickablePest[];
+  /** How many of each have been logged here, for the ranking. */
+  pestSightings: Readonly<Record<string, number>>;
+  /** False when the orchard has no region, so nothing ranks the list. */
+  pestsRanked: boolean;
 }
 
 /**
@@ -64,6 +71,9 @@ export default function TreeDetailPanel({
   onStartMove,
   onMoved,
   onSetStatus,
+  pests,
+  pestSightings,
+  pestsRanked,
 }: TreeDetailPanelProps) {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -269,6 +279,9 @@ export default function TreeDetailPanel({
             autoSave={false}
             recordLabel="Record"
             onSetStatus={onSetStatus}
+            pests={pests}
+            pestSightings={pestSightings}
+            pestsRanked={pestsRanked}
             onBusyChange={setInspectBusy}
             onDirtyChange={setInspectDirty}
             onSaved={({ saved, inspected, photo }) => {
@@ -394,13 +407,22 @@ export default function TreeDetailPanel({
       <div className="px-5 py-3 border-t border-line space-y-2">
         {inspecting ? (
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs text-bark">Same form and records as a walk survey.</span>
+            <span className="text-xs text-bark">
+              {inspectDirty
+                ? 'Not recorded yet — use Record below.'
+                : 'Same form and records as a walk survey.'}
+            </span>
+            {/*
+              This used to say "Done", which reads as "save and finish"
+              and is neither: Record saves, this only leaves. The label
+              now says what pressing it costs.
+            */}
             <Button
-              variant="secondary"
+              variant={inspectDirty ? 'destructive' : 'secondary'}
               onClick={leaveInspection}
               disabled={inspectBusy}
             >
-              Done
+              {inspectDirty ? 'Discard' : 'Close'}
             </Button>
           </div>
         ) : !editing ? (
