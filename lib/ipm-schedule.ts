@@ -25,7 +25,15 @@ import { hoursRemaining, kickbackDeadline, type PestPosture } from './posture';
  * database or a network.
  */
 
-export const STEP_CATEGORIES = ['disease', 'insect', 'sanitation', 'monitoring'] as const;
+export const STEP_CATEGORIES = [
+  'disease',
+  'insect',
+  'sanitation',
+  'monitoring',
+  // Correcting a nutrient is none of the above. Sampling for one stays
+  // 'monitoring'; putting something on the ground does not.
+  'nutrition',
+] as const;
 export type StepCategory = (typeof STEP_CATEGORIES)[number];
 
 /** A fixed part of the year — "copper before the autumn rains". */
