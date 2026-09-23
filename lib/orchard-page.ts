@@ -1,7 +1,6 @@
 import { notFound } from 'next/navigation';
 import { viewerRole } from './orchard-access';
 import type { OrchardRole } from './roles';
-import { getOrchardById } from './db/orchards';
 
 /**
  * Prove membership inside the page itself, before it fetches anything.
@@ -25,29 +24,4 @@ export async function requireOrchardPage(orchardId: string): Promise<OrchardRole
   const role = await viewerRole(orchardId);
   if (!role) notFound();
   return role;
-}
-
-/** The two programmes an orchard opts into. */
-export type OrchardFeature = 'ipm' | 'nutrition';
-
-/**
- * Is this orchard running that programme?
- *
- * Five of the six orchards in this database belong to other people.
- * Mapping their trees and recording what you saw helps them; telling
- * them when to spray is not yours to do, and the program carries worker
- * re-entry intervals. So both programmes are opt-in per orchard, and a
- * page that belongs to one checks here after proving membership.
- *
- * A missing orchard answers false rather than throwing: membership has
- * already been proved by the time anyone asks, so the only way to get
- * here with no row is a delete mid-request, and "off" is the safe read.
- */
-export async function orchardHasFeature(
-  orchardId: string,
-  feature: OrchardFeature
-): Promise<boolean> {
-  const orchard = await getOrchardById(orchardId);
-  if (!orchard) return false;
-  return feature === 'ipm' ? orchard.ipm_enabled === true : orchard.nutrition_enabled === true;
 }

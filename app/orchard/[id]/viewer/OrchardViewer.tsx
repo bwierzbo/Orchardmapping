@@ -530,11 +530,15 @@ export default function OrchardViewer({
     [pestLibrary.entries]
   );
 
+  // Skipped outright when this orchard is not running a programme —
+  // hiding the chip but still asking the server what is due would be
+  // work done to throw away, on the load that matters most.
   useEffect(() => {
+    if (!orchard.ipmEnabled) return;
     fetchScheduleSummary(orchard.id)
       .then(setScheduleSummary)
       .catch(() => {}); // the chip is an extra, never a blocker
-  }, [orchard.id]);
+  }, [orchard.id, orchard.ipmEnabled]);
 
   useTrapLayer(mapObj, mapReady, traps, {
     trapMode,

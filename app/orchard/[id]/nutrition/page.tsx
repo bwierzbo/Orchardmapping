@@ -25,6 +25,7 @@ import {
 import { formatYMD } from '@/lib/dates';
 import IntentPicker from './IntentPicker';
 import RecordTest from './RecordTest';
+import FeatureOff from '../components/FeatureOff';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,6 +55,18 @@ export default async function NutritionPage({ params }: PageProps) {
     auth(),
   ]);
   if (!orchard) notFound();
+
+  if (!orchard.nutritionEnabled) {
+    const viewer = await viewerRole(orchard.id);
+    return (
+      <FeatureOff
+        orchardId={orchard.id}
+        orchardName={orchard.name}
+        feature="nutrition"
+        canEdit={!!viewer && roleAtLeast(viewer, 'admin')}
+      />
+    );
+  }
 
   const [intent, tissue, soil] = await Promise.all([
     getOrchardIntent(orchard.id),
@@ -169,6 +182,7 @@ export default async function NutritionPage({ params }: PageProps) {
             </div>
 
             <WhatToDo
+          ipmEnabled={orchard.ipmEnabled}
               orchardId={orchard.id}
               problems={problems.map((p) => ({ nutrient: p.nutrient, verdict: p.verdict }))}
               advice={Object.fromEntries(advice)}

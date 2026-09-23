@@ -25,11 +25,19 @@ export default function WhatToDo({
   problems,
   advice,
   canEdit,
+  ipmEnabled,
 }: {
   orchardId: string;
   problems: Array<{ nutrient: Nutrient; verdict: string }>;
   advice: Record<string, NutrientAdvice>;
   canEdit: boolean;
+  /**
+   * Accepting advice files it as a PROGRAM step, so with the programme
+   * switched off there is nowhere for it to land and nowhere to go and
+   * look at it. The advice and its sources still show; only the filing
+   * is withheld, and the footer says why.
+   */
+  ipmEnabled: boolean;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<number | null>(null);
@@ -100,7 +108,7 @@ export default function WhatToDo({
                 </a>
               )}
 
-              {canEdit && (
+              {canEdit && ipmEnabled && (
                 <button
                   onClick={() => accept(a)}
                   disabled={busy === a.id}
@@ -114,13 +122,21 @@ export default function WhatToDo({
         })}
       </ul>
 
-      <p className="mt-3 text-xs text-bark">
-        Anything you add becomes your own step in the{' '}
-        <Link href={`/orchard/${orchardId}/program`} className="text-canopy-700 dark:text-canopy-100 hover:underline">
-          program
-        </Link>
-        , where you can retime it, change the material or remove it.
-      </p>
+      {ipmEnabled ? (
+        <p className="mt-3 text-xs text-bark">
+          Anything you add becomes your own step in the{' '}
+          <Link href={`/orchard/${orchardId}/program`} className="text-canopy-700 dark:text-canopy-100 hover:underline">
+            program
+          </Link>
+          , where you can retime it, change the material or remove it.
+        </p>
+      ) : (
+        <p className="mt-3 text-xs text-bark">
+          Advice is filed as a step in the programme, and this orchard is not running one.
+          Turn pest management on from the dashboard if you want to schedule any of this;
+          the readings and sources above are yours either way.
+        </p>
+      )}
     </section>
   );
 }
