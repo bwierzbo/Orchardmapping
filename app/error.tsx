@@ -2,7 +2,18 @@
 
 import Link from 'next/link';
 
-export default function GlobalError({
+/**
+ * Errors thrown inside a route. Anything above this — the root layout,
+ * a hydration failure of the whole document — lands in global-error.tsx
+ * instead.
+ *
+ * The name and digest are shown rather than swallowed: this page used to
+ * say only "Something went wrong", which is true of every error and
+ * useful for none of them. Somebody in an orchard cannot open a browser
+ * console, so if the page will not say what broke, nobody can report it.
+ */
+export default function RouteError({
+  error,
   reset,
 }: {
   error: Error & { digest?: string };
@@ -15,6 +26,10 @@ export default function GlobalError({
         <p className="text-bark text-sm">
           This is usually temporary. Try again, or head back to the orchards.
         </p>
+        <pre className="w-full text-left text-[11px] leading-relaxed bg-paper border border-line rounded-md p-2.5 whitespace-pre-wrap break-words overflow-x-auto text-bark">
+          {error.name}: {error.message}
+          {error.digest ? `\n\ndigest: ${error.digest}` : ''}
+        </pre>
         <div className="flex gap-3">
           <button
             onClick={reset}
