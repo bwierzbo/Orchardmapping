@@ -353,6 +353,66 @@ export async function getTreeCountsByOrchard(): Promise<Record<string, number>> 
   return counts;
 }
 
+/**
+ * Where each orchard's trees actually are, and a sample of them.
+ *
+ * The home cards used to frame the orchard's stored bounds, which is the
+ * imagery footprint — or, for an orchard added from one found tree, an
+ * arbitrary box around a point. Terry Anderson's three trees came out
+ * filling one percent of the width of a half-kilometre field.
+ *
+ * The sample is capped: a card 660 pixels wide cannot show 480 distinct
+ * dots, and shipping 480 coordinates per orchard to draw them would cost
+ * more than the picture is worth. Ordered by id so the same trees are
+ * picked every time and the card does not shuffle between loads.
+ */
+export interface OrchardTreeExtent {
+  bounds: { minLng: number; maxLng: number; minLat: number; maxLat: number };
+  points: Array<[number, number]>;
+  total: number;
+}
+
+export async function getTreeExtentsByOrchard(
+  sampleSize = 150
+): Promise<Record<string, OrchardTreeExtent>> {
+  const result = await sql.query<{
+    orchard_id: string;
+    min_lng: number; max_lng: number; min_lat: number; max_lat: number;
+    total: number; points: Array<[number, number]>;
+  }>(
+    `SELECT orchard_id,
+            MIN(lng)::float8 AS min_lng, MAX(lng)::float8 AS max_lng,
+            MIN(lat)::float8 AS min_lat, MAX(lat)::float8 AS max_lat,
+            COUNT(*)::int AS total,
+            COALESCE(
+              JSONB_AGG(JSONB_BUILD_ARRAY(lng::float8, lat::float8) ORDER BY rn)
+                FILTER (WHERE rn <= $1),
+              '[]'::jsonb
+            ) AS points
+       FROM (
+         SELECT orchard_id, lng, lat,
+                ROW_NUMBER() OVER (PARTITION BY orchard_id ORDER BY id) AS rn
+           FROM trees
+          WHERE lat IS NOT NULL AND lng IS NOT NULL
+       ) placed
+      GROUP BY orchard_id`,
+    [sampleSize]
+  );
+
+  const out: Record<string, OrchardTreeExtent> = {};
+  for (const row of result.rows) {
+    out[row.orchard_id] = {
+      bounds: {
+        minLng: row.min_lng, maxLng: row.max_lng,
+        minLat: row.min_lat, maxLat: row.max_lat,
+      },
+      points: row.points,
+      total: row.total,
+    };
+  }
+  return out;
+}
+
 const BULK_CHUNK_SIZE = 200;
 
 /**

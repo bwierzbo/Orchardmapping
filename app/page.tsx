@@ -1,8 +1,13 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { BarChart3, BookOpen, Camera, MapPin, Plus, Settings, Shield } from 'lucide-react';
-import { satellitePreviewUrl, boundarySvgPoints } from '@/lib/satellite-preview';
-import { getTreeCountsByOrchard } from '@/lib/db/trees';
+import {
+  satellitePreviewUrl,
+  boundarySvgPoints,
+  treeSvgPoints,
+  contentBounds,
+} from '@/lib/satellite-preview';
+import { getTreeCountsByOrchard, getTreeExtentsByOrchard } from '@/lib/db/trees';
 import { auth } from '@clerk/nextjs/server';
 import { memberOrchardConfigs, isGlobalAdmin } from '@/lib/orchard-access';
 import UserMenu from '@/components/UserMenu';
@@ -25,9 +30,14 @@ export default async function Home() {
   const signedIn = !!userId;
   // Only orchards you belong to. Signed out, that is none — the list used
   // to show every orchard in the database to anyone who loaded the page.
-  const [orchards, treeCounts, globalAdmin] = await Promise.all([
+  const [orchards, treeCounts, treeExtents, globalAdmin] = await Promise.all([
     userId ? memberOrchardConfigs(userId) : Promise.resolve([]),
     getTreeCountsByOrchard(),
+    // Where the trees actually are — the stored bounds are the imagery
+    // footprint, which is a different thing and often a much bigger one.
+    getTreeExtentsByOrchard().catch(
+      () => ({}) as Awaited<ReturnType<typeof getTreeExtentsByOrchard>>
+    ),
     userId ? isGlobalAdmin(userId) : Promise.resolve(false),
   ]);
 
@@ -164,6 +174,14 @@ export default async function Home() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {orchards.map((orchard) => {
               const count = treeCounts[orchard.id] ?? 0;
+              const extent = treeExtents[orchard.id] ?? null;
+              // Frame the planting, not the imagery footprint.
+              const frame = contentBounds(
+                extent?.bounds ?? null,
+                orchard.boundary ?? null,
+                orchard.bounds
+              );
+              const dots = extent ? treeSvgPoints(extent.points, frame) : [];
               return (
                 <div
                   key={orchard.id}
@@ -185,24 +203,42 @@ export default async function Home() {
                       <>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                          src={satellitePreviewUrl(orchard.bounds)}
+                          src={satellitePreviewUrl(frame)}
                           alt={`Satellite view of ${orchard.name}`}
                           loading="lazy"
                           className="absolute inset-0 w-full h-full object-cover transition-transform duration-slow ease-out group-hover:scale-[1.02]"
                         />
-                        {orchard.boundary && (
+                        {(orchard.boundary || dots.length > 0) && (
                           <svg
                             viewBox="0 0 660 440"
                             preserveAspectRatio="xMidYMid slice"
                             aria-hidden
                             className="absolute inset-0 w-full h-full"
                           >
-                            <polygon
-                              points={boundarySvgPoints(orchard.boundary, orchard.bounds)}
-                              fill="rgba(127,154,109,0.15)"
-                              stroke="#D9481C"
-                              strokeWidth="3"
-                            />
+                            {orchard.boundary && (
+                              <polygon
+                                points={boundarySvgPoints(orchard.boundary, frame)}
+                                fill="rgba(127,154,109,0.15)"
+                                stroke="#D9481C"
+                                strokeWidth="3"
+                              />
+                            )}
+                            {/*
+                              The trees themselves. Most orchards have no
+                              traced boundary, so without these the card
+                              is a square of grass with nothing to look at.
+                            */}
+                            {dots.map((d, i) => (
+                              <circle
+                                key={i}
+                                cx={d.x}
+                                cy={d.y}
+                                r={4.5}
+                                fill="rgba(217,72,28,0.9)"
+                                stroke="#fff"
+                                strokeWidth="1.5"
+                              />
+                            ))}
                           </svg>
                         )}
                       </>
