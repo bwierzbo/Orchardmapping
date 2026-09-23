@@ -7,6 +7,8 @@ import {
   treeSvgPoints,
   contentBounds,
   cardSource,
+  dotRadius,
+  dotStrokeWidth,
 } from '@/lib/satellite-preview';
 import { getTreeCountsByOrchard, getTreeExtentsByOrchard } from '@/lib/db/trees';
 import { auth } from '@clerk/nextjs/server';
@@ -183,6 +185,11 @@ export default async function Home() {
                 orchard.bounds
               );
               const dots = extent ? treeSvgPoints(extent.points, frame) : [];
+              // Sized to how tightly they are planted, or a dense block
+              // merges into one orange rectangle — and the ring goes
+              // with it, since at that spacing it is nearly half the dot.
+              const r = dotRadius(dots);
+              const ring = dotStrokeWidth(r);
               const source = cardSource({
                 previewImage: orchard.previewImage,
                 boundary: orchard.boundary,
@@ -240,10 +247,10 @@ export default async function Home() {
                                 key={i}
                                 cx={d.x}
                                 cy={d.y}
-                                r={4.5}
-                                fill="rgba(217,72,28,0.9)"
-                                stroke="#fff"
-                                strokeWidth="1.5"
+                                r={r}
+                                fill="rgba(217,72,28,0.92)"
+                                stroke={ring ? '#fff' : undefined}
+                                strokeWidth={ring}
                               />
                             ))}
                           </svg>

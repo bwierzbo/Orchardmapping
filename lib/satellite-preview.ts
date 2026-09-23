@@ -187,3 +187,49 @@ export function cardSource(orchard: {
   if (orchard.bounds) return 'composed';
   return 'placeholder';
 }
+
+/** Biggest and smallest a tree dot is allowed to be, in card pixels. */
+export const DOT_RADIUS_MAX = 4.5;
+export const DOT_RADIUS_MIN = 1.5;
+
+/**
+ * How big to draw each tree, given how tightly they are planted.
+ *
+ * One fixed radius cannot serve both ends. Terry Anderson's three trees
+ * want a dot you can see; Olympic Bluffs' four hundred and eighty, three
+ * metres apart in the row, would merge into one orange rectangle at the
+ * same size and say nothing about the planting.
+ *
+ * Mean spacing — the square root of the area the dots cover divided by
+ * how many there are — is a cheap stand-in for nearest-neighbour
+ * distance, and a third of it keeps neighbours visibly apart. Dots that
+ * span no area at all (one tree, or three in a line) get the maximum,
+ * since nothing is competing for the space.
+ */
+export function dotRadius(
+  points: ReadonlyArray<{ x: number; y: number }>
+): number {
+  if (points.length < 2) return DOT_RADIUS_MAX;
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  const area = (Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys));
+  if (area <= 0) return DOT_RADIUS_MAX;
+  const spacing = Math.sqrt(area / points.length);
+  return Math.min(DOT_RADIUS_MAX, Math.max(DOT_RADIUS_MIN, spacing / 3.5));
+}
+
+/**
+ * The white ring around a tree dot, or none.
+ *
+ * On a sparse planting the ring is what separates a dot from whatever
+ * it sits on — tree canopy, a track, a roof. On a dense one it is the
+ * problem: at Olympic Bluffs' spacing a 1.5px ring is nearly half the
+ * dot, and four hundred and eighty of them read as a pegboard instead
+ * of an orchard.
+ *
+ * A dot only keeps its ring when it is at full size, which is precisely
+ * when dotRadius has judged that nothing is competing for the space.
+ */
+export function dotStrokeWidth(radius: number): number {
+  return radius >= DOT_RADIUS_MAX ? 1.5 : 0;
+}
