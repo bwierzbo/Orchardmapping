@@ -85,7 +85,7 @@ function orchardAccess(required: OrchardRole) {
         message: `This needs ${required} access. You have ${role}.`,
       });
     }
-    return next({ ctx: { userId: ctx.userId, role } });
+    return next({ ctx: { userId: ctx.userId, role, orchardId } });
   });
 }
 
@@ -116,7 +116,8 @@ function treeAccess(required: OrchardRole) {
     if (rows.length === 0) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Tree not found.' });
     }
-    const role = await orchardRole(String(rows[0].orchard_id), ctx.userId);
+    const orchardId = String(rows[0].orchard_id);
+    const role = await orchardRole(orchardId, ctx.userId);
     if (!role) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Tree not found.' });
     }
@@ -126,7 +127,7 @@ function treeAccess(required: OrchardRole) {
         message: `This needs ${required} access. You have ${role}.`,
       });
     }
-    return next({ ctx: { userId: ctx.userId, role } });
+    return next({ ctx: { userId: ctx.userId, role, orchardId } });
   });
 }
 
@@ -174,7 +175,8 @@ function recordAccess(kind: RecordKind, required: OrchardRole) {
     if (rows.length === 0) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Not found.' });
     }
-    const role = await orchardRole(String(rows[0].orchard_id), ctx.userId);
+    const orchardId = String(rows[0].orchard_id);
+    const role = await orchardRole(orchardId, ctx.userId);
     if (!role) {
       // Same shape a missing row gives: never confirm someone else's record.
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Not found.' });
@@ -185,10 +187,86 @@ function recordAccess(kind: RecordKind, required: OrchardRole) {
         message: `This needs ${required} access. You have ${role}.`,
       });
     }
-    return next({ ctx: { userId: ctx.userId, role } });
+    return next({ ctx: { userId: ctx.userId, role, orchardId } });
   });
 }
 
 /** Operator access to a single record, resolved to its owning orchard. */
 export const recordOperatorProcedure = (kind: RecordKind) =>
   t.procedure.use(recordAccess(kind, 'operator'));
+
+/**
+ * Does this orchard run that programme?
+ *
+ * Hiding the page is not a gate. Every button behind the program and
+ * nutrition pages calls one of these procedures by name, and a signed-in
+ * operator can call them whether or not the page rendered — so an
+ * orchard whose owner has not taken on a spray programme could still
+ * have steps written into it, applications recorded against it, and its
+ * schedule read. The switch has to mean something on the server.
+ *
+ * Runs AFTER the access middleware, which has already resolved which
+ * orchard this is — including the delete-by-record-id case, where the
+ * orchard came from the row rather than the input.
+ *
+ * FORBIDDEN rather than NOT_FOUND: membership is already established by
+ * this point, so there is nothing left to hide, and the caller deserves
+ * to be told which switch to flip.
+ */
+function requireFeature(feature: 'ipm' | 'nutrition') {
+  // One of two literals chosen here, never a caller's string: the column
+  // name goes into SQL that cannot be parameterised.
+  const column = feature === 'ipm' ? 'ipm_enabled' : 'nutrition_enabled';
+  const label = feature === 'ipm' ? 'Pest management' : 'Nutrition';
+  return t.middleware(async ({ ctx, next }) => {
+    const orchardId = (ctx as { orchardId?: string }).orchardId;
+    if (!orchardId) {
+      // Only reachable by attaching this to a procedure that has not
+      // resolved an orchard, which is a wiring mistake, not a caller's.
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Feature check ran without an orchard.',
+      });
+    }
+    const { rows } = await sql.query(
+      `SELECT ${column} AS on FROM orchards WHERE id = $1 LIMIT 1`,
+      [orchardId]
+    );
+    if (rows.length === 0) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Orchard not found.' });
+    }
+    if (rows[0].on !== true) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: `${label} is switched off for this orchard. Turn it on from the dashboard first.`,
+      });
+    }
+    return next();
+  });
+}
+
+/** Read the programme, for an orchard that runs one. */
+export const ipmViewerProcedure = orchardViewerProcedure.use(requireFeature('ipm'));
+/** Record programme work: steps, applications, completions. */
+export const ipmOperatorProcedure = orchardOperatorProcedure.use(requireFeature('ipm'));
+/** Delete one programme record, resolved to its orchard by id. */
+export const ipmRecordOperatorProcedure = (kind: RecordKind) =>
+  recordOperatorProcedure(kind).use(requireFeature('ipm'));
+
+/**
+ * Nutrition has no read procedure — the page loads its tests on the
+ * server — so only the write side exists here. Add a viewer variant when
+ * something actually needs one.
+ */
+export const nutritionOperatorProcedure = orchardOperatorProcedure.use(
+  requireFeature('nutrition')
+);
+/**
+ * Accepting nutrient advice files it as a PROGRAM step, so it needs both
+ * switches: the one that produced the advice and the one that owns the
+ * place it lands. Without this, nutrition-on/IPM-off writes a step into
+ * a programme nobody is running and nobody can see.
+ */
+export const nutritionIntoProgramProcedure = nutritionOperatorProcedure.use(
+  requireFeature('ipm')
+);

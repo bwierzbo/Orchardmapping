@@ -10,6 +10,11 @@ import {
   treeOperatorProcedure,
   recordOperatorProcedure,
   globalAdminProcedure,
+  ipmViewerProcedure,
+  ipmOperatorProcedure,
+  ipmRecordOperatorProcedure,
+  nutritionOperatorProcedure,
+  nutritionIntoProgramProcedure,
 } from './init';
 import { memberOrchardConfigs, roleAtLeast, ORCHARD_ROLES } from '@/lib/orchard-access';
 import {
@@ -552,7 +557,7 @@ export const appRouter = router({
    */
   spray: router({
     /** Library scoped to this orchard's program mode, plus the mode itself. */
-    materials: orchardViewerProcedure
+    materials: ipmViewerProcedure
       .input(z.object({ orchardId: z.string().min(1) }))
       .query(async ({ input }) => {
         const [library, mode] = await Promise.all([
@@ -563,7 +568,7 @@ export const appRouter = router({
       }),
 
     /** What to reach for against a target, best-fit first. */
-    recommend: orchardViewerProcedure
+    recommend: ipmViewerProcedure
       .input(z.object({ orchardId: z.string().min(1), target: z.string().min(1) }))
       .query(async ({ input }) => {
         const [library, mode] = await Promise.all([
@@ -573,13 +578,13 @@ export const appRouter = router({
         return { mode, options: recommendFor(library, input.target, mode) };
       }),
 
-    applications: orchardViewerProcedure
+    applications: ipmViewerProcedure
       .input(z.object({ orchardId: z.string().min(1), limit: z.number().int().min(1).max(500).optional() }))
       .query(async ({ input }) => listApplications(input.orchardId, input.limit ?? 100)),
 
     /** Dry run — what would this application trigger? Drives the live
      *  warnings in the form before anything is saved. */
-    check: orchardViewerProcedure
+    check: ipmViewerProcedure
       .input(
         z.object({
           orchardId: z.string().min(1),
@@ -605,7 +610,7 @@ export const appRouter = router({
         return { findings, blocked: hasBlocker(findings) };
       }),
 
-    record: orchardOperatorProcedure
+    record: ipmOperatorProcedure
       .input(
         z.object({
           orchardId: z.string().min(1),
@@ -653,14 +658,14 @@ export const appRouter = router({
         return { application, findings };
       }),
 
-    setMode: orchardOperatorProcedure
+    setMode: ipmOperatorProcedure
       .input(z.object({ orchardId: z.string().min(1), mode: z.enum(PROGRAM_MODES) }))
       .mutation(async ({ input }) => {
         await setProgramMode(input.orchardId, input.mode);
         return { success: true, mode: input.mode };
       }),
 
-    deleteApplication: recordOperatorProcedure('sprayApplication')
+    deleteApplication: ipmRecordOperatorProcedure('sprayApplication')
       .input(z.object({ id: z.number().int().positive() }))
       .mutation(async ({ input }) => {
         const ok = await deleteApplication(input.id);
@@ -676,7 +681,7 @@ export const appRouter = router({
    */
   /** An orchard's own program, and how it compares with its region's. */
   program2: router({
-    drift: orchardViewerProcedure
+    drift: ipmViewerProcedure
       .input(z.object({ orchardId: z.string().min(1) }))
       .query(({ input }) => programDrift(input.orchardId)),
 
@@ -687,7 +692,7 @@ export const appRouter = router({
      * not: adopting a recommendation must not quietly undo a decision.
      */
     /** Adopted steps whose recommendation has been revised since. */
-    needsReview: orchardViewerProcedure
+    needsReview: ipmViewerProcedure
       .input(z.object({ orchardId: z.string().min(1) }))
       .query(({ input }) => stepsNeedingReview(input.orchardId)),
 
@@ -698,7 +703,7 @@ export const appRouter = router({
      * Nothing is ever applied without this being called, because the
      * orchard's version may be deliberate.
      */
-    resolveRevision: orchardOperatorProcedure
+    resolveRevision: ipmOperatorProcedure
       .input(
         z.object({
           orchardId: z.string().min(1),
@@ -716,7 +721,7 @@ export const appRouter = router({
       }),
 
     /** Change one of this orchard's steps. Marks it customised. */
-    updateStep: orchardOperatorProcedure
+    updateStep: ipmOperatorProcedure
       .input(
         z.object({
           orchardId: z.string().min(1),
@@ -744,7 +749,7 @@ export const appRouter = router({
      * recommended and reappears as not-adopted, so "I decided against
      * this" stays distinguishable from "I never saw it".
      */
-    deleteStep: orchardOperatorProcedure
+    deleteStep: ipmOperatorProcedure
       .input(z.object({ orchardId: z.string().min(1), key: z.string().min(1) }))
       .mutation(async ({ input }) => {
         const ok = await deleteOrchardStep(input.orchardId, input.key);
@@ -753,7 +758,7 @@ export const appRouter = router({
       }),
 
     /** A step of the orchard's own devising. */
-    createStep: orchardOperatorProcedure
+    createStep: ipmOperatorProcedure
       .input(
         z.object({
           orchardId: z.string().min(1),
@@ -779,7 +784,7 @@ export const appRouter = router({
         return { key };
       }),
 
-    adopt: orchardOperatorProcedure
+    adopt: ipmOperatorProcedure
       .input(z.object({ orchardId: z.string().min(1) }))
       .mutation(async ({ input }) => {
         const region = await orchardRegion(input.orchardId);
@@ -855,7 +860,7 @@ export const appRouter = router({
      * recording it is what stops the coverage check treating the pest
      * as an oversight.
      */
-    setPosture: orchardOperatorProcedure
+    setPosture: ipmOperatorProcedure
       .input(
         z.object({
           orchardId: z.string().min(1),
@@ -870,7 +875,7 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    clearPosture: orchardOperatorProcedure
+    clearPosture: ipmOperatorProcedure
       .input(z.object({ orchardId: z.string().min(1), pestKey: z.string().min(1) }))
       .mutation(async ({ input }) => {
         await clearPosture(input.orchardId, input.pestKey);
@@ -953,13 +958,13 @@ export const appRouter = router({
    */
   program: router({
     /** What the program is asking for, small enough for the map. */
-    summary: orchardViewerProcedure
+    summary: ipmViewerProcedure
       .input(z.object({ orchardId: z.string().min(1) }))
       .query(async ({ input }) => summariseSchedule(input.orchardId)),
 
     /** Turn a step on or off for this orchard. Global steps are regional
      *  agronomy; whether an orchard runs one is a local decision. */
-    setEnabled: orchardOperatorProcedure
+    setEnabled: ipmOperatorProcedure
       .input(
         z.object({
           orchardId: z.string().min(1),
@@ -972,7 +977,7 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    complete: orchardOperatorProcedure
+    complete: ipmOperatorProcedure
       .input(
         z.object({
           orchardId: z.string().min(1),
@@ -983,7 +988,7 @@ export const appRouter = router({
       )
       .mutation(async ({ input, ctx }) => completeStep({ ...input, createdBy: ctx.userId })),
 
-    uncomplete: orchardOperatorProcedure
+    uncomplete: ipmOperatorProcedure
       .input(
         z.object({
           orchardId: z.string().min(1),
@@ -1015,7 +1020,7 @@ export const appRouter = router({
      * fall, which is when most corrective applications go on — and which
      * the grower can immediately change.
      */
-    acceptAdvice: orchardOperatorProcedure
+    acceptAdvice: nutritionIntoProgramProcedure
       .input(
         z.object({
           orchardId: z.string().min(1),
@@ -1059,7 +1064,7 @@ export const appRouter = router({
         return { key };
       }),
 
-    setIntent: orchardOperatorProcedure
+    setIntent: nutritionOperatorProcedure
       .input(
         z.object({
           orchardId: z.string().min(1),
@@ -1072,7 +1077,7 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    recordTissue: orchardOperatorProcedure
+    recordTissue: nutritionOperatorProcedure
       .input(
         z.object({
           orchardId: z.string().min(1),
@@ -1090,7 +1095,7 @@ export const appRouter = router({
         return { id };
       }),
 
-    recordSoil: orchardOperatorProcedure
+    recordSoil: nutritionOperatorProcedure
       .input(
         z.object({
           orchardId: z.string().min(1),
