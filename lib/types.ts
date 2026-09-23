@@ -46,6 +46,18 @@ export interface OrchardConfig {
   previewImage?: string;
   /** Planted footprint traced from imagery; drawn when present */
   boundary?: OrchardBoundary;
+  /**
+   * Does this orchard run a spray / IPM programme here?
+   *
+   * Off means the program, its schedule and its reviews are not shown
+   * for this orchard at all. Mapping somebody else's trees and telling
+   * them when to spray are different jobs, and only the second one needs
+   * opting into. The region, pest library, walks, harvests and traps are
+   * unaffected — they are the same work whoever owns the trees.
+   */
+  ipmEnabled: boolean;
+  /** Same, for the nutrition programme. */
+  nutritionEnabled: boolean;
   stats?: {
     trees?: number;
     blocks?: number;

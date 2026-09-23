@@ -84,7 +84,7 @@ export default async function PestDetailPage({ params }: PageProps) {
         <Section title="Management" body={entry.management} />
         <Section title="For cider specifically" body={entry.cider_note} />
 
-        {options.length > 0 && (
+        {orchard.ipmEnabled && options.length > 0 && (
           <section className="mb-6 rounded-lg border border-canopy-600/30 bg-canopy-50 dark:bg-canopy-600/10 p-4">
             <h2 className="flex items-center gap-1.5 font-display text-base text-ink">
               <SprayCan size={16} className="text-canopy-600" aria-hidden />
@@ -118,7 +118,7 @@ export default async function PestDetailPage({ params }: PageProps) {
           </section>
         )}
 
-        {userId && (
+        {userId && orchard.ipmEnabled && (
           <PosturePicker
             orchardId={orchard.id}
             pestKey={entry.key}

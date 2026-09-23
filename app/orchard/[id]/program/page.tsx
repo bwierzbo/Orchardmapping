@@ -25,6 +25,7 @@ import SeasonTimeline, { type TimelineMarker } from './SeasonTimeline';
 import StepToggle from './StepToggle';
 import { StepControls } from './StepEditor';
 import AddStep from './AddStep';
+import FeatureOff from '../components/FeatureOff';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,6 +57,20 @@ export default async function ProgramPage({ params }: PageProps) {
     auth(),
   ]);
   if (!orchard) notFound();
+
+  // Before any of the schedule work below: resolving a program for an
+  // orchard that is not running one is both wasted and misleading.
+  if (!orchard.ipmEnabled) {
+    const viewer = await viewerRole(orchard.id);
+    return (
+      <FeatureOff
+        orchardId={orchard.id}
+        orchardName={orchard.name}
+        feature="ipm"
+        canEdit={!!viewer && roleAtLeast(viewer, 'admin')}
+      />
+    );
+  }
 
   const today = nowLocalIso(orchard.timezone).slice(0, 10);
   const season = seasonOf(today);

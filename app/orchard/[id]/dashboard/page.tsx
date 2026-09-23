@@ -17,6 +17,7 @@ import RegionCard from './RegionCard';
 import { orchardRegion, listRegions } from '@/lib/db/regions';
 import StageCard from './StageCard';
 import DueNowCard from './DueNowCard';
+import FeatureToggles from './FeatureToggles';
 import { roleAtLeast, memberOrchardConfigs } from '@/lib/orchard-access';
 
 // Live DB data; never prerender at build time
@@ -100,13 +101,15 @@ export default async function DashboardPage({ params }: PageProps) {
               <BarChart3 aria-hidden size={15} />
               Block
             </Link>
-            <Link
-              href={`/orchard/${orchard.id}/program`}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-bark hover:text-ink rounded-lg hover:bg-canopy-50 dark:hover:bg-canopy-600/10 whitespace-nowrap"
-            >
-              <CalendarRange aria-hidden size={15} />
-              Program
-            </Link>
+            {orchard.ipmEnabled && (
+              <Link
+                href={`/orchard/${orchard.id}/program`}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-bark hover:text-ink rounded-lg hover:bg-canopy-50 dark:hover:bg-canopy-600/10 whitespace-nowrap"
+              >
+                <CalendarRange aria-hidden size={15} />
+                Program
+              </Link>
+            )}
             <Link
               href={`/orchard/${orchard.id}/pests`}
               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-bark hover:text-ink rounded-lg hover:bg-canopy-50 dark:hover:bg-canopy-600/10 whitespace-nowrap"
@@ -128,20 +131,24 @@ export default async function DashboardPage({ params }: PageProps) {
               <Users aria-hidden size={15} />
               People
             </Link>
-            <Link
-              href={`/orchard/${orchard.id}/nutrition`}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-bark hover:text-ink rounded-lg hover:bg-canopy-50 dark:hover:bg-canopy-600/10 whitespace-nowrap"
-            >
-              <FlaskConical aria-hidden size={15} />
-              Nutrition
-            </Link>
-            <Link
-              href={`/orchard/${orchard.id}/spray`}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-bark hover:text-ink rounded-lg hover:bg-canopy-50 dark:hover:bg-canopy-600/10 whitespace-nowrap"
-            >
-              <SprayCan aria-hidden size={15} />
-              Spray
-            </Link>
+            {orchard.nutritionEnabled && (
+              <Link
+                href={`/orchard/${orchard.id}/nutrition`}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-bark hover:text-ink rounded-lg hover:bg-canopy-50 dark:hover:bg-canopy-600/10 whitespace-nowrap"
+              >
+                <FlaskConical aria-hidden size={15} />
+                Nutrition
+              </Link>
+            )}
+            {orchard.ipmEnabled && (
+              <Link
+                href={`/orchard/${orchard.id}/spray`}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-bark hover:text-ink rounded-lg hover:bg-canopy-50 dark:hover:bg-canopy-600/10 whitespace-nowrap"
+              >
+                <SprayCan aria-hidden size={15} />
+                Spray
+              </Link>
+            )}
           </nav>
 
           <div className="flex items-center gap-2 shrink-0">
@@ -160,16 +167,18 @@ export default async function DashboardPage({ params }: PageProps) {
       <div className="max-w-6xl mx-auto px-5 py-8 space-y-6">
         <p className="survey-caption">{caption}</p>
 
-        <Suspense
-          fallback={
-            <section className="bg-surface border border-line rounded-lg shadow-xs p-5">
-              <p className="survey-caption">Program · Due now</p>
-              <p className="text-sm text-bark mt-2">Working out what the program asks for…</p>
-            </section>
-          }
-        >
-          <DueNowCard orchardId={orchard.id} canEdit={canEdit} />
-        </Suspense>
+        {orchard.ipmEnabled && (
+          <Suspense
+            fallback={
+              <section className="bg-surface border border-line rounded-lg shadow-xs p-5">
+                <p className="survey-caption">Program · Due now</p>
+                <p className="text-sm text-bark mt-2">Working out what the program asks for…</p>
+              </section>
+            }
+          >
+            <DueNowCard orchardId={orchard.id} canEdit={canEdit} />
+          </Suspense>
+        )}
 
         <Suspense
           fallback={
@@ -192,6 +201,13 @@ export default async function DashboardPage({ params }: PageProps) {
         >
           <SeasonCard orchardId={orchard.id} lat={lat} lng={lng} />
         </Suspense>
+
+        <FeatureToggles
+          orchardId={orchard.id}
+          ipmEnabled={orchard.ipmEnabled}
+          nutritionEnabled={orchard.nutritionEnabled}
+          canEdit={!!role && roleAtLeast(role, 'admin')}
+        />
 
         <div className="mt-4">
           <RegionCard

@@ -6,6 +6,8 @@ import { ArrowLeft, SprayCan } from 'lucide-react';
 import { getOrchardConfigById } from '@/lib/db/orchards';
 import { listSprayTargets } from '@/lib/db/spray';
 import SprayClient from './SprayClient';
+import FeatureOff from '../components/FeatureOff';
+import { roleAtLeast } from '@/lib/orchard-access';
 
 // Live DB data; never prerender at build time
 export const dynamic = 'force-dynamic';
@@ -23,13 +25,25 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function SprayPage({ params }: PageProps) {
   const { id } = await params;
-  await requireOrchardPage(id);
-  const [orchard, targets] = await Promise.all([
-    getOrchardConfigById(id).catch(() => null),
-    // The pest library is the vocabulary; the form must not keep its own
-    listSprayTargets().catch(() => []),
-  ]);
+  const role = await requireOrchardPage(id);
+  const orchard = await getOrchardConfigById(id).catch(() => null);
   if (!orchard) notFound();
+
+  // Ahead of the spray-specific loads, not alongside them: declining to
+  // run somebody's programme means not doing the work either.
+  if (!orchard.ipmEnabled) {
+    return (
+      <FeatureOff
+        orchardId={orchard.id}
+        orchardName={orchard.name}
+        feature="ipm"
+        canEdit={!!role && roleAtLeast(role, 'admin')}
+      />
+    );
+  }
+
+  // The pest library is the vocabulary; the form must not keep its own
+  const targets = await listSprayTargets().catch(() => []);
 
   return (
     <main className="min-h-dvh bg-paper">

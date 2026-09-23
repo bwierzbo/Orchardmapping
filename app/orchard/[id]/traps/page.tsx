@@ -48,7 +48,10 @@ export default async function TrapsPage({ params }: PageProps) {
   const season = seasonOf(today);
   const [traps, steps] = await Promise.all([
     listTraps(orchard.id, season).catch(() => []),
-    listProgramSteps(orchard.id).catch(() => []),
+    // Thresholds come from the programme, so an orchard not running one
+    // gets the catch log without them rather than a line drawn from
+    // somebody else's plan. Counting is still worth doing on its own.
+    orchard.ipmEnabled ? listProgramSteps(orchard.id).catch(() => []) : Promise.resolve([]),
   ]);
 
   // The action threshold belongs to the program step, not the trap — one

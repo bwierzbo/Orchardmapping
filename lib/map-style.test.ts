@@ -27,6 +27,8 @@ function orchard(overrides: Partial<OrchardConfig> = {}): OrchardConfig {
     defaultZoom: 19,
     minZoom: 5,
     maxZoom: 21.5,
+    ipmEnabled: true,
+    nutritionEnabled: true,
     tileMinZoom: 5,
     tileMaxZoom: 23,
     orthoPath: '',
