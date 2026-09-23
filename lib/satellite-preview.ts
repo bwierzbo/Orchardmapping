@@ -156,3 +156,34 @@ export function treeSvgPoints(
     y: Number((((b.maxLat - lat) / spanLat) * height).toFixed(1)),
   }));
 }
+
+/** Which picture a home card should show. */
+export type CardSource = 'uploaded' | 'composed' | 'placeholder';
+
+/**
+ * An uploaded preview card is a hand-made composite, not a map.
+ *
+ * The orthomosaic sits letterboxed on a grey canvas, rotated and
+ * irregularly cropped, with a north badge in the corner. Nothing in it
+ * maps a latitude to a pixel, so a boundary drawn over it lands in the
+ * wrong place — which is why a boundary traced on Farm House and Marty
+ * Huffman's never appeared: those two had an uploaded card, and the
+ * overlay only ever existed on the composed branch.
+ *
+ * So the composed preview wins wherever there is something to draw. It
+ * is the only one whose overlay can be correct, and the trade is a
+ * sharper photograph for a picture that tells the truth about where the
+ * orchard is. An orchard with nothing traced and no trees placed keeps
+ * its photograph, because then there is nothing to be wrong about.
+ */
+export function cardSource(orchard: {
+  previewImage?: string;
+  boundary?: OrchardBoundary;
+  bounds: OrchardBounds;
+  placedTrees: number;
+}): CardSource {
+  const hasOverlay = (orchard.boundary?.coordinates[0]?.length ?? 0) > 0 || orchard.placedTrees > 0;
+  if (orchard.previewImage && !hasOverlay) return 'uploaded';
+  if (orchard.bounds) return 'composed';
+  return 'placeholder';
+}

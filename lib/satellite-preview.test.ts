@@ -4,6 +4,7 @@ import {
   previewBounds,
   satellitePreviewUrl,
   boundarySvgPoints,
+  cardSource,
   MIN_PREVIEW_SPAN_M,
 } from './satellite-preview';
 import type { OrchardBounds, OrchardBoundary } from './types';
@@ -176,5 +177,42 @@ describe('previewBounds framing floor', () => {
     const box = previewBounds(contentBounds(TREES, null, STORED), 660, 440);
     const { across, down } = spanMetres(box);
     expect(across / down).toBeCloseTo(660 / 440, 1);
+  });
+});
+
+describe('cardSource', () => {
+  const BOUNDS: OrchardBounds = STORED;
+  const CARD = 'https://x.public.blob.vercel-storage.com/orchards/a/preview/card-v2.jpg';
+
+  it('keeps the photograph when there is nothing to draw over it', () => {
+    expect(
+      cardSource({ previewImage: CARD, bounds: BOUNDS, placedTrees: 0 })
+    ).toBe('uploaded');
+  });
+
+  it('composes once a boundary has been traced, because the photo cannot carry one', () => {
+    // Farm House and Marty Huffman's: a boundary was drawn and never
+    // appeared, because the overlay only existed on the composed branch
+    // and both orchards had an uploaded card.
+    expect(
+      cardSource({ previewImage: CARD, boundary: RING, bounds: BOUNDS, placedTrees: 0 })
+    ).toBe('composed');
+  });
+
+  it('composes once trees are placed, so the planting is visible', () => {
+    expect(
+      cardSource({ previewImage: CARD, bounds: BOUNDS, placedTrees: 78 })
+    ).toBe('composed');
+  });
+
+  it('is not fooled by a boundary whose ring is empty', () => {
+    const empty: OrchardBoundary = { type: 'Polygon', coordinates: [[]] };
+    expect(
+      cardSource({ previewImage: CARD, boundary: empty, bounds: BOUNDS, placedTrees: 0 })
+    ).toBe('uploaded');
+  });
+
+  it('composes for an orchard that never had a photograph', () => {
+    expect(cardSource({ bounds: BOUNDS, placedTrees: 0 })).toBe('composed');
   });
 });

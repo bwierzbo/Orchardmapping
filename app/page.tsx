@@ -6,6 +6,7 @@ import {
   boundarySvgPoints,
   treeSvgPoints,
   contentBounds,
+  cardSource,
 } from '@/lib/satellite-preview';
 import { getTreeCountsByOrchard, getTreeExtentsByOrchard } from '@/lib/db/trees';
 import { auth } from '@clerk/nextjs/server';
@@ -182,6 +183,12 @@ export default async function Home() {
                 orchard.bounds
               );
               const dots = extent ? treeSvgPoints(extent.points, frame) : [];
+              const source = cardSource({
+                previewImage: orchard.previewImage,
+                boundary: orchard.boundary,
+                bounds: orchard.bounds,
+                placedTrees: extent?.total ?? 0,
+              });
               return (
                 <div
                   key={orchard.id}
@@ -189,7 +196,7 @@ export default async function Home() {
                 >
                   <Link href={`/orchard/${orchard.id}`} className="block">
                   <div className="relative aspect-[3/2] bg-canopy-50 overflow-hidden">
-                    {orchard.previewImage ? (
+                    {source === 'uploaded' && orchard.previewImage ? (
                       <Image
                         src={orchard.previewImage}
                         alt={`Aerial view of ${orchard.name}`}
@@ -197,7 +204,7 @@ export default async function Home() {
                         sizes="(min-width: 768px) 50vw, 100vw"
                         className="object-cover transition-transform duration-slow ease-out group-hover:scale-[1.02]"
                       />
-                    ) : orchard.bounds ? (
+                    ) : source === 'composed' ? (
                       // No drone flight yet: live satellite snapshot of the
                       // orchard's location, with its boundary when drawn
                       <>
