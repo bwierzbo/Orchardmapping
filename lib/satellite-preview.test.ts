@@ -5,6 +5,10 @@ import {
   satellitePreviewUrl,
   boundarySvgPoints,
   cardSource,
+  dotRadius,
+  dotStrokeWidth,
+  DOT_RADIUS_MAX,
+  DOT_RADIUS_MIN,
   MIN_PREVIEW_SPAN_M,
 } from './satellite-preview';
 import type { OrchardBounds, OrchardBoundary } from './types';
@@ -214,5 +218,71 @@ describe('cardSource', () => {
 
   it('composes for an orchard that never had a photograph', () => {
     expect(cardSource({ bounds: BOUNDS, placedTrees: 0 })).toBe('composed');
+  });
+});
+
+describe('dotRadius', () => {
+  const grid = (cols: number, rows: number, gap: number) =>
+    Array.from({ length: cols * rows }, (_, i) => ({
+      x: (i % cols) * gap,
+      y: Math.floor(i / cols) * gap,
+    }));
+
+  it('gives a lone tree the biggest dot — nothing competes for the space', () => {
+    expect(dotRadius([{ x: 100, y: 100 }])).toBe(DOT_RADIUS_MAX);
+    expect(dotRadius([])).toBe(DOT_RADIUS_MAX);
+  });
+
+  it('gives three trees in a line the biggest dot, not a divide-by-zero', () => {
+    // Terry Anderson: the span down the card is exactly zero.
+    const inLine = [
+      { x: 320, y: 220 },
+      { x: 330, y: 220 },
+      { x: 340, y: 220 },
+    ];
+    expect(dotRadius(inLine)).toBe(DOT_RADIUS_MAX);
+  });
+
+  it('shrinks the dot for a dense planting so neighbours stay apart', () => {
+    // Olympic Bluffs: 480 trees, roughly 7px apart across the row.
+    const dense = grid(24, 20, 7);
+    const r = dotRadius(dense);
+    expect(r).toBeLessThan(DOT_RADIUS_MAX);
+    expect(r * 2).toBeLessThan(7); // two dots do not touch
+  });
+
+  it('leaves a sparse planting at full size', () => {
+    expect(dotRadius(grid(8, 8, 40))).toBe(DOT_RADIUS_MAX);
+  });
+
+  it('never goes below the floor, however tightly packed', () => {
+    expect(dotRadius(grid(60, 60, 1))).toBeGreaterThanOrEqual(DOT_RADIUS_MIN);
+  });
+
+  it('is monotonic — closer planting never gives a bigger dot', () => {
+    const gaps = [40, 20, 10, 5, 2];
+    const radii = gaps.map((g) => dotRadius(grid(20, 20, g)));
+    for (let i = 1; i < radii.length; i++) {
+      expect(radii[i]).toBeLessThanOrEqual(radii[i - 1]);
+    }
+  });
+});
+
+describe('dotStrokeWidth', () => {
+  it('rings a full-size dot, which is the sparse case', () => {
+    expect(dotStrokeWidth(DOT_RADIUS_MAX)).toBeGreaterThan(0);
+  });
+
+  it('drops the ring once the dot has been shrunk for density', () => {
+    // Olympic Bluffs sits at about 3.4, and 480 ringed dots at that
+    // size read as a pegboard rather than an orchard.
+    expect(dotStrokeWidth(3.4)).toBe(0);
+    expect(dotStrokeWidth(DOT_RADIUS_MIN)).toBe(0);
+  });
+
+  it('never draws a ring wider than the dot it surrounds', () => {
+    for (const r of [DOT_RADIUS_MIN, 2, 3, 4, DOT_RADIUS_MAX]) {
+      expect(dotStrokeWidth(r)).toBeLessThan(r);
+    }
   });
 });

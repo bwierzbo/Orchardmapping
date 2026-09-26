@@ -361,11 +361,24 @@ export async function getTreeCountsByOrchard(): Promise<Record<string, number>> 
  * arbitrary box around a point. Terry Anderson's three trees came out
  * filling one percent of the width of a half-kilometre field.
  *
- * The sample is capped: a card 660 pixels wide cannot show 480 distinct
- * dots, and shipping 480 coordinates per orchard to draw them would cost
- * more than the picture is worth. Ordered by id so the same trees are
- * picked every time and the card does not shuffle between loads.
+ * The sample is capped, and taken EVENLY across the orchard rather than
+ * off the top. Ordering by id and keeping the first N sounds harmless
+ * and is not: trees are planted and imported row by row, so a prefix is
+ * a contiguous block. Olympic Bluffs drew five and a half rows of its
+ * twenty-odd and looked like a half-planted orchard. Striding across the
+ * same ordering keeps the sample deterministic — the card must not
+ * shuffle between loads — while covering the whole planting.
  */
+/**
+ * How many dots a card will draw before it starts striding.
+ *
+ * Every orchard here fits under it, so today they all draw in full. It
+ * is a guard against a ten-thousand-tree import, not a design budget:
+ * 480 coordinates is about ten kilobytes, which is less than the
+ * picture they sit on.
+ */
+export const MAX_PREVIEW_DOTS = 600;
+
 export interface OrchardTreeExtent {
   bounds: { minLng: number; maxLng: number; minLat: number; maxLat: number };
   points: Array<[number, number]>;
@@ -373,7 +386,7 @@ export interface OrchardTreeExtent {
 }
 
 export async function getTreeExtentsByOrchard(
-  sampleSize = 150
+  sampleSize = MAX_PREVIEW_DOTS
 ): Promise<Record<string, OrchardTreeExtent>> {
   const result = await sql.query<{
     orchard_id: string;
@@ -386,12 +399,16 @@ export async function getTreeExtentsByOrchard(
             COUNT(*)::int AS total,
             COALESCE(
               JSONB_AGG(JSONB_BUILD_ARRAY(lng::float8, lat::float8) ORDER BY rn)
-                FILTER (WHERE rn <= $1),
+                FILTER (WHERE (rn - 1) % stride = 0),
               '[]'::jsonb
             ) AS points
        FROM (
          SELECT orchard_id, lng, lat,
-                ROW_NUMBER() OVER (PARTITION BY orchard_id ORDER BY id) AS rn
+                ROW_NUMBER() OVER (PARTITION BY orchard_id ORDER BY id) AS rn,
+                GREATEST(
+                  1,
+                  CEIL(COUNT(*) OVER (PARTITION BY orchard_id)::numeric / $1)
+                )::int AS stride
            FROM trees
           WHERE lat IS NOT NULL AND lng IS NOT NULL
        ) placed
