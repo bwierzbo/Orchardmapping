@@ -233,17 +233,20 @@ describe('dotRadius', () => {
     expect(dotRadius([])).toBe(DOT_RADIUS_MAX);
   });
 
-  it('gives three trees in a line the biggest dot, not a divide-by-zero', () => {
-    // Terry Anderson: the span down the card is exactly zero.
+  it('keeps three trees in a line at full size', () => {
+    // Terry Anderson: three trees spread 41px along the card and 2px
+    // across it. They are twenty pixels apart and not crowded at all.
+    // Measuring by bounding-box area collapsed that to "4.8px apart"
+    // and shrank them to the minimum, which is invisible.
     const inLine = [
-      { x: 320, y: 220 },
-      { x: 330, y: 220 },
-      { x: 340, y: 220 },
+      { x: 310, y: 220 },
+      { x: 330, y: 221 },
+      { x: 351, y: 222 },
     ];
     expect(dotRadius(inLine)).toBe(DOT_RADIUS_MAX);
   });
 
-  it('shrinks the dot for a dense planting so neighbours stay apart', () => {
+  it('shrinks a dense planting so neighbours stay apart', () => {
     // Olympic Bluffs: 480 trees, roughly 7px apart across the row.
     const dense = grid(24, 20, 7);
     const r = dotRadius(dense);
@@ -265,6 +268,27 @@ describe('dotRadius', () => {
     for (let i = 1; i < radii.length; i++) {
       expect(radii[i]).toBeLessThanOrEqual(radii[i - 1]);
     }
+  });
+
+  it('is not thrown by two trees mapped at the same spot', () => {
+    // A duplicate says nothing about spacing; it must not read as
+    // "zero apart" and shrink the whole card.
+    const withDuplicate = [
+      { x: 100, y: 100 },
+      { x: 100, y: 100 },
+      { x: 140, y: 100 },
+      { x: 180, y: 100 },
+    ];
+    expect(dotRadius(withDuplicate)).toBe(DOT_RADIUS_MAX);
+  });
+
+  it('judges a long thin row by the gap along it, not across it', () => {
+    // Twenty trees in one row, 30px apart: spread out, not crowded.
+    const row = Array.from({ length: 20 }, (_, i) => ({ x: i * 30, y: 200 }));
+    expect(dotRadius(row)).toBe(DOT_RADIUS_MAX);
+    // The same twenty at 4px apart are crowded and must shrink.
+    const tight = Array.from({ length: 20 }, (_, i) => ({ x: i * 4, y: 200 }));
+    expect(dotRadius(tight)).toBeLessThan(DOT_RADIUS_MAX);
   });
 });
 

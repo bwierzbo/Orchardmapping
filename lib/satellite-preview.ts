@@ -198,24 +198,47 @@ export const DOT_RADIUS_MIN = 1.5;
  * One fixed radius cannot serve both ends. Terry Anderson's three trees
  * want a dot you can see; Olympic Bluffs' four hundred and eighty, three
  * metres apart in the row, would merge into one orange rectangle at the
- * same size and say nothing about the planting.
+ * same size.
  *
- * Mean spacing — the square root of the area the dots cover divided by
- * how many there are — is a cheap stand-in for nearest-neighbour
- * distance, and a third of it keeps neighbours visibly apart. Dots that
- * span no area at all (one tree, or three in a line) get the maximum,
- * since nothing is competing for the space.
+ * Crowding is measured as the median distance from a dot to its nearest
+ * neighbour, and half of that keeps neighbours from touching. An earlier
+ * version divided the bounding box AREA by the number of dots, which is
+ * only a fair measure when they are spread in two directions: Terry's
+ * three sit in a line 41px long and 2px tall, so the area collapsed and
+ * it judged them 4.8px apart when they are really about twenty. They
+ * came out at the minimum size — invisible, which is the problem the
+ * dots exist to solve.
+ *
+ * Nearest neighbour is O(n²), which at the six hundred dot cap is a few
+ * hundred thousand comparisons once per card, server-side.
  */
 export function dotRadius(
   points: ReadonlyArray<{ x: number; y: number }>
 ): number {
   if (points.length < 2) return DOT_RADIUS_MAX;
-  const xs = points.map((p) => p.x);
-  const ys = points.map((p) => p.y);
-  const area = (Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys));
-  if (area <= 0) return DOT_RADIUS_MAX;
-  const spacing = Math.sqrt(area / points.length);
-  return Math.min(DOT_RADIUS_MAX, Math.max(DOT_RADIUS_MIN, spacing / 3.5));
+
+  const nearest: number[] = [];
+  for (let i = 0; i < points.length; i++) {
+    let best = Infinity;
+    for (let j = 0; j < points.length; j++) {
+      if (i === j) continue;
+      const dx = points[i].x - points[j].x;
+      const dy = points[i].y - points[j].y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < best) best = d2;
+    }
+    // Two trees mapped at the same spot say nothing about spacing.
+    if (best > 0 && Number.isFinite(best)) nearest.push(Math.sqrt(best));
+  }
+  if (nearest.length === 0) return DOT_RADIUS_MAX;
+
+  nearest.sort((a, b) => a - b);
+  const median = nearest[Math.floor(nearest.length / 2)];
+  // A third of the gap to the nearest neighbour. Half would let two
+  // dots just touch, and the white ring then pushes them over — which
+  // is how four hundred and eighty of them read as a pegboard rather
+  // than an orchard. A third leaves the gap visible.
+  return Math.min(DOT_RADIUS_MAX, Math.max(DOT_RADIUS_MIN, median / 3));
 }
 
 /**
