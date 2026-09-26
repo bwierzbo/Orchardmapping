@@ -14,6 +14,8 @@ import { Input } from '@/components/ui/input';
 import PhotoButton from '@/components/PhotoButton';
 import { trpc } from '@/lib/trpc/client';
 import { splitForPicker, type PickablePest } from '@/lib/pest-picker';
+import { METRIC_HELP, inchesToMm } from '@/lib/fruit-metrics';
+import FieldHelp from './FieldHelp';
 
 export const STRESS_REASONS = [
   'Pests',
@@ -40,6 +42,13 @@ export interface InspectionAnswers {
    * bad enough to change the tree's status.
    */
   pests: Record<string, PestSeverity | null>;
+  /**
+   * How the measurements above were typed. Readings are stored
+   * canonically — millimetres and °Bx — but what somebody actually read
+   * off their instrument is kept beside it, because a converted number
+   * rounded back is not the number they wrote down.
+   */
+  units: { sugar: 'brix' | 'sg'; size: 'mm' | 'in' };
   note: string;
 }
 
@@ -106,9 +115,12 @@ export async function saveInspection(
       const raw = answers.metrics[m.key];
       if (raw !== undefined && raw !== '' && !Number.isNaN(Number(raw))) {
         const value = Number(raw);
-        if (m.key === 'brix' && settings.sugarUnit === 'sg') {
+        if (m.key === 'brix' && answers.units.sugar === 'sg') {
           payload.brix = Math.round(sgToBrix(value) * 10) / 10;
           payload.sg = value;
+        } else if (m.key === 'size_mm' && answers.units.size === 'in') {
+          payload.size_mm = Math.round(inchesToMm(value) * 10) / 10;
+          payload.size_in = value;
         } else {
           payload[m.key] = value;
         }
@@ -239,6 +251,7 @@ export default function InspectionEntry({
     fruit: null,
     metrics: {},
     pests: {},
+    units: { sugar: settings.sugarUnit, size: 'mm' },
     note: '',
   });
   const [healthChoice, setHealthChoice] = useState<TreeStatus | null>(null);
@@ -248,6 +261,48 @@ export default function InspectionEntry({
   const [metrics, setMetrics] = useState<Record<string, string>>({});
   const [pestsSeen, setPestsSeen] = useState<Record<string, PestSeverity | null>>({});
   const [showAllPests, setShowAllPests] = useState(false);
+  /**
+   * Whether anything was seen at all, asked before which.
+   *
+   * Most trees on most walks have nothing on them, and a list of fifteen
+   * pests is a wall to scroll past to say so. null = not yet answered,
+   * which is also what keeps the walk from auto-advancing before the
+   * question has been put.
+   */
+  const [anyPests, setAnyPests] = useState<boolean | null>(null);
+  const anyPestsRef = useRef<boolean | null>(null);
+  /** The pest question is only asked where there is a library to ask from. */
+  const showPests = !!pests && pests.length > 0;
+
+  const answerAnyPests = (seen: boolean) => {
+    anyPestsRef.current = seen;
+    setAnyPests(seen);
+    if (!seen) {
+      // Clearing on "no" keeps the record honest: a pest ticked and then
+      // taken back must not be saved.
+      answersRef.current.pests = {};
+      setPestsSeen({});
+    }
+    maybeAutoSave();
+  };
+  /**
+   * Units chosen per entry rather than in Settings: somebody with a
+   * caliper marked in inches and a refractometer reading Brix should
+   * not have to leave the tree to say so. Stored canonically either way
+   * — millimetres and °Bx — with what was typed kept alongside.
+   */
+
+  const [sugarUnit, setSugarUnitState] = useState<'brix' | 'sg'>(settings.sugarUnit);
+  const [sizeUnitValue, setSizeUnitValue] = useState<'mm' | 'in'>('mm');
+  const sizeUnit = sizeUnitValue;
+  const setSizeUnit = (u: 'mm' | 'in') => {
+    answersRef.current.units = { ...answersRef.current.units, size: u };
+    setSizeUnitValue(u);
+  };
+  const setSugarUnit = (u: 'brix' | 'sg') => {
+    answersRef.current.units = { ...answersRef.current.units, sugar: u };
+    setSugarUnitState(u);
+  };
 
   const [note, setNote] = useState('');
   const pestNames = useMemo(
@@ -291,7 +346,11 @@ export default function InspectionEntry({
     return (
       (!inspections.has('health') || a.health !== null) &&
       (!inspections.has('bloom') || a.bloom !== null) &&
-      (!inspections.has('fruit') || a.fruit !== null)
+      (!inspections.has('fruit') || a.fruit !== null) &&
+      // "Nothing seen" is an answer and a useful one — a walk that
+      // auto-advanced before the question was put would record silence
+      // as if it were a clean tree.
+      (!showPests || anyPestsRef.current === false)
     );
   };
   const maybeAutoSave = () => {
@@ -299,10 +358,7 @@ export default function InspectionEntry({
       autoSave &&
       complete() &&
       !detailedFruit &&
-      answersRef.current.health !== 'stressed' &&
-      // A ticked pest means there is more to say — at the very least a
-      // severity to set — so the button takes over from here.
-      Object.keys(answersRef.current.pests).length === 0
+      answersRef.current.health !== 'stressed'
     ) {
       void save();
     }
@@ -403,9 +459,10 @@ export default function InspectionEntry({
 
   const enabledMetrics = FRUIT_METRIC_CATALOG.filter((m) => settings.fruitMetrics.includes(m.key));
   const showLabels = inspections.size > 1;
-  const sectionLabel = (label: string, done: boolean) => (
+  const sectionLabel = (label: string, done: boolean, help?: { summary: string; scale?: string }) => (
     <p className="text-[11px] font-semibold tracking-wide text-bark uppercase flex items-center gap-1">
       {label}
+      {help && <FieldHelp summary={help.summary} scale={help.scale} />}
       {done && <Check size={12} aria-hidden className="text-canopy-600" />}
     </p>
   );
@@ -413,10 +470,107 @@ export default function InspectionEntry({
   return (
     <>
       <div className="space-y-3 px-4 pb-2">
-        {/* ── Pests seen: independent of health, on purpose ── */}
-        {pests && pests.length > 0 && (
+        {/* ── Health ── */}
+        {inspections.has('health') && (
           <div className="space-y-1.5">
-            {sectionLabel('Pests seen', pestKeys.length > 0)}
+            {showLabels && sectionLabel('Health', healthChoice !== null)}
+            <div className="grid grid-cols-3 gap-2">
+              <TapButton
+                color={STATUS_COLORS.healthy}
+                selected={healthChoice === 'healthy'}
+                onClick={() => pickHealth('healthy')}
+                disabled={busy}
+              >
+                Healthy
+              </TapButton>
+              <TapButton
+                color={STATUS_COLORS.stressed}
+                selected={healthChoice === 'stressed'}
+                onClick={() => pickHealth('stressed')}
+                disabled={busy}
+              >
+                Stressed
+              </TapButton>
+              <TapButton
+                color={STATUS_COLORS.dead}
+                selected={healthChoice === 'dead'}
+                onClick={() => pickHealth('dead')}
+                disabled={busy}
+              >
+                Dead
+              </TapButton>
+            </div>
+            {healthChoice === 'stressed' && (
+              <div className="space-y-1">
+                <p className="text-[11px] font-medium text-bark">Key issue (tap to highlight)</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {STRESS_REASONS.map((r) => {
+                    const on = stressReason === r;
+                    return (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => pickReason(r)}
+                        aria-pressed={on}
+                        disabled={busy}
+                        className={`px-3 py-2 rounded-lg text-sm font-medium border active:scale-[0.97] disabled:opacity-50 ${
+                          on
+                            ? 'bg-canopy-700 border-canopy-700 text-white ring-2 ring-canopy-600 ring-offset-1'
+                            : 'border-line text-ink bg-paper hover:bg-canopy-50'
+                        }`}
+                      >
+                        {r}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/*
+          ── Pests — asked as a yes/no first ──
+
+          Most trees on most walks have nothing on them, and a list of
+          fifteen pests is a wall to scroll past in order to say so. The
+          list only appears once something has been seen. It stays
+          independent of health: a tree in good shape can still have
+          codling moth on it, and catching that early is the point.
+        */}
+        {showPests && (
+          <div className="space-y-1.5">
+            {sectionLabel('Pests or disease', anyPests !== null, {
+              summary:
+                'Anything on the tree or its fruit worth recording — insects, their damage, or disease.',
+              scale:
+                'Say no and the walk moves on. Say yes and this grower\u2019s most likely pests appear, ranked by what has actually been found here.',
+            })}
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                [false, 'Nothing seen'],
+                [true, 'Something seen'],
+              ] as const).map(([value, label]) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => answerAnyPests(value)}
+                  aria-pressed={anyPests === value}
+                  disabled={busy}
+                  className={`h-11 rounded-lg text-sm font-medium border active:scale-[0.97] disabled:opacity-50 ${
+                    anyPests === value
+                      ? value
+                        ? 'bg-flag-600 border-flag-600 text-white'
+                        : 'bg-canopy-600 border-canopy-600 text-white'
+                      : 'border-line text-ink bg-paper hover:bg-canopy-50'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {anyPests === true && (
+            <>
             <div className="flex flex-wrap gap-1.5">
               {(showAllPests ? [...pestPicker.top, ...pestPicker.rest] : pestPicker.top).map(
                 (pest) => {
@@ -484,64 +638,7 @@ export default function InspectionEntry({
                 first.
               </p>
             )}
-          </div>
-        )}
-
-        {/* ── Health ── */}
-        {inspections.has('health') && (
-          <div className="space-y-1.5">
-            {showLabels && sectionLabel('Health', healthChoice !== null)}
-            <div className="grid grid-cols-3 gap-2">
-              <TapButton
-                color={STATUS_COLORS.healthy}
-                selected={healthChoice === 'healthy'}
-                onClick={() => pickHealth('healthy')}
-                disabled={busy}
-              >
-                Healthy
-              </TapButton>
-              <TapButton
-                color={STATUS_COLORS.stressed}
-                selected={healthChoice === 'stressed'}
-                onClick={() => pickHealth('stressed')}
-                disabled={busy}
-              >
-                Stressed
-              </TapButton>
-              <TapButton
-                color={STATUS_COLORS.dead}
-                selected={healthChoice === 'dead'}
-                onClick={() => pickHealth('dead')}
-                disabled={busy}
-              >
-                Dead
-              </TapButton>
-            </div>
-            {healthChoice === 'stressed' && (
-              <div className="space-y-1">
-                <p className="text-[11px] font-medium text-bark">Key issue (tap to highlight)</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {STRESS_REASONS.map((r) => {
-                    const on = stressReason === r;
-                    return (
-                      <button
-                        key={r}
-                        type="button"
-                        onClick={() => pickReason(r)}
-                        aria-pressed={on}
-                        disabled={busy}
-                        className={`px-3 py-2 rounded-lg text-sm font-medium border active:scale-[0.97] disabled:opacity-50 ${
-                          on
-                            ? 'bg-canopy-700 border-canopy-700 text-white ring-2 ring-canopy-600 ring-offset-1'
-                            : 'border-line text-ink bg-paper hover:bg-canopy-50'
-                        }`}
-                      >
-                        {r}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+            </>
             )}
           </div>
         )}
@@ -592,29 +689,83 @@ export default function InspectionEntry({
               ))}
             </div>
             <p className="text-[11px] text-bark -mt-1">Crop load: 1 = none · 5 = heavy</p>
-            {detailedFruit && enabledMetrics.length > 0 && (
-              <div className="grid grid-cols-2 gap-2">
-                {enabledMetrics.map((m) => {
-                  const asSg = m.key === 'brix' && settings.sugarUnit === 'sg';
-                  return (
-                    <label key={m.key} className="block">
-                      <span className="text-[11px] font-medium text-bark">
-                        {asSg ? 'SG (optional)' : `${m.label} (${m.unit}, optional)`}
-                      </span>
-                      <Input
-                        type="number"
-                        step={asSg ? 0.001 : m.step}
-                        inputMode="decimal"
-                        placeholder={asSg ? '1.050' : undefined}
-                        value={metrics[m.key] ?? ''}
-                        onChange={(e) => setMetric(m.key, e.target.value)}
-                        className="h-10 mt-0.5"
-                      />
-                    </label>
-                  );
-                })}
-              </div>
+          </div>
+        )}
+
+        {/*
+          ── Measurements ──
+
+          Its own section rather than a tail on fruit load: the load is a
+          glance at the whole tree, these are instruments applied to one
+          fruit, and they are usually taken on a handful of trees rather
+          than all of them.
+        */}
+        {inspections.has('fruit') && detailedFruit && enabledMetrics.length > 0 && (
+          <div className="space-y-2">
+            {sectionLabel(
+              'Measurements',
+              enabledMetrics.some((m) => (metrics[m.key] ?? '') !== ''),
+              {
+                summary:
+                  'Optional readings taken off one representative fruit. Leave any of them blank.',
+                scale: 'Hover or tap the question mark on a field to see what its scale means.',
+              },
             )}
+            <div className="grid grid-cols-2 gap-2">
+              {enabledMetrics.map((m) => {
+                const isSugar = m.key === 'brix';
+                const isSize = m.key === 'size_mm';
+                const asSg = isSugar && sugarUnit === 'sg';
+                const asInches = isSize && sizeUnit === 'in';
+                const help = METRIC_HELP[m.key];
+                const label = asSg
+                  ? 'Specific gravity'
+                  : isSize
+                    ? 'Fruit size'
+                    : m.label.replace(/\s*\([^)]*\)\s*$/, '');
+                const unit = asSg ? 'SG' : asInches ? 'in' : m.unit;
+                return (
+                  <div key={m.key} className="min-w-0">
+                    <span className="flex items-center gap-1 text-[11px] font-medium text-bark">
+                      <span className="truncate">{label}</span>
+                      {help && <FieldHelp summary={help.summary} scale={help.scale} />}
+                      {/* The unit is the choice, so it is the control. */}
+                      {isSugar || isSize ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            isSugar
+                              ? setSugarUnit(asSg ? 'brix' : 'sg')
+                              : setSizeUnit(asInches ? 'mm' : 'in')
+                          }
+                          className="ml-auto shrink-0 rounded border border-line px-1.5 py-0.5 text-[10px] font-semibold uppercase text-bark hover:bg-canopy-50 hover:text-ink"
+                          title={
+                            isSugar
+                              ? 'Switch between °Brix and specific gravity'
+                              : 'Switch between millimetres and inches'
+                          }
+                        >
+                          {unit} ⇄
+                        </button>
+                      ) : (
+                        <span className="ml-auto shrink-0 text-[10px] uppercase text-bark/70">
+                          {unit}
+                        </span>
+                      )}
+                    </span>
+                    <Input
+                      type="number"
+                      step={asSg ? 0.001 : asInches ? 0.1 : m.step}
+                      inputMode="decimal"
+                      placeholder={asSg ? '1.050' : asInches ? '2.4' : undefined}
+                      value={metrics[m.key] ?? ''}
+                      onChange={(e) => setMetric(m.key, e.target.value)}
+                      className="h-10 mt-0.5"
+                    />
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
