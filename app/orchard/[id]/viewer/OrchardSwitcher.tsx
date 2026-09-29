@@ -8,7 +8,7 @@ interface OrchardSwitcherProps {
   orchards: OrchardConfig[];
   currentId: string;
   /** Destination page for a picked orchard (serializable across RSC boundary). */
-  target?: 'map' | 'dashboard';
+  target?: 'map' | 'dashboard' | 'trees';
 }
 
 export default function OrchardSwitcher({
@@ -17,7 +17,11 @@ export default function OrchardSwitcher({
   target = 'map',
 }: OrchardSwitcherProps) {
   const hrefFor = (id: string) =>
-    target === 'dashboard' ? `/orchard/${id}/dashboard` : `/orchard/${id}`;
+    target === 'dashboard'
+      ? `/orchard/${id}/dashboard`
+      : target === 'trees'
+        ? `/orchard/${id}/trees`
+        : `/orchard/${id}`;
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
