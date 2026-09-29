@@ -102,6 +102,13 @@ export default async function DashboardPage({ params }: PageProps) {
               Block
             </Link>
             <Link
+              href={`/harvest?orchard=${orchard.id}`}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-bark hover:text-ink rounded-lg hover:bg-canopy-50 dark:hover:bg-canopy-600/10 whitespace-nowrap"
+            >
+              <CalendarRange aria-hidden size={15} />
+              Harvest
+            </Link>
+            <Link
               href={`/orchard/${orchard.id}/trees`}
               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-bark hover:text-ink rounded-lg hover:bg-canopy-50 dark:hover:bg-canopy-600/10 whitespace-nowrap"
             >
