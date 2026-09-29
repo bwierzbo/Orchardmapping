@@ -21,6 +21,13 @@ export interface VarietyOption {
   inLibrary: boolean;
   /** How many trees in this orchard already carry it. */
   treeCount: number;
+  /**
+   * apple, pear, plum, … from the library. Null for a name that only
+   * exists on trees here, which the library has never seen -- those are
+   * offered whatever species is being placed, since nothing says they
+   * are the wrong one.
+   */
+  fruitType: string | null;
 }
 
 export async function listVarietyOptions(orchardId: string): Promise<VarietyOption[]> {
@@ -82,6 +89,7 @@ export async function listVarietyOptions(orchardId: string): Promise<VarietyOpti
       summary: bits.length > 0 ? bits.join(' · ') : null,
       inLibrary: Boolean(r.known),
       treeCount: count,
+      fruitType: r.fruit_type == null ? null : String(r.fruit_type),
     };
   });
 }

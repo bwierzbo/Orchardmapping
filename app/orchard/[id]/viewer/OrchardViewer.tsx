@@ -13,7 +13,9 @@ import { STATUS_COLORS } from '@/lib/trees-geojson';
 import { STATUS_LABEL } from '@/components/StatusBadge';
 import { ensurePmtilesProtocol } from '@/lib/pmtiles-protocol';
 import { toast } from 'sonner';
-import { normalizeRowId } from '@/lib/address';
+import { normalizeAddressPart, normalizeRowId } from '@/lib/address';
+import { aimPixel } from '@/lib/aim-point';
+import { useCoarsePointer } from '@/lib/use-coarse-pointer';
 import { comparePositions, nextPosition } from '@/lib/position';
 import BulkTreeImport from '../components/BulkTreeImport';
 import { useTrees } from './useTrees';
@@ -28,7 +30,24 @@ import {
   normalizeWalkSettings,
   type WalkSettings,
 } from '@/lib/settings';
-import EditModePanel from './EditModePanel';
+import AddTreesPanel from './AddTreesPanel';
+import AimCrosshair from './AimCrosshair';
+
+/**
+ * What a tree gets when it is placed. Passed explicitly rather than read
+ * off a ref inside the callback: a ref touched by a hook becomes owned by
+ * it, and the effect that keeps it current can no longer write to it.
+ */
+interface PlacementFields {
+  editMode: boolean;
+  block: string;
+  row: string;
+  position: string;
+  autoIncrement: boolean;
+  placeFruitType: string;
+  placeVariety: string;
+  placeStatus: TreeStatus;
+}
 import TreeGridEditor from './TreeGridEditor';
 import { useLasso, type Ring } from './useLasso';
 import { treesInRing, applyLasso, type LassoMode } from '@/lib/lasso';
@@ -203,34 +222,93 @@ export default function OrchardViewer({
     setPicked(new Set());
     setLassoMode(null);
   }, []);
+  const [block, setBlock] = useState('');
   const [row, setRowState] = useState('');
   const [position, setPosition] = useState('1');
   const [autoIncrement, setAutoIncrement] = useState(true);
+  const [placeFruitType, setPlaceFruitType] = useState('apple');
   const [placeVariety, setPlaceVariety] = useState('');
-  const [placeStatus, setPlaceStatus] = useState<TreeStatus>('healthy');
+  // Mapping where trees stand is not assessing them -- that is what a walk
+  // survey does. Defaulting to healthy would record an opinion of every
+  // tree that nobody actually formed.
+  const [placeStatus, setPlaceStatus] = useState<TreeStatus>('unknown');
   const [placedCount, setPlacedCount] = useState(0);
   const [lastPlacedId, setLastPlacedId] = useState<string | null>(null);
+  // The tree being placed, before it is accepted. On a fine pointer it is
+  // set by clicking and dragged to adjust; on a touch screen it follows the
+  // crosshair as the map is panned under it.
+  const [pendingPin, setPendingPin] = useState<{ lat: number; lng: number } | null>(null);
+  const [savingTree, setSavingTree] = useState(false);
+  const coarsePointer = useCoarsePointer();
+  // Aiming is the touch flow: crosshair fixed, map panned under it. There is
+  // always somewhere to accept, so the button is never dead.
+  const aiming = coarsePointer;
+  // The toolbar splits on the same signal. Standing in a row you want the
+  // four things done on foot; lassoing trees, drawing areas, reading a
+  // drone orthomosaic and picking over a CSV all want a mouse, and on a
+  // phone they only crowd out the ones you came for.
+  const atDesk = !coarsePointer;
 
-  // Rows that already exist (normalized, numerically sorted first)
+  // Blocks that already exist, so the field suggests rather than invites a
+  // new spelling of one that is already there.
+  const existingBlocks = useMemo(() => {
+    const blocks = new Set<string>();
+    for (const t of trees) {
+      const b = normalizeAddressPart(t.block_id);
+      if (b) blocks.add(b);
+    }
+    return [...blocks].sort((a, b) => a.localeCompare(b));
+  }, [trees]);
+
+  // Fruit types to suggest: what is planted here, plus a common set.
+  const [fruitTypes, setFruitTypes] = useState<string[]>([]);
+  useEffect(() => {
+    let live = true;
+    trpc.tree.fruitTypes
+      .query({ orchardId: orchard.id })
+      .then((f) => {
+        if (live) setFruitTypes(f);
+      })
+      .catch(() => {
+        // The field is free text; suggestions are a convenience, not a gate.
+      });
+    return () => {
+      live = false;
+    };
+  }, [orchard.id]);
+
+  // Rows that already exist in the block being worked, numerically first.
+  // Scoped to the block: row 3 of the Upper block and row 3 of the Lower
+  // block are different rows, and merging them would suggest positions
+  // from a row on the other side of the orchard.
   const existingRows = useMemo(() => {
+    const wanted = normalizeAddressPart(block);
     const rows = new Set<string>();
-    for (const t of trees) if (t.row_id) rows.add(normalizeRowId(t.row_id));
+    for (const t of trees) {
+      if (wanted && normalizeAddressPart(t.block_id) !== wanted) continue;
+      if (t.row_id) rows.add(normalizeRowId(t.row_id));
+    }
     return [...rows].sort((a, b) => {
       const na = parseInt(a, 10);
       const nb = parseInt(b, 10);
       if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
       return a.localeCompare(b);
     });
-  }, [trees]);
+  }, [trees, block]);
 
   // Next open position in a row: advance the row's highest label
   // ("12"→"13", "2N"→"3N"); "1" for an empty row, or the highest label
   // itself when it has no number to advance.
-  const nextPositionForRow = useCallback(
-    (rowId: string): string => {
+  // Takes the block explicitly: the caller changing the block has the new
+  // value before state has caught up, and reading `block` here would scope
+  // the search to the block being left.
+  const nextPositionForRowIn = useCallback(
+    (blockId: string, rowId: string): string => {
       const norm = normalizeRowId(rowId);
+      const wantedBlock = normalizeAddressPart(blockId);
       let max: string | null = null;
       for (const t of trees) {
+        if (wantedBlock && normalizeAddressPart(t.block_id) !== wantedBlock) continue;
         if (t.row_id && normalizeRowId(t.row_id) === norm && t.position) {
           if (max === null || comparePositions(t.position, max) > 0) max = t.position;
         }
@@ -241,6 +319,11 @@ export default function OrchardViewer({
     [trees]
   );
 
+  const nextPositionForRow = useCallback(
+    (rowId: string): string => nextPositionForRowIn(block, rowId),
+    [nextPositionForRowIn, block]
+  );
+
   // Changing the row jumps position to that row's next open slot
   const setRow = useCallback(
     (value: string) => {
@@ -248,6 +331,17 @@ export default function OrchardViewer({
       if (value.trim()) setPosition(nextPositionForRow(value));
     },
     [nextPositionForRow]
+  );
+
+  // Moving to another block re-reads the current row inside it, so the
+  // position picks up where that block's row left off rather than where
+  // the previous block's did.
+  const handleBlockChange = useCallback(
+    (value: string) => {
+      setBlock(value);
+      if (row.trim()) setPosition(nextPositionForRowIn(value, row));
+    },
+    [row, nextPositionForRowIn]
   );
 
   const handleNextRow = useCallback(() => {
@@ -596,15 +690,152 @@ export default function OrchardViewer({
     onMove: handleMove,
   });
 
-  // ---- edit-mode placement clicks ----
-  const placementRef = useRef({
-    editMode, canEdit, row, position, autoIncrement,
-    placeVariety, placeStatus, trapMode, trapType, trapLabel,
+  /**
+   * Put a tree at one point, wherever the point came from: a map click on
+   * the desktop, or the device's own position on a phone. One path, so the
+   * two ways in cannot drift on what gets saved or what the undo restores.
+   */
+  const placeTreeAt = useCallback(
+    async (lat: number, lng: number, p: PlacementFields): Promise<boolean> => {
+      if (!p.row.trim() || !p.position.trim()) {
+        showToast('warning', 'Enter a row and position before placing a tree');
+        return false;
+      }
+      const placedAt = p.position;
+      const tree = await create({
+        block_id: p.block.trim() || undefined,
+        row_id: p.row,
+        position: p.position,
+        lat,
+        lng,
+        status: p.placeStatus,
+        fruit_type: p.placeFruitType.trim() || undefined,
+        variety: p.placeVariety.trim() || undefined,
+      });
+      if (!tree) return false;
+      if (p.autoIncrement) setPosition((prev) => nextPosition(prev) ?? prev);
+      setPlacedCount((n) => n + 1);
+      setLastPlacedId(tree.tree_id);
+      toast.success(`Placed ${tree.tree_id}`, {
+        action: {
+          label: 'Undo',
+          onClick: () => {
+            remove(tree.tree_id);
+            setLastPlacedId((id) => (id === tree.tree_id ? null : id));
+            setPlacedCount((n) => Math.max(0, n - 1));
+            setPosition(placedAt);
+          },
+        },
+      });
+      return true;
+    },
+    [create, remove, showToast]
+  );
+
+  /**
+   * Commit the spot currently being aimed at. Aiming reads the crosshair,
+   * which is a fixed point on screen, so the answer is whatever the map has
+   * been panned under it; pinning reads the dropped pin.
+   */
+  const acceptTree = useCallback(async () => {
+    const m = mapRef.current;
+    if (!m) return;
+    let spot = pendingPin;
+    if (aiming) {
+      const canvas = m.getCanvas();
+      const { x, y } = aimPixel(canvas.clientWidth, canvas.clientHeight);
+      const at = m.unproject([x, y]);
+      spot = { lat: at.lat, lng: at.lng };
+    }
+    if (!spot) return;
+    setSavingTree(true);
+    try {
+      const placed = await placeTreeAt(spot.lat, spot.lng, {
+        editMode,
+        block,
+        row,
+        position,
+        autoIncrement,
+        placeFruitType,
+        placeVariety,
+        placeStatus,
+      });
+      // The pin is cleared only on success, so a rejected save leaves the
+      // spot where it was rather than making the person find it again.
+      if (placed) setPendingPin(null);
+    } finally {
+      setSavingTree(false);
+    }
+  }, [
+    aiming,
+    pendingPin,
+    placeTreeAt,
+    editMode,
+    block,
+    row,
+    position,
+    autoIncrement,
+    placeFruitType,
+    placeVariety,
+    placeStatus,
+  ]);
+
+  // The dropped pin, as a draggable marker. Only for the mouse flow --
+  // aiming has the crosshair instead, and a marker there would be a second
+  // thing to chase around a small screen.
+  const pendingMarkerRef = useRef<maplibregl.Marker | null>(null);
+  useEffect(() => {
+    const m = mapObj;
+    if (!m) return;
+    if (aiming || !editMode || !pendingPin) {
+      pendingMarkerRef.current?.remove();
+      pendingMarkerRef.current = null;
+      return;
+    }
+    if (!pendingMarkerRef.current) {
+      const el = document.createElement('div');
+      el.className =
+        'w-5 h-5 rounded-full border-[3px] border-white bg-flag-600 shadow-lg cursor-grab';
+      el.setAttribute('aria-label', 'Tree being placed');
+      const marker = new maplibregl.Marker({ element: el, draggable: true })
+        .setLngLat([pendingPin.lng, pendingPin.lat])
+        .addTo(m);
+      marker.on('dragend', () => {
+        const at = marker.getLngLat();
+        setPendingPin({ lat: at.lat, lng: at.lng });
+      });
+      pendingMarkerRef.current = marker;
+    } else {
+      pendingMarkerRef.current.setLngLat([pendingPin.lng, pendingPin.lat]);
+    }
+  }, [mapObj, aiming, editMode, pendingPin]);
+
+  const stopAdding = useCallback(() => {
+    setEditMode(false);
+    setPendingPin(null);
+  }, []);
+
+  const toggleAdding = useCallback(() => {
+    setEditMode((v) => {
+      if (v) setPendingPin(null);
+      return !v;
+    });
+  }, []);
+
+  // ---- placement clicks (adding trees, hanging traps) ----
+  const placementRef = useRef<PlacementFields & {
+    canEdit: boolean;
+    trapMode: boolean;
+    trapType: typeof trapType;
+    trapLabel: string;
+  }>({
+    editMode, canEdit, block, row, position, autoIncrement,
+    placeFruitType, placeVariety, placeStatus, trapMode, trapType, trapLabel,
   });
   useEffect(() => {
     placementRef.current = {
-      editMode, canEdit, row, position, autoIncrement,
-      placeVariety, placeStatus, trapMode, trapType, trapLabel,
+      editMode, canEdit, block, row, position, autoIncrement,
+      placeFruitType, placeVariety, placeStatus, trapMode, trapType, trapLabel,
     };
   });
   useEffect(() => {
@@ -644,34 +875,9 @@ export default function OrchardViewer({
       // Clicking an existing tree/cluster selects it instead of placing
       const layers = ['trees-circles', 'trees-clusters'].filter((l) => m.getLayer(l));
       if (layers.length && m.queryRenderedFeatures(e.point, { layers }).length > 0) return;
-      if (!p.row.trim() || !p.position.trim()) {
-        showToast('warning', 'Enter a row/block and position before placing a tree');
-        return;
-      }
-      const tree = await create({
-        row_id: p.row,
-        position: p.position,
-        lat: e.lngLat.lat,
-        lng: e.lngLat.lng,
-        status: p.placeStatus,
-        variety: p.placeVariety.trim() || undefined,
-      });
-      if (tree) {
-        if (p.autoIncrement) setPosition((prev) => nextPosition(prev) ?? prev);
-        setPlacedCount((n) => n + 1);
-        setLastPlacedId(tree.tree_id);
-        toast.success(`Placed ${tree.tree_id}`, {
-          action: {
-            label: 'Undo',
-            onClick: () => {
-              remove(tree.tree_id);
-              setLastPlacedId((id) => (id === tree.tree_id ? null : id));
-              setPlacedCount((n) => Math.max(0, n - 1));
-              setPosition(p.position);
-            },
-          },
-        });
-      }
+      // Nothing is written on a click: it sets the spot, which can then be
+      // dragged, and Accept commits it.
+      setPendingPin({ lat: e.lngLat.lat, lng: e.lngLat.lng });
     };
 
     m.on('click', onClick);
@@ -697,15 +903,16 @@ export default function OrchardViewer({
         else if (areaMode) {
           if (selectedAreaId !== null) setSelectedAreaId(null);
           else setAreaMode(false);
-        } else if (editMode) setEditMode(false);
+        } else if (editMode) stopAdding();
       } else if (e.key === 'e' && canEdit && !detectMode) {
         setAreaMode(false);
-        setEditMode((v) => !v);
+        toggleAdding();
       }
     },
     [
       selectedTreeId, clear, editMode, canEdit, areaMode, selectedAreaId,
       detectMode, selectedTrapId, trapMode, lassoMode, picked, clearPicked,
+      stopAdding, toggleAdding,
     ]
   );
 
@@ -869,7 +1076,7 @@ export default function OrchardViewer({
             <p className="text-sm font-medium text-ink">No trees mapped yet</p>
             <p className="text-xs text-bark mt-1">
               {canEdit
-                ? 'Enter edit mode to place trees, or import a CSV.'
+                ? 'Tap “Add Trees” to place them, or import a CSV.'
                 : 'Sign in to start mapping trees.'}
             </p>
           </div>
@@ -877,7 +1084,7 @@ export default function OrchardViewer({
       )}
 
       {/* Bottom toolbar */}
-      <div className="absolute bottom-[max(2rem,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-10 flex gap-2">
+      <div className="absolute bottom-[max(2rem,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-10 flex flex-wrap justify-center gap-2 max-w-[calc(100vw-2rem)]">
         {!canEdit && (
           <Link
             href={`/login?redirect_url=${encodeURIComponent(`/orchard/${orchard.id}`)}`}
@@ -886,7 +1093,7 @@ export default function OrchardViewer({
             Sign in to edit
           </Link>
         )}
-        {canEdit && !editMode && !detectMode && (
+        {atDesk && canEdit && !editMode && !detectMode && (
           <BulkTreeImport orchardId={orchard.id} existingTrees={trees} onImportComplete={refresh} />
         )}
         {canEdit && !editMode && !walkMode && !areaMode && !detectMode && (
@@ -897,7 +1104,7 @@ export default function OrchardViewer({
             enabled={photoSettings.geotagOnMap}
           />
         )}
-        {canEdit && !editMode && !walkMode && !areaMode && !detectMode && (
+        {atDesk && canEdit && !editMode && !walkMode && !areaMode && !detectMode && (
           <button
             onClick={() => setDetectMode(true)}
             className="px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-surface text-ink hover:bg-canopy-50"
@@ -913,25 +1120,29 @@ export default function OrchardViewer({
             >
               Walk Survey
             </button>
-            <button
-              onClick={() => setLassoMode('replace')}
-              className="px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-surface text-ink hover:bg-canopy-50"
-            >
-              Select Trees
-            </button>
-            <button
-              onClick={() => setGroupActionOpen(true)}
-              className="px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-surface text-ink hover:bg-canopy-50"
-            >
-              Group Action
-            </button>
+            {atDesk && (
+              <>
+                <button
+                  onClick={() => setLassoMode('replace')}
+                  className="px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-surface text-ink hover:bg-canopy-50"
+                >
+                  Select Trees
+                </button>
+                <button
+                  onClick={() => setGroupActionOpen(true)}
+                  className="px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-surface text-ink hover:bg-canopy-50"
+                >
+                  Group Action
+                </button>
+              </>
+            )}
           </>
         )}
         {canEdit && !walkMode && !areaMode && !detectMode && !trapMode && (
           <button
             onClick={() => {
               setAreaMode(false);
-              setEditMode((v) => !v);
+              toggleAdding();
             }}
             className={`px-4 py-3 rounded-lg shadow-lg text-sm font-medium ${
               editMode
@@ -939,7 +1150,7 @@ export default function OrchardViewer({
                 : 'bg-surface text-ink hover:bg-canopy-50'
             }`}
           >
-            {editMode ? 'Exit Edit Mode' : 'Enter Edit Mode'}
+            {editMode ? 'Done Adding' : 'Add Trees'}
           </button>
         )}
         {canEdit && !walkMode && !editMode && !areaMode && !detectMode && (
@@ -957,10 +1168,10 @@ export default function OrchardViewer({
             {trapMode ? 'Done Hanging' : 'Traps'}
           </button>
         )}
-        {canEdit && !walkMode && !editMode && !detectMode && !trapMode && (
+        {atDesk && canEdit && !walkMode && !editMode && !detectMode && !trapMode && (
           <button
             onClick={() => {
-              setEditMode(false);
+              stopAdding();
               setSelectedAreaId(null);
               setAreaMode((v) => !v);
             }}
@@ -1123,25 +1334,37 @@ export default function OrchardViewer({
         />
       )}
 
+      {editMode && canEdit && aiming && <AimCrosshair />}
+
       {editMode && canEdit && (
-        <EditModePanel
+        <AddTreesPanel
           orchardId={orchard.id}
+          block={block}
           row={row}
           position={position}
           autoIncrement={autoIncrement}
+          fruitType={placeFruitType}
+          fruitTypes={fruitTypes}
           variety={placeVariety}
           status={placeStatus}
+          existingBlocks={existingBlocks}
           existingRows={existingRows}
           placedCount={placedCount}
           canUndo={lastPlacedId !== null}
+          aiming={aiming}
+          hasSpot={aiming || pendingPin !== null}
+          saving={savingTree}
+          onBlockChange={handleBlockChange}
           onRowChange={setRow}
           onPositionChange={setPosition}
           onAutoIncrementChange={setAutoIncrement}
+          onFruitTypeChange={setPlaceFruitType}
           onVarietyChange={setPlaceVariety}
           onStatusChange={setPlaceStatus}
+          onAccept={acceptTree}
           onNextRow={handleNextRow}
           onUndoLast={handleUndoLast}
-          onExit={() => setEditMode(false)}
+          onExit={stopAdding}
         />
       )}
 
