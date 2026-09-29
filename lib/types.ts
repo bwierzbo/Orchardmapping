@@ -1,3 +1,4 @@
+import type { HarvestPurpose } from './harvest-target';
 /**
  * Shared domain types used across server and client.
  */
@@ -58,6 +59,12 @@ export interface OrchardConfig {
   ipmEnabled: boolean;
   /** Same, for the nutrition programme. */
   nutritionEnabled: boolean;
+  /**
+   * What the fruit here is for. Sets the maturity target and the shape of
+   * the picking window: cider fruit comes off riper and the window stays
+   * open through the drop, fresh fruit comes off firm and closes quickly.
+   */
+  harvestPurpose: HarvestPurpose;
   stats?: {
     trees?: number;
     blocks?: number;

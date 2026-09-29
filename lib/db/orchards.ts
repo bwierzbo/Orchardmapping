@@ -68,6 +68,7 @@ export interface Orchard {
   // opt-in since migration 063 — see the column comments for why.
   ipm_enabled?: boolean;
   nutrition_enabled?: boolean;
+  harvest_purpose?: string;
   // Timestamps
   created_at?: Date;
   updated_at?: Date;
@@ -145,6 +146,9 @@ export function dbRowToOrchardConfig(row: Orchard): OrchardConfig {
     // safe reading, matching the column default.
     ipmEnabled: row.ipm_enabled === true,
     nutritionEnabled: row.nutrition_enabled === true,
+    // Fresh is the column default and the safe reading of a row written
+    // before migration 066: an orchard someone has mapped is not a cidery.
+    harvestPurpose: row.harvest_purpose === 'cider' ? 'cider' : 'fresh',
   };
 }
 
