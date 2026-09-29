@@ -6,7 +6,7 @@ import { auth } from '@clerk/nextjs/server';
 import type { Metadata } from 'next';
 import {
   ArrowLeft, BarChart3, Bug, CalendarRange, FlaskConical,
-  Map as MapIcon, SprayCan, Target, Users } from 'lucide-react';
+  Map as MapIcon, SprayCan, Table2, Target, Users } from 'lucide-react';
 import { getOrchardConfigById } from '@/lib/db/orchards';
 import { getTreesByOrchard } from '@/lib/db/trees';
 import { serializeTree } from '@/lib/serialize';
@@ -100,6 +100,13 @@ export default async function DashboardPage({ params }: PageProps) {
             >
               <BarChart3 aria-hidden size={15} />
               Block
+            </Link>
+            <Link
+              href={`/orchard/${orchard.id}/trees`}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-bark hover:text-ink rounded-lg hover:bg-canopy-50 dark:hover:bg-canopy-600/10 whitespace-nowrap"
+            >
+              <Table2 aria-hidden size={15} />
+              Trees
             </Link>
             {orchard.ipmEnabled && (
               <Link

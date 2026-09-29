@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { BarChart3, CalendarRange, Eye } from 'lucide-react';
+import { BarChart3, CalendarRange, Eye, Table2 } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { OrchardConfig, ClientTree, TreeStatus } from '@/lib/types';
@@ -982,6 +982,21 @@ export default function OrchardViewer({
           <BarChart3 aria-hidden size={18} />
           Dashboard
         </button>
+
+        {/*
+          The whole inventory as a spreadsheet. Desktop only: reading rows
+          of columns wants a screen, and on a phone the map is the point.
+        */}
+        {atDesk && (
+          <button
+            onClick={() => router.push(`/orchard/${orchard.id}/trees`)}
+            title="Every tree in a table"
+            className="inline-flex items-center gap-1.5 bg-surface rounded-lg shadow-lg px-2.5 py-2 text-sm font-medium text-ink hover:bg-canopy-50"
+          >
+            <Table2 aria-hidden size={18} />
+            Trees
+          </button>
+        )}
 
         {/*
           Two readings of the same dots. Kept as a mode rather than a
