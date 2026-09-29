@@ -8,7 +8,7 @@ import { TREE_STATUSES } from '@/lib/types';
 import { STATUS_COLORS } from '@/lib/trees-geojson';
 import StatusBadge, { STATUS_LABEL } from '@/components/StatusBadge';
 import { formatYMD } from '@/lib/dates';
-import { normalizeRowId } from '@/lib/address';
+import { compareRowIds, normalizeRowId } from '@/lib/address';
 import { useRouter } from 'next/navigation';
 import TreeGridEditor from '../viewer/TreeGridEditor';
 import { comparePositions } from '@/lib/position';
@@ -45,16 +45,6 @@ const COLUMNS: Column[] = [
   { key: 'last_harvest', label: 'Harvest' },
   { key: 'yield_estimate', label: 'Yield kg', numeric: true },
 ];
-
-function rowCompare(a: string | null, b: string | null): number {
-  if (a === null && b === null) return 0;
-  if (a === null) return 1;
-  if (b === null) return -1;
-  const na = parseInt(a, 10);
-  const nb = parseInt(b, 10);
-  if (/^\d+$/.test(a) && /^\d+$/.test(b)) return na - nb;
-  return a.localeCompare(b);
-}
 
 function sortValue(tree: ClientTree, key: SortKey): string | number | null {
   switch (key) {
@@ -119,13 +109,13 @@ export default function TreeTable({
       if (va === null) return 1;
       if (vb === null) return -1;
       let cmp: number;
-      if (sortKey === 'row') cmp = rowCompare(va as string, vb as string);
+      if (sortKey === 'row') cmp = compareRowIds(va as string, vb as string);
       else if (sortKey === 'position') cmp = comparePositions(String(va), String(vb));
       else if (typeof va === 'number' && typeof vb === 'number') cmp = va - vb;
       else cmp = String(va).localeCompare(String(vb));
       if (cmp !== 0) return cmp * dir;
       // stable tiebreak: row then position
-      const rowCmp = rowCompare(
+      const rowCmp = compareRowIds(
         a.row_id ? normalizeRowId(a.row_id) : null,
         b.row_id ? normalizeRowId(b.row_id) : null
       );

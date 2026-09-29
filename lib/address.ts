@@ -90,3 +90,23 @@ export function formatTreeLabel(tree: TreeAddress & { tree_no?: number | null })
   const address = formatAddress(tree);
   return tree.tree_no == null ? address : `Tree ${tree.tree_no} · ${address}`;
 }
+
+/**
+ * Order two row labels the way a person walks them: 1, 2, 10 rather than
+ * 1, 10, 2, with named rows ("Espalier", "Berries North") after the
+ * numbered ones and an absent row last of all.
+ */
+export function compareRowIds(a: string | null, b: string | null): number {
+  const left = normalizeAddressPart(a);
+  const right = normalizeAddressPart(b);
+  if (left === null && right === null) return 0;
+  if (left === null) return 1;
+  if (right === null) return -1;
+  const leftNumeric = /^\d+$/.test(left);
+  const rightNumeric = /^\d+$/.test(right);
+  if (leftNumeric && rightNumeric) return parseInt(left, 10) - parseInt(right, 10);
+  // A numbered row comes before a named one: rows are walked in order and
+  // the named ones ("Espalier") are the odd additions at the end.
+  if (leftNumeric !== rightNumeric) return leftNumeric ? -1 : 1;
+  return left.localeCompare(right);
+}
