@@ -29,6 +29,7 @@ function orchard(overrides: Partial<OrchardConfig> = {}): OrchardConfig {
     maxZoom: 21.5,
     ipmEnabled: true,
     nutritionEnabled: true,
+    harvestPurpose: 'cider',
     tileMinZoom: 5,
     tileMaxZoom: 23,
     orthoPath: '',
