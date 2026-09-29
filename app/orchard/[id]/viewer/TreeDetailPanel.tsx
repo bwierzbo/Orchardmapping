@@ -127,6 +127,42 @@ export default function TreeDetailPanel({
     return true;
   };
   const [historyVersion, setHistoryVersion] = useState(0);
+  // Notes are edited in place rather than through the whole form: a note is
+  // the thing most often added to a tree and the least worth opening an
+  // eleven-field editor for.
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [notesDraft, setNotesDraft] = useState('');
+  const [savingNotes, setSavingNotes] = useState(false);
+
+  const startNotes = () => {
+    setNotesDraft(tree.notes ?? '');
+    setEditingNotes(true);
+  };
+
+  const saveNotes = async () => {
+    const next = notesDraft.trim();
+    const current = (tree.notes ?? '').trim();
+    if (next === current) {
+      setEditingNotes(false);
+      return;
+    }
+    setSavingNotes(true);
+    try {
+      // Same path as the full edit and the grid: one transaction, recorded
+      // in this tree's history like any other change.
+      await trpc.tree.editMany.mutate({
+        orchardId: tree.orchard_id,
+        edits: [{ treeId: tree.tree_id, fields: { notes: next === '' ? null : next } }],
+      });
+      toast.success('Notes saved');
+      setEditingNotes(false);
+      onMoved();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not save the notes');
+    } finally {
+      setSavingNotes(false);
+    }
+  };
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [form, setForm] = useState<TreeUpdateInput>({});
 
@@ -319,12 +355,47 @@ export default function TreeDetailPanel({
             {field('Last pruned', formatYMD(tree.last_pruned))}
             {field('Last harvest', formatYMD(tree.last_harvest))}
             {field('Yield estimate', tree.yield_estimate != null ? `${tree.yield_estimate} kg` : null)}
-            {tree.notes ? (
-              <div className="py-2">
+            <div className="py-2">
+              <div className="flex items-center justify-between gap-2">
                 <span className="text-sm text-bark">Notes</span>
-                <p className="text-sm text-ink mt-0.5 whitespace-pre-wrap">{tree.notes}</p>
+                {canEdit && !editingNotes && (
+                  <Button variant="ghost" size="sm" onClick={startNotes}>
+                    {tree.notes ? 'Edit' : 'Add a note'}
+                  </Button>
+                )}
               </div>
-            ) : null}
+              {editingNotes ? (
+                <div className="mt-1 space-y-2">
+                  <Textarea
+                    value={notesDraft}
+                    onChange={(e) => setNotesDraft(e.target.value)}
+                    rows={4}
+                    autoFocus
+                    placeholder="Anything worth knowing about this tree — how it crops, where it leans, what it was grafted onto."
+                  />
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setEditingNotes(false)}
+                      disabled={savingNotes}
+                    >
+                      Cancel
+                    </Button>
+                    <Button size="sm" onClick={saveNotes} disabled={savingNotes}>
+                      {savingNotes ? 'Saving…' : 'Save'}
+                    </Button>
+                  </div>
+                </div>
+              ) : tree.notes ? (
+                <p className="text-sm text-ink mt-0.5 whitespace-pre-wrap">{tree.notes}</p>
+              ) : (
+                <p className="text-sm text-bark/60 mt-0.5">
+                  Nothing recorded. This is what the tree is generally like; dated entries go in
+                  its history below.
+                </p>
+              )}
+            </div>
             <TreeHistory
               key={tree.tree_id}
               treeId={tree.tree_id}

@@ -123,7 +123,9 @@ export default function TreeHistory({
         <span className="survey-caption">History</span>
         {canEdit && !logging && (
           <Button variant="ghost" size="sm" onClick={() => setLogging(true)}>
-            Log event
+            {/* "Log event" hid the note: this is also where a dated entry
+                against the tree goes, and nobody looked for it here. */}
+            Log event or note
           </Button>
         )}
       </div>
