@@ -79,15 +79,32 @@ export default function GroupActionDialog({
   orchardId,
   trees,
   onApplied,
+  initialKind = 'log_event',
+  initialFilter,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   orchardId: string;
   trees: ClientTree[];
   onApplied: () => void;
+  /** Open straight into one kind — "Harvest" on the toolbar means harvest. */
+  initialKind?: 'log_event' | 'set_field' | 'harvest';
+  /** Pre-scope the group, e.g. to the tree already selected on the map. */
+  initialFilter?: GroupFilter;
 }) {
-  const [filter, setFilter] = useState<GroupFilter>({});
-  const [kind, setKind] = useState<'log_event' | 'set_field' | 'harvest'>('log_event');
+  const [filter, setFilter] = useState<GroupFilter>(initialFilter ?? {});
+  const [kind, setKind] = useState<'log_event' | 'set_field' | 'harvest'>(initialKind);
+
+  // Reopening is a fresh action: a dialog that came back holding the last
+  // group's filter would apply this harvest to the wrong trees.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setKind(initialKind);
+      setFilter(initialFilter ?? {});
+    }
+  }
   // harvest fields
   const todayYMD = () => {
     const d = new Date();
