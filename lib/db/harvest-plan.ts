@@ -13,6 +13,8 @@ export interface HarvestPlanRow {
   daysFromBloom: number | null;
   basis: TargetBasis | null;
   detail: string | null;
+  /** False where this climate does not give the variety enough season. */
+  ripensHere: boolean;
   /** The library's own words, kept beside anything derived from them. */
   harvestWindow: string | null;
   /** Observed full bloom for this variety this season, if a mark exists. */
@@ -50,7 +52,7 @@ export async function harvestPlan(
     -- variety library resolves a name.
     target AS (
       SELECT DISTINCT ON (lower(btrim(variety)))
-             lower(btrim(variety)) AS key, days_from_bloom, basis, detail
+             lower(btrim(variety)) AS key, days_from_bloom, basis, detail, ripens_here
       FROM variety_harvest_targets
       WHERE purpose = ${purpose}
       ORDER BY lower(btrim(variety)), (site_id IS NULL)
@@ -73,7 +75,7 @@ export async function harvestPlan(
       ORDER BY lower(btrim(variety)), (site_id IS NULL)
     )
     SELECT p.variety, p.tree_count, p.orchard_count, p.fruit_type,
-           tg.days_from_bloom, tg.basis, tg.detail,
+           tg.days_from_bloom, tg.basis, tg.detail, tg.ripens_here,
            lb.harvest_window, bl.observed_on
     FROM planted p
     LEFT JOIN target  tg ON tg.key = lower(p.variety)
@@ -87,6 +89,7 @@ export async function harvestPlan(
     daysFromBloom: r.days_from_bloom == null ? null : Number(r.days_from_bloom),
     basis: (r.basis as TargetBasis | null) ?? null,
     detail: r.detail == null ? null : String(r.detail),
+    ripensHere: r.ripens_here !== false,
     harvestWindow: r.harvest_window == null ? null : String(r.harvest_window),
     bloom: r.observed_on == null ? null : String(r.observed_on).slice(0, 10),
     treeCount: Number(r.tree_count ?? 0),
