@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { BarChart3, CalendarRange, Eye, Table2 } from 'lucide-react';
+import { Apple, BarChart3, CalendarRange, Eye, Table2 } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { OrchardConfig, ClientTree, TreeStatus } from '@/lib/types';
@@ -131,6 +131,9 @@ export default function OrchardViewer({
 
   // Group actions (bulk event/field changes with undo)
   const [groupActionOpen, setGroupActionOpen] = useState(false);
+  // "Harvest" is the same dialog opened straight into its harvest kind, and
+  // it belongs on a phone: picking happens under the tree, not at a desk.
+  const [harvestOpen, setHarvestOpen] = useState(false);
 
   // Area features (garden beds, berry fields, …)
   const [areas, setAreas] = useState<OrchardArea[]>([]);
@@ -1168,6 +1171,24 @@ export default function OrchardViewer({
             {editMode ? 'Done Adding' : 'Add Trees'}
           </button>
         )}
+        {/*
+          Harvest is a field action, so it is not behind the desk split:
+          picking happens under the tree with a phone in hand.
+        */}
+        {canEdit && !editMode && !walkMode && !areaMode && !detectMode && !trapMode && trees.length > 0 && (
+          <button
+            onClick={() => setHarvestOpen(true)}
+            title={
+              selectedTreeId
+                ? 'Record a harvest from the selected tree'
+                : 'Record a harvest by block, variety or row'
+            }
+            className="inline-flex items-center gap-1.5 px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-surface text-ink hover:bg-canopy-50"
+          >
+            <Apple aria-hidden size={16} />
+            {selectedTreeId ? 'Harvest tree' : 'Harvest'}
+          </button>
+        )}
         {canEdit && !walkMode && !editMode && !areaMode && !detectMode && (
           <button
             onClick={() => {
@@ -1301,6 +1322,23 @@ export default function OrchardViewer({
         />
       )}
 
+      {/*
+        The same dialog, opened on harvest. Scoped to the selected tree when
+        there is one, so picking a single tree is two taps, and left open to
+        the block and variety chips when there is not.
+      */}
+      {harvestOpen && (
+        <GroupActionDialog
+          open={harvestOpen}
+          onOpenChange={setHarvestOpen}
+          orchardId={orchard.id}
+          trees={trees}
+          onApplied={refresh}
+          initialKind="harvest"
+          initialFilter={selectedTreeId ? { treeIds: [selectedTreeId] } : undefined}
+        />
+      )}
+
       {/* Walk (survey) mode sheet */}
       {walkMode && (
         <WalkMode
@@ -1388,6 +1426,7 @@ export default function OrchardViewer({
         <TreeDetailPanel
           key={selectedTree.tree_id}
           tree={selectedTree}
+          onRecordHarvest={() => setHarvestOpen(true)}
           canEdit={canEdit}
           saving={saving}
           walkSettings={walkSettings}

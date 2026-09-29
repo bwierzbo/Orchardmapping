@@ -43,6 +43,8 @@ interface TreeDetailPanelProps {
   onClose: () => void;
   onDelete: () => Promise<boolean>;
   onStartMove: () => void;
+  /** Record a harvest from this one tree. Omitted where there is nowhere to put it. */
+  onRecordHarvest?: () => void;
   /** Reload trees after an address change, which no longer alters the id. */
   onMoved: () => void;
   /** Status change from the Inspect form (same path as a walk). */
@@ -71,6 +73,7 @@ export default function TreeDetailPanel({
   onClose,
   onDelete,
   onStartMove,
+  onRecordHarvest,
   onMoved,
   onSetStatus,
   onInspected,
@@ -448,6 +451,14 @@ export default function TreeDetailPanel({
                 <Button variant="secondary" onClick={startEdit}>
                   Edit tree
                 </Button>
+                {/* Picking one tree at a time is how a lot of fruit comes
+                    off, and the panel is what is open when you are stood
+                    at it. Same record a block harvest writes. */}
+                {onRecordHarvest && (
+                  <Button variant="secondary" onClick={onRecordHarvest}>
+                    Harvest
+                  </Button>
+                )}
                 <Button onClick={() => setInspecting(true)}>Inspect</Button>
               </div>
             )}
