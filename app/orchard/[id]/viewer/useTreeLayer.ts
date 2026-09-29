@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import type { ClientTree, TreeStatus } from '@/lib/types';
+import { clearArea, panToReveal } from '@/lib/reveal-point';
 import { treesToFeatureCollection, STATUS_COLORS } from '@/lib/trees-geojson';
 import { BAND_STYLE, type RecencyBand } from '@/lib/inspection-recency';
 import { STATUS_LABEL } from '@/components/StatusBadge';
@@ -48,6 +49,12 @@ interface Options extends TreeLayerCallbacks {
   canEdit: boolean;
   statusFilter: ReadonlySet<TreeStatus> | null;
   selectedTreeId: string | null;
+  /**
+   * Pan a newly selected tree out from under the detail panel. Off in the
+   * modes that suppress that panel -- a walk, a move, a detection pass --
+   * where the map would slide for nothing the person can see.
+   */
+  revealSelected?: boolean;
   /** Trees picked out with the lasso, painted as a group. */
   multiSelected?: ReadonlySet<string> | null;
   walkProgress?: WalkProgressSets | null;
@@ -78,7 +85,7 @@ export function useTreeLayer(
   trees: ClientTree[],
   options: Options
 ) {
-  const { editMode, canEdit, statusFilter, selectedTreeId, onSelect, onMove } = options;
+  const { editMode, canEdit, statusFilter, selectedTreeId, revealSelected, onSelect, onMove } = options;
   const walkProgress = options.walkProgress ?? null;
   const multiSelected = options.multiSelected ?? null;
   const recency = options.recency ?? null;
@@ -424,9 +431,24 @@ export function useTreeLayer(
       if (tree) {
         map.setFeatureState({ source: SOURCE_ID, id: tree.id }, { selected: true });
         selectedNumericRef.current = tree.id;
+
+        // Bring it out from under the panel that is about to describe it.
+        // The panel is fixed -- a column down the right on a wide screen, a
+        // sheet across the bottom on a narrow one -- so a tree at the edge
+        // ends up behind it with no way to move either. Only pans when the
+        // tree is actually covered, so a tree in clear space does not lurch.
+        if (revealSelected && tree.lat != null && tree.lng != null) {
+          const canvas = map.getCanvas();
+          const point = map.project([tree.lng, tree.lat]);
+          const move = panToReveal(
+            { x: point.x, y: point.y },
+            clearArea(canvas.clientWidth, canvas.clientHeight)
+          );
+          if (move) map.panBy([move.dx, move.dy], { duration: 350 });
+        }
       }
     }
-  }, [map, mapReady, selectedTreeId, trees]);
+  }, [map, mapReady, selectedTreeId, trees, revealSelected]);
 
   // Lasso selection feature-state sync, same shape as walk progress
   // below: clear what was marked last time, then mark the current set.
