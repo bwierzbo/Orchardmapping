@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import { toast } from 'sonner';
 import { Loader2, ScanSearch } from 'lucide-react';
+import { nextScanPosition, blocksInUse } from '@/lib/scan-placement';
 import {
   ESRI_TILE_URL,
   DEFAULT_DETECT_OPTIONS,
@@ -109,6 +110,12 @@ export default function DetectTreesController({
   const [dropped, setDropped] = useState<ReadonlySet<number>>(new Set());
   const [spacing, setSpacing] = useState(DEFAULT_DETECT_OPTIONS.minSpacingM);
   const [threshold, setThreshold] = useState(DEFAULT_DETECT_OPTIONS.threshold);
+  // Where the scan's trees land. Blank by default and blank is a real
+  // answer: a detected tree whose address nobody chose has no address, and
+  // saying so is honest. Writing a made-up row was not -- it filed 31 trees
+  // at Prairie Pride in a row called "Scan" that no one had ever walked.
+  const [saveBlock, setSaveBlock] = useState('');
+  const [saveRow, setSaveRow] = useState('');
   const mosaicRef = useRef<Mosaic | null>(null);
   const ringRef = useRef<[number, number][]>([]);
 
@@ -320,14 +327,9 @@ export default function DetectTreesController({
   const save = async () => {
     const keep = found.filter((_, i) => !dropped.has(i));
     if (keep.length === 0) return;
-    // Continue Scan-row numbering across repeat runs
-    let nextPos = 1;
-    for (const t of trees) {
-      if (t.row_id === 'Scan') {
-        const n = parseInt(String(t.position), 10);
-        if (Number.isFinite(n) && n >= nextPos) nextPos = n + 1;
-      }
-    }
+    const block = saveBlock.trim();
+    const row = saveRow.trim();
+    const nextPos = nextScanPosition(trees, block, row);
     // West→east so positions read across the block
     const ordered = [...keep].sort((a, b) => a.lng - b.lng);
     setPhase('saving');
@@ -339,7 +341,8 @@ export default function DetectTreesController({
         body: JSON.stringify({
           orchard_id: orchardId,
           updates: ordered.map((d, i) => ({
-            row_id: 'Scan',
+            block_id: block || null,
+            row_id: row || null,
             position: String(nextPos + i),
             lat: d.lat,
             lng: d.lng,
@@ -361,6 +364,8 @@ export default function DetectTreesController({
   if (!active) return null;
 
   const keptCount = found.length - dropped.size;
+  const existingBlocks = blocksInUse(trees);
+  const nextSavePosition = nextScanPosition(trees, saveBlock, saveRow);
 
   return (
     <div className="absolute top-20 left-4 z-20 bg-surface rounded-xl shadow-lg border border-canopy-600/30 p-4 w-[272px] max-h-[calc(100dvh-7rem)] overflow-y-auto">
@@ -460,6 +465,42 @@ export default function DetectTreesController({
               className="w-full accent-[rgb(var(--canopy-600))]"
             />
           </label>
+          {/* Asked before the trees are written, not after. Both may be
+              left blank: a scan that nobody has filed anywhere is better
+              recorded as having no address than as having an invented one. */}
+          <div className="grid grid-cols-2 gap-2 mb-1">
+            <label className="block">
+              <span className="text-xs font-medium text-bark">Block</span>
+              <input
+                type="text"
+                value={saveBlock}
+                onChange={(e) => setSaveBlock(e.target.value)}
+                placeholder="optional"
+                list="detect-blocks"
+                className="mt-1 w-full text-sm px-2.5 py-1.5 bg-surface text-ink border border-line rounded-md focus:outline-none focus:ring-2 focus:ring-canopy-600"
+              />
+              <datalist id="detect-blocks">
+                {existingBlocks.map((b) => (
+                  <option key={b} value={b} />
+                ))}
+              </datalist>
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium text-bark">Row</span>
+              <input
+                type="text"
+                value={saveRow}
+                onChange={(e) => setSaveRow(e.target.value)}
+                placeholder="optional"
+                className="mt-1 w-full text-sm px-2.5 py-1.5 bg-surface text-ink border border-line rounded-md focus:outline-none focus:ring-2 focus:ring-canopy-600"
+              />
+            </label>
+          </div>
+          <p className="text-[11px] text-bark/80 mb-3">
+            {saveBlock.trim() || saveRow.trim()
+              ? `Saving to ${[saveBlock.trim(), saveRow.trim()].filter(Boolean).join(' · ')}, positions from ${nextSavePosition}.`
+              : 'Left blank, these are saved with no block or row — set them per tree afterwards.'}
+          </p>
           <div className="flex items-center gap-2">
             <button
               onClick={save}

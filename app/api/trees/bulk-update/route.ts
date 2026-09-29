@@ -4,6 +4,7 @@ import { handleApiError } from '@/lib/api-errors';
 import { bulkUpsertTrees, BulkUpsertRow } from '@/lib/db/trees';
 import { orchardExists } from '@/lib/db/orchards';
 import { validateBulkImport, formatValidationErrors, TreeRowData } from '@/lib/tree-validation';
+import { normalizeAddressPart } from '@/lib/address';
 import { requireOrchardAccess, assertOrchardAccess } from '@/lib/orchard-access';
 
 /**
@@ -65,11 +66,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Dates stay as YYYY-MM-DD strings all the way to Postgres
+    // Dates stay as YYYY-MM-DD strings all the way to Postgres.
+    // The address parts go through normalizeAddressPart rather than String():
+    // no part of an address is required, and String(null) is the literal
+    // "null", which would be stored as a row of that name.
     const rows: BulkUpsertRow[] = updates.map((u: Record<string, unknown>) => ({
       ...u,
-      row_id: String(u.row_id),
-      position: String(u.position).trim(),
+      block_id: normalizeAddressPart(u.block_id as string | null | undefined),
+      row_id: normalizeAddressPart(u.row_id as string | null | undefined),
+      position: normalizeAddressPart(u.position as string | null | undefined),
       planted_date: (u.planted_date as string) || undefined,
       last_pruned: (u.last_pruned as string) || undefined,
       last_harvest: (u.last_harvest as string) || undefined,
