@@ -62,7 +62,7 @@ export default function HarvestCalendar({
   const span = axisEnd - axisStart;
   const pct = (t: number) => ((t - axisStart) / span) * 100;
 
-  const { bars, untargeted } = useMemo(() => {
+  const { bars, wontRipen, untargeted } = useMemo(() => {
     const withTarget = rows.filter((r) => r.daysFromBloom != null && r.basis != null);
     const bars = withTarget
       .map((r) => {
@@ -80,7 +80,13 @@ export default function HarvestCalendar({
           a.prediction.window.start.getTime() - b.prediction.window.start.getTime() ||
           a.row.variety.localeCompare(b.row.variety)
       );
-    return { bars, untargeted: rows.filter((r) => r.daysFromBloom == null) };
+    return {
+      bars: bars.filter((b) => b.row.ripensHere),
+      // Kept off the chart entirely. A bar is a picking date, and drawing
+      // one for fruit that will not finish sends somebody out for it.
+      wontRipen: bars.filter((b) => !b.row.ripensHere),
+      untargeted: rows.filter((r) => r.daysFromBloom == null),
+    };
   }, [rows, purpose, year]);
 
   const todayInRange = todayMs >= axisStart && todayMs <= axisEnd;
@@ -124,7 +130,8 @@ export default function HarvestCalendar({
 
         <span className="text-xs text-bark">
           {bars.length} varieties with a window
-          {untargeted.length > 0 ? `, ${untargeted.length} without` : ''}
+          {wontRipen.length > 0 ? `, ${wontRipen.length} that will not ripen here` : ''}
+          {untargeted.length > 0 ? `, ${untargeted.length} unknown` : ''}
         </span>
       </div>
 
@@ -233,6 +240,28 @@ export default function HarvestCalendar({
           <span className="inline-block w-0.5 h-3 bg-flag-600" /> Today
         </span>
       </div>
+
+      {wontRipen.length > 0 && (
+        <div className="border border-flag-600/40 rounded-lg bg-surface p-4">
+          <p className="text-sm font-medium text-ink">
+            {wontRipen.length} {wontRipen.length === 1 ? 'variety does' : 'varieties do'} not ripen
+            on this coastline
+          </p>
+          <p className="text-xs text-bark mt-1 mb-3">
+            They get no bar, because a picking date for fruit that will not finish is worse than
+            no date at all. They will flower, and may set.
+          </p>
+          <ul className="space-y-1.5 text-xs">
+            {wontRipen.map(({ row }) => (
+              <li key={row.variety}>
+                <span className="font-medium text-ink">{row.variety}</span>
+                <span className="text-bark/60"> · {row.treeCount} </span>
+                <span className="text-bark">{row.detail}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {untargeted.length > 0 && (
         <details className="border border-line rounded-lg bg-surface p-4">
