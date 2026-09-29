@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import { BarChart3, BookOpen, Camera, MapPin, Plus, Settings, Shield } from 'lucide-react';
+import { BarChart3, BookOpen, Camera, MapPin, Plus, Settings, Shield, Table2 } from 'lucide-react';
 import {
   satellitePreviewUrl,
   boundarySvgPoints,
@@ -147,12 +147,24 @@ export default async function Home() {
         <div className="flex items-baseline justify-between mb-5">
           <h2 className="text-xl font-semibold text-ink">Orchards</h2>
           {signedIn && (
-            <Link
-              href="/orchards/new"
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-canopy-600 hover:text-canopy-700"
-            >
-              <Plus aria-hidden size={16} /> Add orchard
-            </Link>
+            <div className="flex items-center gap-4">
+              {/* Across all of them: what wants picking next is rarely a
+                  question about one orchard. */}
+              {orchards.length > 0 && (
+                <Link
+                  href="/trees"
+                  className="inline-flex items-center gap-1.5 text-sm font-medium text-canopy-600 hover:text-canopy-700"
+                >
+                  <Table2 aria-hidden size={16} /> All trees
+                </Link>
+              )}
+              <Link
+                href="/orchards/new"
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-canopy-600 hover:text-canopy-700"
+              >
+                <Plus aria-hidden size={16} /> Add orchard
+              </Link>
+            </div>
           )}
         </div>
 

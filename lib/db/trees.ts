@@ -316,6 +316,55 @@ export async function getTreesByOrchard(orchard_id: string): Promise<Tree[]> {
  * Falls back to legacy_tree_id so links, bookmarks and exports made before
  * migration 049 -- when a tree's id was its address -- still resolve.
  */
+/** A tree with the two things a cross-orchard view needs beside it. */
+export interface PortfolioTree extends Tree {
+  orchard_id: string;
+  orchard_name: string;
+  /** From the variety library, free text: "early Oct", "Late", a paragraph. */
+  harvest_window: string | null;
+}
+
+/**
+ * Every tree across a set of orchards, for planning that spans them.
+ *
+ * The harvest window comes from the variety library, resolved the same way
+ * the variety picker resolves it: a site's own row for a name wins over the
+ * curated one, so what is shown here matches what the variety page shows.
+ * A variety the library has never heard of simply has no window.
+ */
+export async function getTreesForOrchards(orchardIds: string[]): Promise<PortfolioTree[]> {
+  if (orchardIds.length === 0) return [];
+  const result = await sql`
+    WITH visible AS (
+      SELECT DISTINCT ON (lower(va.variety), o.id)
+             o.id AS orchard_id, va.variety, va.harvest_window
+      FROM orchards o
+      JOIN variety_attributes va
+        ON va.site_id IS NULL OR va.site_id = o.site_id
+      WHERE o.id = ANY(${orchardIds as unknown as string})
+      ORDER BY lower(va.variety), o.id, (va.site_id IS NULL)
+    )
+    SELECT t.*, o.id AS orchard_id, o.name AS orchard_name, v.harvest_window
+    FROM trees t
+    JOIN orchards o ON o.id = t.orchard_id
+    LEFT JOIN visible v
+      ON v.orchard_id = o.id AND lower(v.variety) = lower(btrim(t.variety))
+    WHERE t.orchard_id = ANY(${orchardIds as unknown as string})
+    ORDER BY o.name,
+      t.block_id NULLS FIRST,
+      NULLIF(substring(t.row_id from '^\d+'), '')::int NULLS LAST,
+      t.row_id,
+      NULLIF(substring(t.position from '^\d+'), '')::int NULLS LAST,
+      t.position
+  `;
+  return result.rows.map((row) => ({
+    ...decodeTreeRow(row),
+    orchard_id: String(row.orchard_id),
+    orchard_name: String(row.orchard_name),
+    harvest_window: row.harvest_window == null ? null : String(row.harvest_window),
+  }));
+}
+
 export async function getTreeById(tree_id: string): Promise<Tree | null> {
   const result = await sql`
     SELECT * FROM trees

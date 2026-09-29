@@ -5,8 +5,7 @@ import {
   addressKey,
   formatAddress,
   formatTreeLabel,
-  isUnplaced,
-} from './address';
+  isUnplaced, compareRowIds } from './address';
 import { formatTreeId } from './db/trees';
 
 describe('normalizeRowId', () => {
@@ -98,5 +97,37 @@ describe('formatTreeId', () => {
 
   it('keeps sorting lexically past four digits rather than truncating', () => {
     expect(formatTreeId('OBC', '002', 12345)).toBe('OBC-002-12345');
+  });
+});
+
+describe('compareRowIds', () => {
+  const sorted = (rows: (string | null)[]) => [...rows].sort(compareRowIds);
+
+  it('orders numbered rows numerically, not as text', () => {
+    expect(sorted(['10', '2', '1'])).toEqual(['1', '2', '10']);
+  });
+
+  it('puts named rows after numbered ones', () => {
+    // Rows are walked in order; the named ones are the odd additions.
+    expect(sorted(['Espalier', '2', 'Berries North', '1'])).toEqual([
+      '1',
+      '2',
+      'Berries North',
+      'Espalier',
+    ]);
+  });
+
+  it('puts an absent row last however it is written', () => {
+    expect(sorted(['2', null, '1', '', '   '])).toEqual(['1', '2', null, '', '   ']);
+  });
+
+  it('ignores leading zeros and padding, as the address rules do', () => {
+    expect(compareRowIds(' 07 ', '7')).toBe(0);
+  });
+
+  it('is a consistent comparator', () => {
+    expect(compareRowIds('1', '2')).toBeLessThan(0);
+    expect(compareRowIds('2', '1')).toBeGreaterThan(0);
+    expect(compareRowIds('1', '1')).toBe(0);
   });
 });
