@@ -685,6 +685,9 @@ export default function OrchardViewer({
     canEdit,
     statusFilter: activeStatuses.size === TREE_STATUSES.length ? null : activeStatuses,
     selectedTreeId,
+    // Matches the condition the detail panel renders under, so the map
+    // only moves when there is a panel to move the tree out from under.
+    revealSelected: !walkMode && !movingTree && !detectMode,
     walkProgress: walkMode ? walkProgress : null,
     recency: recencyByTree,
     hiddenIds,
