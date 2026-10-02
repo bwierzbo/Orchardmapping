@@ -97,3 +97,55 @@ export async function harvestPlan(
     fruitType: r.fruit_type == null ? null : String(r.fruit_type),
   }));
 }
+
+/**
+ * The predicted picking date for one variety, for showing at the tree.
+ *
+ * Returns the centre of the window as an ISO date, or null when the
+ * variety has no target — which the caller says plainly rather than
+ * inventing a date to put a verdict against.
+ */
+export async function predictedPickFor(
+  orchardId: string,
+  variety: string,
+  purpose: HarvestPurpose,
+  year: number
+): Promise<{ centre: string; basis: TargetBasis; bloomRecorded: boolean } | null> {
+  const name = variety.trim();
+  if (!name) return null;
+  const { rows } = await sql`
+    WITH target AS (
+      SELECT DISTINCT ON (lower(btrim(variety)))
+             days_from_bloom, basis
+      FROM variety_harvest_targets
+      WHERE lower(btrim(variety)) = lower(${name}) AND purpose = ${purpose}
+      ORDER BY lower(btrim(variety)), (site_id IS NULL)
+    ),
+    bloom AS (
+      SELECT min(observed_on) AS observed_on
+      FROM phenology_marks
+      WHERE stage = 'full_bloom'
+        AND orchard_id = ${orchardId}
+        AND date_part('year', observed_on) = ${year}
+        AND lower(btrim(COALESCE(variety, ''))) = lower(${name})
+    )
+    SELECT t.days_from_bloom, t.basis, b.observed_on
+    FROM target t LEFT JOIN bloom b ON TRUE
+  `;
+  const row = rows[0];
+  if (!row || row.days_from_bloom == null) return null;
+
+  const { predictHarvest } = await import('../harvest-predict');
+  const prediction = predictHarvest({
+    daysFromBloom: Number(row.days_from_bloom),
+    basis: row.basis as TargetBasis,
+    purpose,
+    year,
+    bloom: row.observed_on ? new Date(`${String(row.observed_on).slice(0, 10)}T00:00:00Z`) : null,
+  });
+  return {
+    centre: prediction.window.centre.toISOString().slice(0, 10),
+    basis: prediction.basis,
+    bloomRecorded: prediction.bloomSource === 'recorded',
+  };
+}
