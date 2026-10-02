@@ -2,17 +2,9 @@ import Link from 'next/link';
 import { classify } from '@/lib/cider-class';
 import { sql } from '@vercel/postgres';
 import { ArrowLeft } from 'lucide-react';
+import VarietyTable from './VarietyTable';
 
 export const dynamic = 'force-dynamic';
-
-const TYPE_LABEL: Record<string, string> = {
-  BSH: 'Bittersharp',
-  SH: 'Sharp',
-  BSW: 'Bittersweet',
-  SW: 'Sweet',
-  dessert: 'Dessert',
-  crab: 'Crab',
-};
 
 interface Row {
   variety: string;
@@ -99,58 +91,7 @@ export default async function VarietiesPage() {
           {varieties.length} varieties · {rootstocks.length} rootstocks · WSU Mount Vernon–primary, cross-checked
         </p>
 
-        <div className="overflow-x-auto rounded-xl border border-line bg-surface">
-          <table className="w-full text-sm min-w-[640px]">
-            <thead>
-              <tr className="border-b border-line text-left">
-                <th className="px-3 py-2 font-medium text-bark">Variety</th>
-                <th className="px-3 py-2 font-medium text-bark">Class</th>
-                <th className="px-3 py-2 font-medium text-bark">Bloom</th>
-                <th className="px-3 py-2 font-medium text-bark">Harvest</th>
-                <th className="px-3 py-2 font-medium text-bark">Acid</th>
-                <th className="px-3 py-2 font-medium text-bark">Tannin</th>
-                <th className="px-3 py-2 font-medium text-bark">SG</th>
-                <th className="px-3 py-2 font-medium text-bark text-right">Trees</th>
-              </tr>
-            </thead>
-            <tbody>
-              {varieties.map((v) => (
-                <tr key={v.variety} className="border-b border-line/60 last:border-0 hover:bg-canopy-50/50">
-                  <td className="px-3 py-2">
-                    <Link
-                      href={`/varieties/${encodeURIComponent(v.variety)}`}
-                      className="font-medium text-ink hover:text-canopy-700 hover:underline"
-                    >
-                      {v.variety}
-                    </Link>
-                    {v.confidence === 'low' && (
-                      <span className="ml-1.5 text-[10px] text-flag-600 font-mono uppercase">low conf</span>
-                    )}
-                    {divergent.has(v.variety.toLowerCase()) && (
-                      <span
-                        className="ml-1.5 text-[10px] text-bark font-mono uppercase"
-                        title="Measured juice classifies differently from the canonical class — see the variety page"
-                      >
-                        presents differently
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-bark">{v.cider_type ? (TYPE_LABEL[v.cider_type] ?? v.cider_type) : '—'}</td>
-                  <td className="px-3 py-2 text-bark">{v.bloom_group ?? '—'}</td>
-                  <td className="px-3 py-2 text-bark max-w-[200px] truncate" title={v.harvest_window ?? undefined}>
-                    {v.harvest_window ?? '—'}
-                  </td>
-                  <td className="px-3 py-2 text-bark capitalize">{v.acidity ?? '—'}</td>
-                  <td className="px-3 py-2 text-bark capitalize">{v.tannin ?? '—'}</td>
-                  <td className="px-3 py-2 font-mono text-xs text-bark max-w-[90px] truncate" title={v.typical_sg ?? undefined}>
-                    {v.typical_sg ?? '—'}
-                  </td>
-                  <td className="px-3 py-2 text-right font-mono text-xs text-ink">{v.tree_count || '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <VarietyTable varieties={varieties} divergent={[...divergent]} />
 
         <h2 className="font-display text-xl text-ink mt-8 mb-2">Rootstocks</h2>
         <div className="grid gap-3 sm:grid-cols-2">
