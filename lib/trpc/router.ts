@@ -73,6 +73,7 @@ import { applyTreeEdits } from '@/lib/db/group-actions';
 import { listPeople, setGlobalRole } from '@/lib/db/people';
 import { listVarietyOptions, listFruitTypes } from '@/lib/db/varieties';
 import { lastObservationForTree } from '@/lib/db/last-observation';
+import { predictedPickFor } from '@/lib/db/harvest-plan';
 import { listRegions, getRegion, setOrchardRegion, orchardRegion } from '@/lib/db/regions';
 import { toYMD } from '@/lib/dates';
 import { TRPCError } from '@trpc/server';
@@ -420,6 +421,27 @@ export const appRouter = router({
     lastObservation: orchardViewerProcedure
       .input(z.object({ orchardId: z.string().min(1), treeId: z.string().min(1) }))
       .query(({ input }) => lastObservationForTree(input.treeId)),
+
+    /**
+     * The predicted picking date for a tree's variety, for showing beside
+     * the readiness verdict. Null when the variety has no target.
+     */
+    predictedPick: orchardViewerProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          variety: z.string().min(1),
+          purpose: z.enum(['cider', 'fresh']),
+        }),
+      )
+      .query(({ input }) =>
+        predictedPickFor(
+          input.orchardId,
+          input.variety,
+          input.purpose,
+          new Date().getUTCFullYear(),
+        ),
+      ),
 
     /** Variety options for the picker: the library plus what is already here. */
     varieties: orchardViewerProcedure

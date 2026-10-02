@@ -23,7 +23,7 @@ import {
   type WalkProgress,
 } from '@/lib/walk-progress';
 import type { WalkSettings } from '@/lib/settings';
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check, ChevronRight, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import InspectionEntry from './InspectionEntry';
@@ -451,6 +451,15 @@ export default function WalkMode({
 
   // Next tree still to visit — trees assessed meanwhile (from the map's
   // Inspect button while the walk was paused) are passed over.
+  /**
+   * Back one tree. Plain step rather than advance()'s skip-the-assessed
+   * logic: going back means going back to the tree you just left, even
+   * when it is recorded -- that is usually exactly why you are going back.
+   */
+  const goBack = () => {
+    if (index > 0) setIndex(index - 1);
+  };
+
   const advance = () => {
     if (atEnd) {
       finish();
@@ -515,14 +524,31 @@ export default function WalkMode({
           if (!photo) advance();
         }}
         secondaryAction={(entryBusy) => (
-          <Button
-            variant="secondary"
-            className="h-11 flex-1"
-            onClick={advance}
-            disabled={entryBusy}
-          >
-            {atEnd ? 'Finish walk' : 'Skip'} <ChevronRight size={16} aria-hidden />
-          </Button>
+          <>
+            {/*
+              Back as well as Skip. A walk only ever went forwards, so a
+              misread or a mistyped number meant finishing the row and
+              starting again.
+            */}
+            <Button
+              variant="secondary"
+              className="h-11 px-3"
+              onClick={goBack}
+              disabled={entryBusy || index === 0}
+              aria-label="Back to the previous tree"
+              title="Back to the previous tree"
+            >
+              <ChevronLeft size={16} aria-hidden />
+            </Button>
+            <Button
+              variant="secondary"
+              className="h-11 flex-1"
+              onClick={advance}
+              disabled={entryBusy}
+            >
+              {atEnd ? 'Finish walk' : 'Skip'} <ChevronRight size={16} aria-hidden />
+            </Button>
+          </>
         )}
       />
     </Sheet>

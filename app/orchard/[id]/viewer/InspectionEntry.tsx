@@ -15,6 +15,15 @@ import PhotoButton from '@/components/PhotoButton';
 import { trpc } from '@/lib/trpc/client';
 import { splitForPicker, type PickablePest } from '@/lib/pest-picker';
 import { METRIC_HELP, inchesToMm } from '@/lib/fruit-metrics';
+import { previousReading, readingDelta } from '@/lib/previous-reading';
+import type { LastObservation } from '@/lib/db/last-observation';
+import { CONDITION_METRIC_CATALOG } from '@/lib/settings';
+import {
+  READINESS_VERDICTS,
+  READINESS_LABEL,
+  describePrediction,
+  type ReadinessVerdict,
+} from '@/lib/harvest-readiness';
 import FieldHelp from './FieldHelp';
 
 /**
@@ -35,6 +44,12 @@ export interface InspectionAnswers {
   health: TreeStatus | null;
   /** Causes picked from OTHER_CAUSES, which are not pests. */
   causes: string[];
+  /** Trunk and scaffold counts, by CONDITION_METRIC_CATALOG key. */
+  condition: Record<string, string>;
+  /** "When would you pick this?", if asked. */
+  readiness: ReadinessVerdict | null;
+  /** What the model predicted when the verdict was given, ISO date. */
+  predictedCentre: string | null;
   bloom: string | null;
   fruit: number | null;
   metrics: Record<string, string>;
@@ -136,6 +151,44 @@ export async function saveInspection(
     });
     saved++;
   }
+  // Trunk counts: their own event, because a canker is not a fruit
+  // characteristic and the anthracnose programme reads it on its own.
+  const conditionPayload: Record<string, number> = {};
+  for (const m of CONDITION_METRIC_CATALOG) {
+    const raw = answers.condition[m.key];
+    if (raw !== undefined && raw !== '' && !Number.isNaN(Number(raw))) {
+      conditionPayload[m.key] = Number(raw);
+    }
+  }
+  if (Object.keys(conditionPayload).length > 0) {
+    const cankers = conditionPayload.canker_count;
+    await createTreeEvent(tree.tree_id, {
+      event_type: 'tree_condition',
+      detail:
+        cankers === undefined
+          ? 'Trunk checked'
+          : `${cankers} canker${cankers === 1 ? '' : 's'} on trunk and scaffolds`,
+      changes: conditionPayload,
+    });
+    saved++;
+  }
+
+  // The verdict, with what the model said ON THE DAY. Stored together so a
+  // later comparison judges the prediction that was actually made, not one
+  // recomputed after the interval has been corrected.
+  if (answers.readiness) {
+    await createTreeEvent(tree.tree_id, {
+      event_type: 'harvest_readiness',
+      detail: READINESS_LABEL[answers.readiness],
+      changes: {
+        verdict: answers.readiness,
+        predicted_centre: answers.predictedCentre ?? null,
+        variety: tree.variety ?? null,
+      },
+    });
+    saved++;
+  }
+
   if (pestKeys.length > 0) {
     // Two writes, on purpose. pest_observations is the scouting record
     // the pest pages and the trap thresholds read; the tree event is
@@ -250,6 +303,9 @@ export default function InspectionEntry({
   const answersRef = useRef<InspectionAnswers>({
     health: null,
     causes: [],
+    condition: {},
+    readiness: null,
+    predictedCentre: null,
     bloom: null,
     fruit: null,
     metrics: {},
@@ -262,6 +318,59 @@ export default function InspectionEntry({
   const [bloomChoice, setBloomChoice] = useState<string | null>(null);
   const [fruitLoad, setFruitLoad] = useState<number | null>(null);
   const [metrics, setMetrics] = useState<Record<string, string>>({});
+  const [condition, setConditionState] = useState<Record<string, string>>({});
+  const [readiness, setReadiness] = useState<ReadinessVerdict | null>(null);
+  /** Photos taken on this tree in this sitting, newest last. */
+  const [photos, setPhotos] = useState<string[]>([]);
+
+  /**
+   * What this tree showed last time. Shown beside the empty fields, never
+   * written into them -- a stale starch index dated today would poison the
+   * harvest prediction that reads the trajectory.
+   */
+  const [previous, setPrevious] = useState<LastObservation | null>(null);
+  const [fetchedCentre, setFetchedCentre] = useState<string | null>(null);
+  const askReadiness = settings.askHarvestReadiness && !!tree.variety?.trim();
+  // Derived rather than cleared in the effect: writing state from an
+  // effect's early return is a synchronous setState and a cascading render.
+  const predictedCentre = askReadiness ? fetchedCentre : null;
+
+  // What the model expects for this variety, shown beside the verdict so
+  // the two can be compared later.
+  useEffect(() => {
+    const variety = tree.variety?.trim();
+    if (!settings.askHarvestReadiness || !variety) return;
+    let live = true;
+    trpc.tree.predictedPick
+      .query({ orchardId: tree.orchard_id, variety, purpose: 'cider' })
+      .then((v) => {
+        if (!live) return;
+        setFetchedCentre(v?.centre ?? null);
+        answersRef.current.predictedCentre = v?.centre ?? null;
+      })
+      .catch(() => {
+        // A prediction that will not load leaves the verdict unanchored,
+        // which readinessDelta already handles by returning null.
+      });
+    return () => {
+      live = false;
+    };
+  }, [tree.orchard_id, tree.variety, settings.askHarvestReadiness]);
+  useEffect(() => {
+    let live = true;
+    trpc.tree.lastObservation
+      .query({ orchardId: tree.orchard_id, treeId: tree.tree_id })
+      .then((v) => {
+        if (live) setPrevious(v);
+      })
+      .catch(() => {
+        // Context, not a gate: a tree whose history will not load is still
+        // a tree you can inspect.
+      });
+    return () => {
+      live = false;
+    };
+  }, [tree.orchard_id, tree.tree_id]);
   const [pestsSeen, setPestsSeen] = useState<Record<string, PestSeverity | null>>({});
   const [showAllPests, setShowAllPests] = useState(false);
   /**
@@ -397,6 +506,17 @@ export default function InspectionEntry({
     setFruitLoad(load);
     maybeAutoSave();
   };
+  const setCondition = (key: string, value: string) => {
+    answersRef.current.condition = { ...answersRef.current.condition, [key]: value };
+    setConditionState(answersRef.current.condition);
+  };
+
+  const pickReadiness = (verdict: ReadinessVerdict) => {
+    const next = answersRef.current.readiness === verdict ? null : verdict;
+    answersRef.current.readiness = next;
+    setReadiness(next);
+  };
+
   const setMetric = (key: string, value: string) => {
     answersRef.current.metrics = { ...answersRef.current.metrics, [key]: value };
     setMetrics(answersRef.current.metrics);
@@ -427,6 +547,9 @@ export default function InspectionEntry({
     bloomChoice !== null ||
     fruitLoad !== null ||
     pestKeys.length > 0 ||
+    causes.length > 0 ||
+    readiness !== null ||
+    Object.values(condition).some((v) => v !== '') ||
     note.trim() !== '';
 
   // Answers entered and not yet recorded. A photo saves on its own, so
@@ -434,7 +557,10 @@ export default function InspectionEntry({
   const unsaved =
     healthChoice !== null || bloomChoice !== null || fruitLoad !== null ||
     pestKeys.length > 0 ||
-    Object.values(metrics).some((v) => v !== '');
+    causes.length > 0 ||
+    readiness !== null ||
+    Object.values(metrics).some((v) => v !== '') ||
+    Object.values(condition).some((v) => v !== '');
 
   useEffect(() => {
     onDirtyChange?.(unsaved);
@@ -446,6 +572,9 @@ export default function InspectionEntry({
   // Never auto-advances — a photo usually precedes a status tap.
   const savePhoto = async (url: string) => {
     try {
+      // Kept so the button can show a thumbnail afterwards: a photo saves
+      // on its own and gave no sign it had, so people took a second.
+      setPhotos((prev) => [...prev, url]);
       await createTreeEvent(tree.tree_id, {
         event_type: 'observation',
         detail: note.trim() || undefined,
@@ -467,6 +596,11 @@ export default function InspectionEntry({
   };
 
   const enabledMetrics = FRUIT_METRIC_CATALOG.filter((m) => settings.fruitMetrics.includes(m.key));
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const predictionLine = describePrediction(predictedCentre, todayIso);
+  const enabledCondition = CONDITION_METRIC_CATALOG.filter((m) =>
+    settings.conditionMetrics.includes(m.key),
+  );
   const showLabels = inspections.size > 1;
   const sectionLabel = (label: string, done: boolean, help?: { summary: string; scale?: string }) => (
     <p className="text-[11px] font-semibold tracking-wide text-bark uppercase flex items-center gap-1">
@@ -717,6 +851,12 @@ export default function InspectionEntry({
                     ? 'Fruit size'
                     : m.label.replace(/\s*\([^)]*\)\s*$/, '');
                 const unit = asSg ? 'SG' : asInches ? 'in' : m.unit;
+                const stored = previous?.metrics[m.key];
+                const ghost = previousReading(m.key, stored, {
+                  sugar: sugarUnit,
+                  size: sizeUnit,
+                });
+                const delta = readingDelta(metrics[m.key] ?? '', stored);
                 return (
                   <div key={m.key} className="min-w-0">
                     <span className="flex items-center gap-1 text-[11px] font-medium text-bark">
@@ -750,12 +890,147 @@ export default function InspectionEntry({
                       type="number"
                       step={asSg ? 0.001 : asInches ? 0.1 : m.step}
                       inputMode="decimal"
-                      placeholder={asSg ? '1.050' : asInches ? '2.4' : undefined}
+                      // The previous reading sits here as a placeholder:
+                      // grey, in place, and gone the moment you type. It is
+                      // never submitted, which is the whole point.
+                      placeholder={
+                        ghost?.ghost ?? (asSg ? '1.050' : asInches ? '2.4' : undefined)
+                      }
                       value={metrics[m.key] ?? ''}
                       onChange={(e) => setMetric(m.key, e.target.value)}
                       className="h-10 mt-0.5"
                     />
+                    {ghost && (
+                      <span className="mt-0.5 block text-[10px] text-bark/80">
+                        {ghost.was}
+                        {delta && (
+                          <span
+                            className={
+                              delta.direction === 'up'
+                                ? ' font-semibold text-canopy-700'
+                                : ' font-semibold text-flag-600'
+                            }
+                          >
+                            {' '}
+                            · {delta.text}
+                          </span>
+                        )}
+                        {previous?.metricsOn ? ` · ${previous.metricsOn}` : ''}
+                      </span>
+                    )}
                   </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/*
+          ── Tree condition ──
+
+          At the trunk, not on the fruit. The anthracnose programme here is
+          knife-first: carve each canker out, burn a stem carrying four or
+          more. A count followed over seasons is how you know whether the
+          cutting is winning, and which trees feed the block.
+        */}
+        {enabledCondition.length > 0 && (
+          <div className="space-y-1.5">
+            {sectionLabel(
+              'Trunk and scaffolds',
+              enabledCondition.some((m) => (condition[m.key] ?? '') !== ''),
+              {
+                summary: 'Cankers on the trunk and main limbs — counted, not judged.',
+                scale:
+                  'Four or more on most branches is the threshold for taking the tree out: it is an inoculum source for everything around it.',
+              },
+            )}
+            <div className="grid grid-cols-2 gap-2">
+              {enabledCondition.map((m) => {
+                const stored = previous?.condition[m.key];
+                const ghost = previousReading(m.key, stored, {
+                  sugar: sugarUnit,
+                  size: sizeUnit,
+                });
+                const delta = readingDelta(condition[m.key] ?? '', stored);
+                return (
+                  <div key={m.key} className="min-w-0">
+                    <span className="flex items-center gap-1 text-[11px] font-medium text-bark">
+                      <span className="truncate">{m.label.replace(/\s*\([^)]*\)\s*$/, '')}</span>
+                      <span className="ml-auto shrink-0 text-[10px] uppercase text-bark/70">
+                        {m.unit}
+                      </span>
+                    </span>
+                    <Input
+                      type="number"
+                      step={m.step}
+                      min="0"
+                      inputMode="numeric"
+                      placeholder={ghost?.ghost}
+                      value={condition[m.key] ?? ''}
+                      onChange={(e) => setCondition(m.key, e.target.value)}
+                      className="h-10 mt-0.5"
+                    />
+                    {ghost && (
+                      <span className="mt-0.5 block text-[10px] text-bark/80">
+                        {ghost.was}
+                        {delta && (
+                          <span
+                            className={
+                              // More cankers is worse, so a rise is the
+                              // warning here — the opposite of sugar.
+                              delta.direction === 'up'
+                                ? ' font-semibold text-flag-600'
+                                : ' font-semibold text-canopy-700'
+                            }
+                          >
+                            {' '}
+                            · {delta.text}
+                          </span>
+                        )}
+                        {previous?.conditionOn ? ` · ${previous.conditionOn}` : ''}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/*
+          ── When would you pick it? ──
+
+          Every number in the harvest predictor is seeded; none is observed.
+          A verdict from whoever is standing at the tree arrives weeks before
+          a harvest date does, and it is recorded beside what the model said
+          on the day, so the comparison is honest later.
+        */}
+        {askReadiness && (
+          <div className="space-y-1.5">
+            {sectionLabel('When would you pick it?', readiness !== null, {
+              summary: 'Your call, next to what the model predicted.',
+              scale:
+                'This is how the prediction gets checked. The model has never seen a harvest here, so your answer outranks it.',
+            })}
+            <p className="text-[11px] text-bark">{predictionLine}</p>
+            <div className="grid grid-cols-2 gap-2">
+              {READINESS_VERDICTS.map((v) => {
+                const on = readiness === v;
+                return (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => pickReadiness(v)}
+                    aria-pressed={on}
+                    disabled={busy}
+                    className={`h-11 rounded-lg text-sm font-medium border active:scale-[0.97] disabled:opacity-50 ${
+                      on
+                        ? 'bg-canopy-600 border-canopy-600 text-white'
+                        : 'border-line text-ink bg-paper hover:bg-canopy-50'
+                    }`}
+                  >
+                    {READINESS_LABEL[v]}
+                  </button>
                 );
               })}
             </div>
@@ -792,6 +1067,24 @@ export default function InspectionEntry({
             className={secondaryAction ? 'h-11 px-3.5' : 'h-11 flex-1'}
             label={secondaryAction ? undefined : 'Photo'}
           />
+          {/*
+            Proof the photo landed. It uploads and saves on its own, with
+            nothing on screen to show for it, so people took a second one to
+            be sure. The newest thumbnail and a count say it is done.
+          */}
+          {photos.length > 0 && (
+            <span className="inline-flex shrink-0 items-center gap-1.5">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={photos[photos.length - 1]}
+                alt={`Last photo of ${tree.tree_id}`}
+                className="h-9 w-9 rounded-md border border-line object-cover"
+              />
+              {photos.length > 1 && (
+                <span className="text-[11px] font-medium text-bark">{photos.length}</span>
+              )}
+            </span>
+          )}
           {secondaryAction?.(busy)}
         </div>
 
