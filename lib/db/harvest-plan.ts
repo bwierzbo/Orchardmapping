@@ -108,11 +108,25 @@ export async function harvestPlan(
 export async function predictedPickFor(
   orchardId: string,
   variety: string,
-  purpose: HarvestPurpose,
   year: number
-): Promise<{ centre: string; basis: TargetBasis; bloomRecorded: boolean } | null> {
+): Promise<{
+  centre: string;
+  basis: TargetBasis;
+  bloomRecorded: boolean;
+  purpose: HarvestPurpose;
+} | null> {
   const name = variety.trim();
   if (!name) return null;
+
+  // The purpose belongs to the orchard, so it is read here rather than
+  // passed in. A caller that guessed would quietly compare a verdict
+  // against the wrong target: a cider window sits a week later than a
+  // fresh one for the same variety.
+  const { rows: orchardRows } = await sql`
+    SELECT harvest_purpose FROM orchards WHERE id = ${orchardId}
+  `;
+  const purpose: HarvestPurpose =
+    orchardRows[0]?.harvest_purpose === 'cider' ? 'cider' : 'fresh';
   const { rows } = await sql`
     WITH target AS (
       SELECT DISTINCT ON (lower(btrim(variety)))
@@ -147,5 +161,6 @@ export async function predictedPickFor(
     centre: prediction.window.centre.toISOString().slice(0, 10),
     basis: prediction.basis,
     bloomRecorded: prediction.bloomSource === 'recorded',
+    purpose,
   };
 }
