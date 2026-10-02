@@ -17,21 +17,24 @@ import { splitForPicker, type PickablePest } from '@/lib/pest-picker';
 import { METRIC_HELP, inchesToMm } from '@/lib/fruit-metrics';
 import FieldHelp from './FieldHelp';
 
-export const STRESS_REASONS = [
-  'Pests',
-  'Disease',
-  'Deer/Vole',
-  'Drought',
-  'Broken/Leaning',
-  'Other',
-];
+/**
+ * Causes the pest library cannot hold.
+ *
+ * "Pests" and "Disease" used to be in this list, which is what made the
+ * form ask the same question twice: once as a reason for stress, then again
+ * as a thing seen, with the actual pest behind that. They are gone. What is
+ * left is the handful of causes that are not pests at all, and they appear
+ * in the SAME list as the pests -- what you saw is one question.
+ */
+export const OTHER_CAUSES = ['Deer / vole', 'Drought', 'Broken / leaning', 'Other'];
 
 export type PestSeverity = 'light' | 'moderate' | 'severe';
 export const PEST_SEVERITIES: readonly PestSeverity[] = ['light', 'moderate', 'severe'];
 
 export interface InspectionAnswers {
   health: TreeStatus | null;
-  stressReason: string | null;
+  /** Causes picked from OTHER_CAUSES, which are not pests. */
+  causes: string[];
   bloom: string | null;
   fruit: number | null;
   metrics: Record<string, string>;
@@ -88,7 +91,7 @@ export async function saveInspection(
     const ok = await onSetStatus(tree.tree_id, answers.health);
     if (ok) {
       saved++;
-      const reason = answers.health === 'stressed' ? answers.stressReason : null;
+      const reason = answers.causes.length > 0 ? answers.causes.join(', ') : null;
       const detail = reason ? (noteText ? `${reason}: ${noteText}` : reason) : noteText || null;
       if (detail) {
         noteUsed = true;
@@ -246,7 +249,7 @@ export default function InspectionEntry({
   // regardless of render timing; the state mirrors drive the highlights.
   const answersRef = useRef<InspectionAnswers>({
     health: null,
-    stressReason: null,
+    causes: [],
     bloom: null,
     fruit: null,
     metrics: {},
@@ -255,7 +258,7 @@ export default function InspectionEntry({
     note: '',
   });
   const [healthChoice, setHealthChoice] = useState<TreeStatus | null>(null);
-  const [stressReason, setStressReason] = useState<string | null>(null);
+  const [causes, setCauses] = useState<string[]>([]);
   const [bloomChoice, setBloomChoice] = useState<string | null>(null);
   const [fruitLoad, setFruitLoad] = useState<number | null>(null);
   const [metrics, setMetrics] = useState<Record<string, string>>({});
@@ -367,16 +370,22 @@ export default function InspectionEntry({
   const pickHealth = (status: TreeStatus) => {
     answersRef.current.health = status;
     setHealthChoice(status);
-    if (status !== 'stressed') {
-      answersRef.current.stressReason = null;
-      setStressReason(null);
-    }
     maybeAutoSave();
   };
-  const pickReason = (reason: string) => {
-    const next = stressReason === reason ? null : reason;
-    answersRef.current.stressReason = next;
-    setStressReason(next);
+
+  /**
+   * A cause is independent of health, as a pest is: a tree in good shape
+   * can still have deer browse on it, and that is worth the record.
+   */
+  const toggleCause = (cause: string) => {
+    const next = causes.includes(cause) ? causes.filter((c) => c !== cause) : [...causes, cause];
+    answersRef.current.causes = next;
+    setCauses(next);
+    // Anything ticked is an answer to "what did you see".
+    if (next.length > 0) {
+      anyPestsRef.current = true;
+      setAnyPests(true);
+    }
   };
   const pickBloom = (stage: string) => {
     answersRef.current.bloom = stage;
@@ -500,32 +509,6 @@ export default function InspectionEntry({
                 Dead
               </TapButton>
             </div>
-            {healthChoice === 'stressed' && (
-              <div className="space-y-1">
-                <p className="text-[11px] font-medium text-bark">Key issue (tap to highlight)</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {STRESS_REASONS.map((r) => {
-                    const on = stressReason === r;
-                    return (
-                      <button
-                        key={r}
-                        type="button"
-                        onClick={() => pickReason(r)}
-                        aria-pressed={on}
-                        disabled={busy}
-                        className={`px-3 py-2 rounded-lg text-sm font-medium border active:scale-[0.97] disabled:opacity-50 ${
-                          on
-                            ? 'bg-canopy-700 border-canopy-700 text-white ring-2 ring-canopy-600 ring-offset-1'
-                            : 'border-line text-ink bg-paper hover:bg-canopy-50'
-                        }`}
-                      >
-                        {r}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
           </div>
         )}
 
@@ -540,37 +523,25 @@ export default function InspectionEntry({
         */}
         {showPests && (
           <div className="space-y-1.5">
-            {sectionLabel('Pests or disease', anyPests !== null, {
-              summary:
-                'Anything on the tree or its fruit worth recording — insects, their damage, or disease.',
-              scale:
-                'Say no and the walk moves on. Say yes and this grower\u2019s most likely pests appear, ranked by what has actually been found here.',
-            })}
-            <div className="grid grid-cols-2 gap-2">
-              {([
-                [false, 'Nothing seen'],
-                [true, 'Something seen'],
-              ] as const).map(([value, label]) => (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={() => answerAnyPests(value)}
-                  aria-pressed={anyPests === value}
-                  disabled={busy}
-                  className={`h-11 rounded-lg text-sm font-medium border active:scale-[0.97] disabled:opacity-50 ${
-                    anyPests === value
-                      ? value
-                        ? 'bg-flag-600 border-flag-600 text-white'
-                        : 'bg-canopy-600 border-canopy-600 text-white'
-                      : 'border-line text-ink bg-paper hover:bg-canopy-50'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
+            <div className="flex items-baseline justify-between gap-2">
+              {sectionLabel('What you see', anyPests !== null, {
+                summary:
+                  'Anything on the tree or its fruit worth recording — insects, their damage, disease, browse, drought.',
+                scale:
+                  'The five most found in THIS orchard are shown; the rest are behind "more". Nothing ticked and "Nothing seen" tapped is an answer, and a useful one.',
+              })}
+              <button
+                type="button"
+                onClick={() => answerAnyPests(false)}
+                aria-pressed={anyPests === false}
+                disabled={busy}
+                className={`shrink-0 text-[11px] font-semibold underline disabled:opacity-50 ${
+                  anyPests === false ? 'text-canopy-700' : 'text-canopy-600 hover:text-canopy-700'
+                }`}
+              >
+                {anyPests === false ? 'Nothing seen ✓' : 'Nothing seen'}
+              </button>
             </div>
-            {anyPests === true && (
-            <>
             <div className="flex flex-wrap gap-1.5">
               {(showAllPests ? [...pestPicker.top, ...pestPicker.rest] : pestPicker.top).map(
                 (pest) => {
@@ -638,8 +609,30 @@ export default function InspectionEntry({
                 first.
               </p>
             )}
-            </>
-            )}
+
+            {/* The causes a pest library cannot hold, in the same list: what
+                you saw is one question, however it is categorised later. */}
+            <div className="flex flex-wrap gap-1.5">
+              {OTHER_CAUSES.map((cause) => {
+                const on = causes.includes(cause);
+                return (
+                  <button
+                    key={cause}
+                    type="button"
+                    onClick={() => toggleCause(cause)}
+                    aria-pressed={on}
+                    disabled={busy}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium border active:scale-[0.97] disabled:opacity-50 ${
+                      on
+                        ? 'bg-canopy-700 border-canopy-700 text-white ring-2 ring-canopy-600 ring-offset-1'
+                        : 'border-line text-ink bg-paper hover:bg-canopy-50'
+                    }`}
+                  >
+                    {cause}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
 

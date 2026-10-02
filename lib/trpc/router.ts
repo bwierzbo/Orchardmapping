@@ -72,6 +72,7 @@ import { formatAddress } from '@/lib/address';
 import { applyTreeEdits } from '@/lib/db/group-actions';
 import { listPeople, setGlobalRole } from '@/lib/db/people';
 import { listVarietyOptions, listFruitTypes } from '@/lib/db/varieties';
+import { lastObservationForTree } from '@/lib/db/last-observation';
 import { listRegions, getRegion, setOrchardRegion, orchardRegion } from '@/lib/db/regions';
 import { toYMD } from '@/lib/dates';
 import { TRPCError } from '@trpc/server';
@@ -411,6 +412,14 @@ export const appRouter = router({
     fruitTypes: orchardViewerProcedure
       .input(z.object({ orchardId: z.string().min(1) }))
       .query(({ input }) => listFruitTypes(input.orchardId)),
+
+    /**
+     * What this tree showed last time, for the walk to show beside its
+     * empty fields. Never prefilled into them: see lib/db/last-observation.
+     */
+    lastObservation: orchardViewerProcedure
+      .input(z.object({ orchardId: z.string().min(1), treeId: z.string().min(1) }))
+      .query(({ input }) => lastObservationForTree(input.treeId)),
 
     /** Variety options for the picker: the library plus what is already here. */
     varieties: orchardViewerProcedure
