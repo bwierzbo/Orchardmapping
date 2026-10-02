@@ -90,8 +90,8 @@ export const HARVEST_REFERENCE: HarvestReference[] = [
     note: 'Raised on Orcas Island — bred for exactly this climate.' },
   { variety: 'Comice', species: 'pear', start: [9, 25], end: [10, 10], confidence: 'good',
     note: 'Doyenné du Comice; late, and wants cold storage to finish.' },
-  { variety: 'Concord pear', species: 'pear', start: [9, 15], end: [10, 1], confidence: 'poor',
-    note: 'Name uncertain — Concord is a grape. Confirm what this tree is.' },
+  { variety: 'Concorde', species: 'pear', start: [9, 10], end: [9, 30], confidence: 'good',
+    note: 'Conference x Doyenne du Comice, East Malling 1977. OSU lists it for western Oregon and Washington at September — England picks it in late October and the hot-interior PNW crop from late August, so neither applies here. Long and tapered like Conference rather than round like Comice.' },
   { variety: 'Pear', species: 'pear', start: [9, 1], end: [9, 25], confidence: 'poor',
     note: 'Unidentified. Mid-season placeholder for a European pear.' },
 
