@@ -10,6 +10,7 @@ import type { PickablePest } from '@/lib/pest-picker';
 import { recordInspectionInSavedWalk } from '@/lib/api/walk-progress';
 import { formatYMD } from '@/lib/dates';
 import StatusBadge, { STATUS_LABEL } from '@/components/StatusBadge';
+import FloatingWindow from '@/components/FloatingWindow';
 import TreeHistory from './TreeHistory';
 import { formatAddress, formatTreeLabel } from '@/lib/address';
 import { trpc } from '@/lib/trpc/client';
@@ -26,6 +27,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+
+/**
+ * One slot for every tree: where the user puts this panel is a preference
+ * about their screen, not about whichever tree they had open at the time.
+ */
+const PANEL_RECT_KEY = 'orchard:tree-detail-rect';
 
 /** The Inspect form offers every inspection; the surveyor answers what applies. */
 const ALL_INSPECTIONS: ReadonlySet<'health' | 'bloom' | 'fruit'> = new Set([
@@ -270,13 +277,14 @@ export default function TreeDetailPanel({
   );
 
   return (
-    <div
+    <FloatingWindow
+      storageKey={PANEL_RECT_KEY}
       role="dialog"
       aria-label={formatTreeLabel(tree)}
-      className="absolute z-20 bg-surface shadow-2xl border border-line flex flex-col
-                 inset-x-0 bottom-0 max-h-[70vh] rounded-t-2xl
+      className="absolute z-20 bg-surface shadow-2xl border border-line flex flex-col overflow-hidden"
+      dockedClassName="inset-x-0 bottom-0 max-h-[70vh] rounded-t-2xl
                  md:inset-x-auto md:right-4 md:top-20 md:bottom-auto md:w-96 md:max-h-[calc(100vh-7rem)] md:rounded-xl"
-    >
+      header={
       <div className="flex items-start justify-between px-5 pt-4 pb-3 border-b border-line">
         <div>
           <p className="font-mono text-xs text-bark tracking-wide">{formatAddress(tree)}</p>
@@ -309,8 +317,9 @@ export default function TreeDetailPanel({
           </svg>
         </button>
       </div>
-
-      <div className={`overflow-y-auto flex-1 ${inspecting ? 'py-3' : 'px-5 py-3'}`}>
+      }
+    >
+      <div className={`overflow-y-auto flex-1 min-h-0 ${inspecting ? 'py-3' : 'px-5 py-3'}`}>
         {inspecting ? (
           <InspectionEntry
             key={tree.tree_id}
@@ -567,6 +576,6 @@ export default function TreeDetailPanel({
           </div>
         )}
       </div>
-    </div>
+    </FloatingWindow>
   );
 }
