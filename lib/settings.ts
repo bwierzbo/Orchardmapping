@@ -41,6 +41,22 @@ export const FRUIT_METRIC_CATALOG = [
 
 export type FruitMetricKey = (typeof FRUIT_METRIC_CATALOG)[number]['key'];
 
+/**
+ * What is recorded at the trunk rather than on the fruit.
+ *
+ * The anthracnose programme here is knife-first -- carve each canker out,
+ * burn a stem carrying four or more -- so a count per tree, followed over
+ * seasons, is the programme's own measure of whether the cutting is
+ * winning. It belongs nowhere near "fruit characteristics", which is why
+ * it is its own catalog and its own event.
+ */
+export const CONDITION_METRIC_CATALOG = [
+  { key: 'canker_count', label: 'Cankers on trunk and scaffolds', unit: 'count', step: 1 },
+  { key: 'cankers_cut', label: 'Cankers cut out today', unit: 'count', step: 1 },
+] as const;
+
+export type ConditionMetricKey = (typeof CONDITION_METRIC_CATALOG)[number]['key'];
+
 export interface WalkSettings {
   /** Phenology ladder granularity for bloom passes. */
   bloomScale: 'simple' | 'full';
@@ -49,6 +65,10 @@ export interface WalkSettings {
   sampleSize: number;
   /** Which fruit measurements the fruit pass asks for. */
   fruitMetrics: FruitMetricKey[];
+  /** Which trunk/scaffold counts the walk asks for. Empty = don't ask. */
+  conditionMetrics: ConditionMetricKey[];
+  /** Ask "when would you pick this?" beside what the model predicts. */
+  askHarvestReadiness: boolean;
   /** How sugar content is entered/displayed: refractometer °Bx or SG. */
   sugarUnit: 'brix' | 'sg';
 }
@@ -57,7 +77,13 @@ export const DEFAULT_WALK_SETTINGS: WalkSettings = {
   bloomScale: 'simple',
   surveyScope: 'per_tree',
   sampleSize: 3,
-  fruitMetrics: ['brix', 'size_mm'],
+  // Starch and seed colour are on by default now. They were off, which
+  // meant the one measurement the harvest predictor keys on was the one
+  // nobody was being asked for: starch conversion is what says "ready",
+  // and seed colour corroborates it for the cost of one more look.
+  fruitMetrics: ['brix', 'size_mm', 'starch_index', 'seed_color'],
+  conditionMetrics: ['canker_count'],
+  askHarvestReadiness: true,
   sugarUnit: 'brix',
 };
 
@@ -69,6 +95,7 @@ export function bloomStagesFor(settings: WalkSettings): readonly string[] {
 export function normalizeWalkSettings(stored: unknown): WalkSettings {
   const s = (stored ?? {}) as Partial<WalkSettings>;
   const validMetrics = new Set(FRUIT_METRIC_CATALOG.map((m) => m.key));
+  const validCondition = new Set(CONDITION_METRIC_CATALOG.map((m) => m.key));
   return {
     bloomScale: s.bloomScale === 'full' ? 'full' : DEFAULT_WALK_SETTINGS.bloomScale,
     surveyScope:
@@ -80,6 +107,15 @@ export function normalizeWalkSettings(stored: unknown): WalkSettings {
     fruitMetrics: Array.isArray(s.fruitMetrics)
       ? (s.fruitMetrics.filter((m): m is FruitMetricKey => validMetrics.has(m as FruitMetricKey)))
       : DEFAULT_WALK_SETTINGS.fruitMetrics,
+    conditionMetrics: Array.isArray(s.conditionMetrics)
+      ? s.conditionMetrics.filter((m): m is ConditionMetricKey =>
+          validCondition.has(m as ConditionMetricKey)
+        )
+      : DEFAULT_WALK_SETTINGS.conditionMetrics,
+    // Only an explicit false turns it off: settings stored before this
+    // existed have the key missing, and the default is to ask.
+    askHarvestReadiness:
+      s.askHarvestReadiness === false ? false : DEFAULT_WALK_SETTINGS.askHarvestReadiness,
     sugarUnit: s.sugarUnit === 'sg' ? 'sg' : DEFAULT_WALK_SETTINGS.sugarUnit,
   };
 }
