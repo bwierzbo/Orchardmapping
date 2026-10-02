@@ -4,7 +4,15 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import type { TreeStatus } from '@/lib/types';
-import StatusBadge from '@/components/StatusBadge';
+import StatusBadge, { STATUS_LABEL } from '@/components/StatusBadge';
+import FilterBar, { type FilterGroup } from '@/components/FilterBar';
+import {
+  chipCounts,
+  matchesChips,
+  matchesSearch,
+  toggleChip,
+  type ChipGroupState,
+} from '@/lib/filtering';
 import { formatYMD } from '@/lib/dates';
 import { compareRowIds } from '@/lib/address';
 import { comparePositions } from '@/lib/position';
@@ -83,29 +91,66 @@ function compare(a: PortfolioRow, b: PortfolioRow, key: SortKey): number {
   }
 }
 
+type GroupKey = 'orchard' | 'species' | 'status';
+
+const valuesOf = (row: PortfolioRow, key: GroupKey): (string | null)[] => {
+  switch (key) {
+    case 'orchard':
+      return [row.orchard_name];
+    case 'species':
+      return [row.fruit_type?.trim() || null];
+    case 'status':
+      return [row.status];
+  }
+};
+
+const searchFields = (row: PortfolioRow) => [
+  row.variety,
+  row.orchard_name,
+  row.fruit_type,
+  row.block_id,
+  row.row_id,
+  row.position,
+];
+
 export default function PortfolioTable({ trees }: { trees: PortfolioRow[] }) {
   const [sortKey, setSortKey] = useState<SortKey>('pick');
   const [ascending, setAscending] = useState(true);
-  const [orchardFilter, setOrchardFilter] = useState<string>('');
-  const [speciesFilter, setSpeciesFilter] = useState<string>('');
+  const [query, setQuery] = useState('');
+  const [selections, setSelections] = useState<Record<GroupKey, ReadonlySet<string>>>({
+    orchard: new Set(),
+    species: new Set(),
+    status: new Set(),
+  });
 
-  const orchards = useMemo(
-    () => [...new Set(trees.map((t) => t.orchard_name))].sort((a, b) => a.localeCompare(b)),
-    [trees]
+  const state: ChipGroupState<GroupKey>[] = useMemo(
+    () => (Object.keys(selections) as GroupKey[]).map((key) => ({ key, selected: selections[key] })),
+    [selections],
   );
-  const species = useMemo(
-    () =>
-      [...new Set(trees.map((t) => t.fruit_type?.trim()).filter((f): f is string => !!f))].sort(
-        (a, b) => a.localeCompare(b)
-      ),
-    [trees]
+
+  const counts = useMemo(
+    () => chipCounts(trees, state, valuesOf, searchFields, query),
+    [trees, state, query],
   );
+
+  const groups: FilterGroup<GroupKey>[] = useMemo(() => {
+    const from = (key: GroupKey, label: (v: string) => string): FilterGroup<GroupKey> => ({
+      key,
+      label: key === 'orchard' ? 'Orchard' : key === 'species' ? 'Species' : 'Status',
+      chips: Object.entries<number>(counts[key] ?? {})
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .map(([value, count]) => ({ value, label: label(value), count })),
+    });
+    return [
+      from('orchard', (v) => v),
+      from('species', (v) => v),
+      from('status', (v) => STATUS_LABEL[v as TreeStatus] ?? v),
+    ];
+  }, [counts]);
 
   const visible = useMemo(() => {
     const filtered = trees.filter(
-      (t) =>
-        (!orchardFilter || t.orchard_name === orchardFilter) &&
-        (!speciesFilter || (t.fruit_type ?? '').trim() === speciesFilter)
+      (t) => matchesSearch(searchFields(t), query) && matchesChips(t, state, valuesOf),
     );
     // Sorted copy: the incoming order is the server's, and mutating it
     // would reorder the caller's array too.
@@ -116,7 +161,7 @@ export default function PortfolioTable({ trees }: { trees: PortfolioRow[] }) {
       // read in walking order rather than shuffling between renders.
       return compare(a, b, 'orchard') || compare(a, b, 'address');
     });
-  }, [trees, sortKey, ascending, orchardFilter, speciesFilter]);
+  }, [trees, sortKey, ascending, query, state]);
 
   const toggle = (key: SortKey) => {
     if (key === sortKey) setAscending((v) => !v);
@@ -126,42 +171,26 @@ export default function PortfolioTable({ trees }: { trees: PortfolioRow[] }) {
     }
   };
 
-  const select =
-    'text-sm px-2.5 py-1.5 bg-surface text-ink border border-line rounded-md focus:outline-none focus:ring-2 focus:ring-canopy-600';
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <select
-          value={orchardFilter}
-          onChange={(e) => setOrchardFilter(e.target.value)}
-          className={select}
-          aria-label="Filter by orchard"
-        >
-          <option value="">All orchards</option>
-          {orchards.map((o) => (
-            <option key={o} value={o}>
-              {o}
-            </option>
-          ))}
-        </select>
-        <select
-          value={speciesFilter}
-          onChange={(e) => setSpeciesFilter(e.target.value)}
-          className={select}
-          aria-label="Filter by species"
-        >
-          <option value="">All species</option>
-          {species.map((f) => (
-            <option key={f} value={f}>
-              {f}
-            </option>
-          ))}
-        </select>
-        <span className="text-xs text-bark">
-          {visible.length} of {trees.length} trees
-        </span>
-      </div>
+      <FilterBar
+        query={query}
+        onQueryChange={setQuery}
+        searchPlaceholder="Search trees — variety, orchard, block or row"
+        groups={groups}
+        state={state}
+        onToggle={(key, value) =>
+          setSelections((prev) => ({ ...prev, [key]: toggleChip(prev[key], value) }))
+        }
+        onClear={() => {
+          setQuery('');
+          setSelections({ orchard: new Set(), species: new Set(), status: new Set() });
+        }}
+        shown={visible.length}
+        total={trees.length}
+        unit="trees"
+      />
 
       <div className="overflow-x-auto border border-line rounded-lg bg-surface">
         <table className="w-full text-sm">

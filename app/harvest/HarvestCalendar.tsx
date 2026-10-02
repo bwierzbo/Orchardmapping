@@ -4,6 +4,13 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { AlertTriangle } from 'lucide-react';
 import type { HarvestPlanRow } from '@/lib/db/harvest-plan';
+import FilterBar, { type FilterGroup } from '@/components/FilterBar';
+import {
+  matchesChips,
+  matchesSearch,
+  toggleChip,
+  type ChipGroupState,
+} from '@/lib/filtering';
 import { HARVEST_PURPOSES, PURPOSE_WINDOW, type HarvestPurpose } from '@/lib/harvest-target';
 import { certaintyOf, predictHarvest, type Certainty } from '@/lib/harvest-predict';
 
@@ -31,6 +38,8 @@ const CERTAINTY_STYLE: Record<Certainty, { bar: string; dot: string; label: stri
   guessed: { bar: 'bg-canopy-600/25', dot: 'bg-canopy-600/60', label: 'Season word only' },
 };
 
+type GroupKey = 'species' | 'certainty';
+
 interface Props {
   rows: HarvestPlanRow[];
   year: number;
@@ -54,6 +63,15 @@ export default function HarvestCalendar({
   todayMs,
 }: Props) {
   const [purpose, setPurpose] = useState<HarvestPurpose>(defaultPurpose);
+  const [query, setQuery] = useState('');
+  const [selections, setSelections] = useState<Record<GroupKey, ReadonlySet<string>>>({
+    species: new Set(),
+    certainty: new Set(),
+  });
+  const state: ChipGroupState<GroupKey>[] = useMemo(
+    () => (Object.keys(selections) as GroupKey[]).map((key) => ({ key, selected: selections[key] })),
+    [selections],
+  );
 
   // The axis is fixed to the picking season rather than fitted to the data,
   // so switching orchard or purpose does not rescale the chart under you.
@@ -62,7 +80,7 @@ export default function HarvestCalendar({
   const span = axisEnd - axisStart;
   const pct = (t: number) => ((t - axisStart) / span) * 100;
 
-  const { bars, wontRipen, untargeted } = useMemo(() => {
+  const { bars, wontRipen, untargeted, withTargetCount } = useMemo(() => {
     const withTarget = rows.filter((r) => r.daysFromBloom != null && r.basis != null);
     const bars = withTarget
       .map((r) => {
@@ -80,14 +98,49 @@ export default function HarvestCalendar({
           a.prediction.window.start.getTime() - b.prediction.window.start.getTime() ||
           a.row.variety.localeCompare(b.row.variety)
       );
+    // Filtering happens after prediction, because certainty is a property of
+    // the prediction and not of the row it came from.
+    const pass = (b: (typeof bars)[number]) =>
+      matchesSearch([b.row.variety, b.row.fruitType], query) &&
+      matchesChips(b, state, (bar, key) =>
+        key === 'species' ? [bar.row.fruitType?.trim() || null] : [bar.certainty],
+      );
     return {
-      bars: bars.filter((b) => b.row.ripensHere),
+      withTargetCount: withTarget.length,
+      bars: bars.filter((b) => b.row.ripensHere && pass(b)),
       // Kept off the chart entirely. A bar is a picking date, and drawing
       // one for fruit that will not finish sends somebody out for it.
-      wontRipen: bars.filter((b) => !b.row.ripensHere),
+      wontRipen: bars.filter((b) => !b.row.ripensHere && pass(b)),
       untargeted: rows.filter((r) => r.daysFromBloom == null),
     };
-  }, [rows, purpose, year]);
+  }, [rows, purpose, year, query, state]);
+
+  const groups: FilterGroup<GroupKey>[] = useMemo(() => {
+    const species: Record<string, number> = {};
+    const certainty: Record<string, number> = {};
+    for (const b of [...bars, ...wontRipen]) {
+      const sp = b.row.fruitType?.trim();
+      if (sp) species[sp] = (species[sp] ?? 0) + 1;
+      certainty[b.certainty] = (certainty[b.certainty] ?? 0) + 1;
+    }
+    return [
+      {
+        key: 'species',
+        label: 'Species',
+        chips: Object.entries(species)
+          .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+          .map(([value, count]) => ({ value, label: value, count })),
+      },
+      {
+        key: 'certainty',
+        label: 'Certainty',
+        // In order of how much it is worth trusting, not by count.
+        chips: (['measured', 'derived', 'guessed'] as Certainty[]).flatMap((c) =>
+          certainty[c] ? [{ value: c, label: CERTAINTY_STYLE[c].label, count: certainty[c] }] : [],
+        ),
+      },
+    ];
+  }, [bars, wontRipen]);
 
   const todayInRange = todayMs >= axisStart && todayMs <= axisEnd;
 
@@ -112,6 +165,10 @@ export default function HarvestCalendar({
           ))}
         </div>
 
+        {/*
+          The orchard stays a link rather than a chip: it reloads the page
+          with a different scope, so it is navigation, not filtering.
+        */}
         <select
           value={selectedOrchardId ?? ''}
           onChange={(e) => {
@@ -129,11 +186,29 @@ export default function HarvestCalendar({
         </select>
 
         <span className="text-xs text-bark">
-          {bars.length} varieties with a window
-          {wontRipen.length > 0 ? `, ${wontRipen.length} that will not ripen here` : ''}
-          {untargeted.length > 0 ? `, ${untargeted.length} unknown` : ''}
+          {wontRipen.length > 0 ? `${wontRipen.length} will not ripen here` : ''}
+          {wontRipen.length > 0 && untargeted.length > 0 ? ' · ' : ''}
+          {untargeted.length > 0 ? `${untargeted.length} with no window` : ''}
         </span>
       </div>
+
+      <FilterBar
+        query={query}
+        onQueryChange={setQuery}
+        searchPlaceholder="Search varieties"
+        groups={groups}
+        state={state}
+        onToggle={(key, value) =>
+          setSelections((prev) => ({ ...prev, [key]: toggleChip(prev[key], value) }))
+        }
+        onClear={() => {
+          setQuery('');
+          setSelections({ species: new Set(), certainty: new Set() });
+        }}
+        shown={bars.length}
+        total={withTargetCount}
+        unit="varieties"
+      />
 
       <p className="text-[11px] text-bark/80">
         Picking runs from full bloom, not from the calendar.{' '}

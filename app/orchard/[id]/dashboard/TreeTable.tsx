@@ -3,12 +3,19 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ArrowDown, ArrowUp, MapPin, NotebookPen } from 'lucide-react';
-import type { ClientTree, TreeStatus } from '@/lib/types';
+import type { ClientTree } from '@/lib/types';
 import { TREE_STATUSES } from '@/lib/types';
-import { STATUS_COLORS } from '@/lib/trees-geojson';
 import StatusBadge, { STATUS_LABEL } from '@/components/StatusBadge';
 import { formatYMD } from '@/lib/dates';
 import { compareRowIds, normalizeRowId } from '@/lib/address';
+import FilterBar, { type FilterGroup } from '@/components/FilterBar';
+import {
+  chipCounts,
+  matchesChips,
+  matchesSearch,
+  toggleChip,
+  type ChipGroupState,
+} from '@/lib/filtering';
 import { useRouter } from 'next/navigation';
 import TreeGridEditor from '../viewer/TreeGridEditor';
 import { comparePositions } from '@/lib/position';
@@ -59,6 +66,21 @@ function sortValue(tree: ClientTree, key: SortKey): string | number | null {
   }
 }
 
+type GroupKey = 'status' | 'variety';
+
+const valuesOf = (row: ClientTree, key: GroupKey): (string | null)[] =>
+  key === 'status' ? [row.status] : [row.variety?.trim() || null];
+
+const searchFields = (row: ClientTree) => [
+  row.tree_no == null ? null : String(row.tree_no),
+  row.tree_id,
+  row.block_id,
+  row.row_id,
+  row.position == null ? null : String(row.position),
+  row.variety,
+  row.notes,
+];
+
 export default function TreeTable({
   trees,
   orchardId,
@@ -68,37 +90,54 @@ export default function TreeTable({
 }) {
   const [sortKey, setSortKey] = useState<SortKey>('row');
   const [sortAsc, setSortAsc] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<Set<TreeStatus>>(() => new Set(TREE_STATUSES));
-  const [varietyFilter, setVarietyFilter] = useState('');
   const [search, setSearch] = useState('');
+  // Selections are what is CHOSEN, not what is left showing. The status
+  // chips used to start with all four selected, so "nothing chosen" and
+  // "everything chosen" looked the same and the Clear state was ambiguous.
+  const [selections, setSelections] = useState<Record<GroupKey, ReadonlySet<string>>>({
+    status: new Set(),
+    variety: new Set(),
+  });
+  const state: ChipGroupState<GroupKey>[] = useMemo(
+    () => (Object.keys(selections) as GroupKey[]).map((key) => ({ key, selected: selections[key] })),
+    [selections],
+  );
   const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set());
   const [gridOpen, setGridOpen] = useState(false);
   const router = useRouter();
 
-  const varieties = useMemo(() => {
-    const set = new Set<string>();
-    for (const t of trees) if (t.variety?.trim()) set.add(t.variety.trim());
-    return [...set].sort();
-  }, [trees]);
+  const counts = useMemo(
+    () => chipCounts(trees, state, valuesOf, searchFields, search),
+    [trees, state, search],
+  );
 
-  const statusCounts = useMemo(() => {
-    const counts = { healthy: 0, stressed: 0, dead: 0, unknown: 0 } as Record<TreeStatus, number>;
-    for (const t of trees) counts[t.status] += 1;
-    return counts;
-  }, [trees]);
+  const groups: FilterGroup<GroupKey>[] = useMemo(
+    () => [
+      {
+        key: 'status',
+        label: 'Status',
+        // In the legend's order, not by count: these are a fixed scale and
+        // reordering them as the data shifts makes them hard to find.
+        chips: TREE_STATUSES.flatMap((st) => {
+          const count = counts.status?.[st] ?? 0;
+          return count > 0 ? [{ value: st, label: STATUS_LABEL[st], count }] : [];
+        }),
+      },
+      {
+        key: 'variety',
+        label: 'Variety',
+        chips: Object.entries<number>(counts.variety ?? {})
+          .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+          .map(([value, count]) => ({ value, label: value, count })),
+      },
+    ],
+    [counts],
+  );
 
   const visible = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const filtered = trees.filter((t) => {
-      if (!statusFilter.has(t.status)) return false;
-      if (varietyFilter && (t.variety?.trim() ?? '') !== varietyFilter) return false;
-      if (q) {
-        const hay =
-          `${t.tree_no ?? ''} ${t.tree_id} ${t.block_id ?? ''} ${t.variety ?? ''} ${t.notes ?? ''}`.toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
-    });
+    const filtered = trees.filter(
+      (t) => matchesSearch(searchFields(t), search) && matchesChips(t, state, valuesOf),
+    );
 
     const dir = sortAsc ? 1 : -1;
     filtered.sort((a, b) => {
@@ -123,7 +162,7 @@ export default function TreeTable({
       return comparePositions(a.position ?? '', b.position ?? '');
     });
     return filtered;
-  }, [trees, statusFilter, varietyFilter, search, sortKey, sortAsc]);
+  }, [trees, state, search, sortKey, sortAsc]);
 
   const toggleSort = (key: SortKey) => {
     if (key === sortKey) setSortAsc((v) => !v);
@@ -133,14 +172,6 @@ export default function TreeTable({
     }
   };
 
-  const toggleStatus = (s: TreeStatus) => {
-    setStatusFilter((prev) => {
-      const next = new Set(prev);
-      if (next.has(s)) next.delete(s);
-      else next.add(s);
-      return next;
-    });
-  };
 
   const dash = <span className="text-bark/50">—</span>;
 
@@ -198,54 +229,24 @@ export default function TreeTable({
           </button>
         </div>
       )}
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-2 mb-3">
-        {TREE_STATUSES.filter((s) => statusCounts[s] > 0).map((s) => {
-          const on = statusFilter.has(s);
-          return (
-            <button
-              key={s}
-              onClick={() => toggleStatus(s)}
-              aria-pressed={on}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors duration-fast ${
-                on ? 'bg-surface border-line text-ink' : 'bg-paper border-transparent text-bark/60'
-              }`}
-            >
-              <span
-                aria-hidden
-                className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: on ? STATUS_COLORS[s] : '#c4c9c4' }}
-              />
-              {STATUS_LABEL[s]} {statusCounts[s]}
-            </button>
-          );
-        })}
-        <select
-          value={varietyFilter}
-          onChange={(e) => setVarietyFilter(e.target.value)}
-          aria-label="Filter by variety"
-          className="text-xs px-2 py-1.5 bg-surface text-ink border border-line rounded-md focus:outline-none focus:ring-2 focus:ring-canopy-600"
-        >
-          <option value="">All varieties</option>
-          {varieties.map((v) => (
-            <option key={v} value={v}>
-              {v}
-            </option>
-          ))}
-        </select>
-        <input
-          type="search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search id, variety, notes…"
-          aria-label="Search trees"
-          className="flex-1 min-w-[140px] text-xs px-2.5 py-1.5 bg-surface text-ink border border-line rounded-md focus:outline-none focus:ring-2 focus:ring-canopy-600"
-        />
-      </div>
+      <FilterBar
+        query={search}
+        onQueryChange={setSearch}
+        searchPlaceholder="Search trees — id, variety, block, row or notes"
+        groups={groups}
+        state={state}
+        onToggle={(key, value) =>
+          setSelections((prev) => ({ ...prev, [key]: toggleChip(prev[key], value) }))
+        }
+        onClear={() => {
+          setSearch('');
+          setSelections({ status: new Set(), variety: new Set() });
+        }}
+        shown={visible.length}
+        total={trees.length}
+        unit="trees"
+      />
 
-      <p className="survey-caption mb-2">
-        Showing {visible.length} of {trees.length}
-      </p>
 
       <div className="overflow-x-auto border border-line rounded-md">
         <table className="w-full text-xs">
