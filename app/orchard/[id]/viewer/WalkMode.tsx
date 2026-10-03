@@ -694,12 +694,20 @@ function Sheet({
 }) {
   return (
     <div
+      // Anchored to the bottom and capped at the viewport. Without the cap a
+      // long inspection form grew the sheet upward until its header -- which
+      // is the only place the tree's name and position appear -- was above
+      // the top of the phone screen, where the map's overflow-hidden clipped
+      // it away. The header is now a flex child that cannot shrink and the
+      // form below it scrolls, so which tree you are standing at stays on
+      // screen however long the form gets.
       className="absolute inset-x-0 bottom-0 z-30 bg-surface border-t border-line shadow-2xl
-                 rounded-t-2xl pb-safe md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:w-[440px] md:rounded-2xl md:bottom-4 md:border"
+                 flex flex-col max-h-full
+                 rounded-t-2xl pb-safe md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:w-[440px] md:rounded-2xl md:bottom-4 md:max-h-[calc(100%-2rem)] md:border"
       role="region"
       aria-label="Walk mode"
     >
-      <div className="flex items-center justify-between px-4 pt-3 pb-2">
+      <div className="shrink-0 flex items-center justify-between px-4 pt-3 pb-2">
         <button
           onClick={onBack}
           disabled={!onBack}
@@ -718,7 +726,7 @@ function Sheet({
           <X size={20} aria-hidden />
         </button>
       </div>
-      {children}
+      <div className="overflow-y-auto flex-1 min-h-0">{children}</div>
     </div>
   );
 }
