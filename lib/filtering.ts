@@ -113,3 +113,23 @@ export function toggleChip(selected: ReadonlySet<string>, value: string): Set<st
 export function isUnfiltered(query: string, groups: readonly ChipGroupState[]): boolean {
   return query.trim() === '' && groups.every((g) => g.selected.size === 0);
 }
+
+/**
+ * Selected chips first, the rest in the order they came.
+ *
+ * A long chip row -- 111 varieties, say -- is collapsed to a single row, and
+ * a collapsed row must never hide a filter that is switched on: the list
+ * would be filtered by something the user cannot see. Floating the selected
+ * ones to the front keeps every active choice in the visible row, and the
+ * sort is stable so the unselected chips keep whatever order the caller
+ * sorted them into.
+ */
+export function selectedFirst<T extends { value: string }>(
+  chips: readonly T[],
+  selected: ReadonlySet<string>,
+): T[] {
+  if (selected.size === 0) return [...chips];
+  return [...chips].sort(
+    (a, b) => Number(selected.has(b.value)) - Number(selected.has(a.value)),
+  );
+}

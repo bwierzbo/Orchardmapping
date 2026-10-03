@@ -6,6 +6,7 @@ import {
   chipCounts,
   toggleChip,
   isUnfiltered,
+  selectedFirst,
   type ChipGroupState,
 } from './filtering';
 
@@ -158,5 +159,43 @@ describe('isUnfiltered', () => {
   it('is false once anything does', () => {
     expect(isUnfiltered('king', [group('cls')])).toBe(false);
     expect(isUnfiltered('', [group('cls', 'BSH')])).toBe(false);
+  });
+});
+
+describe('selectedFirst', () => {
+  const chips = [
+    { value: 'a', count: 9 },
+    { value: 'b', count: 5 },
+    { value: 'c', count: 3 },
+    { value: 'd', count: 1 },
+  ];
+
+  it('leaves the order alone when nothing is selected', () => {
+    expect(selectedFirst(chips, new Set()).map((c) => c.value)).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('floats a selected chip to the front', () => {
+    expect(selectedFirst(chips, new Set(['c'])).map((c) => c.value)).toEqual(['c', 'a', 'b', 'd']);
+  });
+
+  it('keeps the callers order within each half', () => {
+    // 'd' and 'b' were sorted by count by the caller; selecting them must
+    // not reshuffle them relative to each other.
+    expect(selectedFirst(chips, new Set(['b', 'd'])).map((c) => c.value)).toEqual([
+      'b',
+      'd',
+      'a',
+      'c',
+    ]);
+  });
+
+  it('does not mutate the input', () => {
+    const original = [...chips];
+    selectedFirst(chips, new Set(['d']));
+    expect(chips).toEqual(original);
+  });
+
+  it('ignores a selection for a chip that is not there', () => {
+    expect(selectedFirst(chips, new Set(['zz'])).map((c) => c.value)).toEqual(['a', 'b', 'c', 'd']);
   });
 });

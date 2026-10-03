@@ -1,7 +1,8 @@
 'use client';
 
-import { Search, X } from 'lucide-react';
-import { isUnfiltered, type ChipGroupState } from '@/lib/filtering';
+import { useEffect, useRef, useState } from 'react';
+import { ChevronDown, ChevronUp, Search, X } from 'lucide-react';
+import { isUnfiltered, selectedFirst, type ChipGroupState } from '@/lib/filtering';
 
 /**
  * The one filter bar, on every list in the app.
@@ -88,40 +89,129 @@ export default function FilterBar<Key extends string>({
         </button>
       </div>
 
-      {groups.map((group) => {
+      {groups.map((group) =>
         // A group whose values nothing currently carries is dropped rather
         // than shown as an empty row: it is not a filter you can use.
-        if (group.chips.length === 0) return null;
-        const selected = selectedFor(group.key);
-        return (
-          <div key={group.key} className="flex flex-col sm:flex-row sm:items-start gap-1.5 sm:gap-2.5">
-            <div className="sm:w-28 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-bark sm:pt-1.5">
-              {group.label}
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {group.chips.map((chip) => {
-                const on = selected.has(chip.value);
-                return (
-                  <button
-                    key={chip.value}
-                    type="button"
-                    onClick={() => onToggle(group.key, chip.value)}
-                    aria-pressed={on}
-                    className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border active:scale-[0.97] ${
-                      on
-                        ? 'bg-canopy-700 border-canopy-700 text-white'
-                        : 'border-line bg-paper text-ink hover:bg-canopy-50'
-                    }`}
-                  >
-                    {chip.label}{' '}
-                    <span className={on ? 'opacity-75' : 'text-bark'}>{chip.count}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
+        group.chips.length === 0 ? null : (
+          <ChipRow
+            key={group.key}
+            group={group}
+            selected={selectedFor(group.key)}
+            onToggle={onToggle}
+          />
+        ),
+      )}
+    </div>
+  );
+}
+
+/**
+ * One labelled row of chips, folded to a single line when there are more
+ * than fit on one.
+ *
+ * A hundred and eleven varieties is a wall, and a wall is not a filter --
+ * it buries the table under itself. The fold has to be measured rather than
+ * counted: eight chips are one row on a desktop and three on a phone, so a
+ * chip-count threshold would either clip a short group with no way to open
+ * it or leave a long one sprawling.
+ *
+ * The height is taken from the first chip rather than hardcoded, since a
+ * chip's height is whatever the font and theme make it.
+ */
+function ChipRow<Key extends string>({
+  group,
+  selected,
+  onToggle,
+}: {
+  group: FilterGroup<Key>;
+  selected: ReadonlySet<string>;
+  onToggle: (key: Key, value: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [clamp, setClamp] = useState<{ row: number; overflowing: boolean } | null>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => {
+      const first = el.firstElementChild as HTMLElement | null;
+      const row = first?.offsetHeight ?? 0;
+      if (row === 0) return;
+      // scrollHeight still reports the full content while clipped, so this
+      // keeps answering correctly once folded.
+      const overflowing = el.scrollHeight > row + 1;
+      setClamp((prev) =>
+        prev && prev.row === row && prev.overflowing === overflowing
+          ? prev
+          : { row, overflowing },
+      );
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    const frame = requestAnimationFrame(measure);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [group.chips]);
+
+  // Assumed folded until measured, so a long group never flashes open.
+  const folded = !expanded && (clamp === null || clamp.overflowing);
+  // Folding must not hide a filter that is switched on.
+  const chips = folded ? selectedFirst(group.chips, selected) : group.chips;
+
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-start gap-1.5 sm:gap-2.5">
+      <div className="sm:w-28 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-bark sm:pt-1.5">
+        {group.label}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div
+          ref={ref}
+          className={`flex flex-wrap gap-1.5 ${folded ? 'overflow-hidden' : ''}`}
+          style={folded ? { maxHeight: clamp?.row ?? 32 } : undefined}
+        >
+          {chips.map((chip) => {
+            const on = selected.has(chip.value);
+            return (
+              <button
+                key={chip.value}
+                type="button"
+                onClick={() => onToggle(group.key, chip.value)}
+                aria-pressed={on}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border active:scale-[0.97] ${
+                  on
+                    ? 'bg-canopy-700 border-canopy-700 text-white'
+                    : 'border-line bg-paper text-ink hover:bg-canopy-50'
+                }`}
+              >
+                {chip.label}{' '}
+                <span className={on ? 'opacity-75' : 'text-bark'}>{chip.count}</span>
+              </button>
+            );
+          })}
+        </div>
+        {clamp?.overflowing && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
+            className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-bark hover:text-ink"
+          >
+            {expanded ? (
+              <>
+                <ChevronUp aria-hidden size={12} /> Fewer {group.label.toLowerCase()}
+              </>
+            ) : (
+              <>
+                <ChevronDown aria-hidden size={12} /> All {group.chips.length}{' '}
+                {group.label.toLowerCase()}
+              </>
+            )}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
