@@ -99,9 +99,69 @@ export function walkContext(trees: ClientTree[], startTreeId: string): WalkConte
 export function defaultDirection(ctx: WalkContext | null): WalkDirection {
   if (!ctx) return { along: 1, rows: 1 };
   return {
-    along: ctx.aheadDown > ctx.aheadUp ? -1 : 1,
+    // Forward is the next position up the row, always.
+    //
+    // This used to pick whichever leg was longer, which saved a few steps
+    // and silently reversed what "skip" meant: starting at P17 of a 32-tree
+    // row it set off for P1, so skip went to P16 while the walker was
+    // plainly heading for P18. Which way round a row runs is the walker's
+    // call, on the toggle in setup, not something to infer from where they
+    // happened to start.
+    along: 1,
     rows: ctx.rowsDown > ctx.rowsUp ? -1 : 1,
   };
+}
+
+/**
+ * Which way along a row a path already travels.
+ *
+ * A resumed walk has only its stored list of trees -- the direction that
+ * built it is not saved -- so it is read back off the path by finding the
+ * first consecutive pair that share a row and seeing which way the position
+ * moved. Without this, navigating a resumed walk would use whatever
+ * direction the setup screen last defaulted to, which is a guess about a
+ * decision that was already made.
+ */
+export function pathAlong(path: ClientTree[], trees: ClientTree[]): Heading {
+  const { byRow } = groupRows(trees);
+  const place = (t: ClientTree): { row: string; i: number } | null => {
+    if (!t.row_id || t.position == null || t.position === '') return null;
+    const row = normalizeRowId(t.row_id);
+    const list = byRow.get(row);
+    if (!list) return null;
+    const i = list.findIndex((x) => x.tree_id === t.tree_id);
+    return i < 0 ? null : { row, i };
+  };
+  for (let k = 0; k + 1 < path.length; k++) {
+    const a = place(path[k]);
+    const b = place(path[k + 1]);
+    if (!a || !b || a.row !== b.row || a.i === b.i) continue;
+    return b.i > a.i ? 1 : -1;
+  }
+  return 1;
+}
+
+/**
+ * The tree one step back along the row, against the direction of travel.
+ *
+ * Needed because the walk path puts the trees behind the start at the very
+ * end of the list, so stepping back by one array index from the first tree
+ * goes nowhere. Starting a walk half way up a row left the back button dead
+ * even though the previous tree was standing right there. Back is therefore
+ * a question about the row, not about the array.
+ */
+export function stepBackInRow(
+  trees: ClientTree[],
+  currentId: string,
+  along: Heading,
+): ClientTree | null {
+  const { byRow } = groupRows(trees);
+  for (const list of byRow.values()) {
+    const i = list.findIndex((t) => t.tree_id === currentId);
+    if (i < 0) continue;
+    return list[i - along] ?? null;
+  }
+  return null;
 }
 
 export interface WalkPath {
