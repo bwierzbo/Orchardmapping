@@ -1,6 +1,7 @@
 import { TRPCClientError } from '@trpc/client';
 import type { ClientTree } from '../types';
 import type { ManualEventType } from '../db/tree-events';
+import type { HarvestUnit } from '../harvest-units';
 import { trpc } from '../trpc/client';
 
 /**
@@ -121,6 +122,31 @@ export interface ClientTreeEvent {
   changes: Record<string, { from: unknown; to: unknown }> | null;
   photo_url: string | null;
   created_at: string | null;
+}
+
+/**
+ * Record what came off one tree.
+ *
+ * The quantity goes up as the grower said it -- bushels, pounds or kilos --
+ * and the server converts a normalised weight beside it rather than instead
+ * of it.
+ */
+export async function recordTreeHarvest(
+  treeId: string,
+  input: {
+    quantity: number;
+    unit: HarvestUnit;
+    harvest_date?: string;
+    notes?: string;
+    photo_url?: string;
+  },
+): Promise<{ weight_lbs: number; detail: string }> {
+  const response = await fetch(`/api/trees/${encodeURIComponent(treeId)}/harvest`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return parseResponse<{ weight_lbs: number; detail: string }>(response);
 }
 
 export async function fetchTreeEvents(treeId: string): Promise<ClientTreeEvent[]> {

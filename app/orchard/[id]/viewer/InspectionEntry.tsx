@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ClientTree, TreeStatus } from '@/lib/types';
 import { STATUS_COLORS } from '@/lib/trees-geojson';
-import { createTreeEvent } from '@/lib/api/trees';
+import { createTreeEvent, recordTreeHarvest } from '@/lib/api/trees';
 import { sgToBrix } from '@/lib/sugar';
 import { bloomStagesFor, FRUIT_METRIC_CATALOG, type WalkSettings } from '@/lib/settings';
 import type { WalkInspection } from '@/lib/walk-progress';
@@ -16,6 +16,12 @@ import { trpc } from '@/lib/trpc/client';
 import { splitForPicker, type PickablePest } from '@/lib/pest-picker';
 import { METRIC_HELP, inchesToMm } from '@/lib/fruit-metrics';
 import { previousReading, readingDelta } from '@/lib/previous-reading';
+import {
+  describeHarvest,
+  HARVEST_UNITS,
+  toPounds,
+  type HarvestUnit,
+} from '@/lib/harvest-units';
 import type { LastObservation } from '@/lib/db/last-observation';
 import { CONDITION_METRIC_CATALOG } from '@/lib/settings';
 import {
@@ -322,6 +328,39 @@ export default function InspectionEntry({
   const [readiness, setReadiness] = useState<ReadinessVerdict | null>(null);
   /** Photos taken on this tree in this sitting, newest last. */
   const [photos, setPhotos] = useState<string[]>([]);
+  /**
+   * What came off this tree, in whatever the picker counts in.
+   *
+   * Saved on its own rather than folded into Record, because a harvest is a
+   * quantity that has to add up across trees -- it writes a harvests row,
+   * not just an event -- and because picking usually happens on a different
+   * walk from inspecting.
+   */
+  const [harvestQty, setHarvestQty] = useState('');
+  const [harvestUnit, setHarvestUnit] = useState<HarvestUnit>('bushel');
+  const [harvesting, setHarvesting] = useState(false);
+
+  /** The entered amount in pounds, or null while it is not a usable number. */
+  const harvestPounds = toPounds(Number(harvestQty), harvestUnit, tree.fruit_type);
+
+  const saveHarvest = async () => {
+    if (harvestPounds === null) return;
+    setHarvesting(true);
+    try {
+      const res = await recordTreeHarvest(tree.tree_id, {
+        quantity: Number(harvestQty),
+        unit: harvestUnit,
+      });
+      setHarvestQty('');
+      // The tree's history and its last-harvest date have both moved.
+      onSaved({ saved: 1, inspected: false, photo: false });
+      toast.success(`Harvest recorded — ${res.detail}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not record the harvest');
+    } finally {
+      setHarvesting(false);
+    }
+  };
 
   /**
    * What this tree showed last time. Shown beside the empty fields, never
@@ -1038,6 +1077,59 @@ export default function InspectionEntry({
             </div>
           </div>
         )}
+
+        {/* ── Harvest: its own save, because it is a quantity, not an answer ── */}
+        <div className="rounded-lg border border-line p-2.5 space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-bark">
+            Picked from this tree
+          </p>
+          <div className="flex gap-2">
+            <Input
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="any"
+              placeholder="Amount"
+              value={harvestQty}
+              onChange={(e) => setHarvestQty(e.target.value)}
+              disabled={busy || harvesting}
+              className="h-11 flex-1"
+              aria-label="Amount harvested"
+            />
+            <div className="flex rounded-lg border border-line overflow-hidden">
+              {HARVEST_UNITS.map((u) => (
+                <button
+                  key={u}
+                  type="button"
+                  onClick={() => setHarvestUnit(u)}
+                  aria-pressed={harvestUnit === u}
+                  disabled={busy || harvesting}
+                  className={`px-3 text-sm font-medium ${
+                    harvestUnit === u
+                      ? 'bg-canopy-700 text-white'
+                      : 'bg-paper text-ink hover:bg-canopy-50'
+                  }`}
+                >
+                  {u}
+                </button>
+              ))}
+            </div>
+          </div>
+          {harvestPounds !== null && (
+            <p className="text-xs text-bark">
+              {describeHarvest(Number(harvestQty), harvestUnit, tree.fruit_type)}
+            </p>
+          )}
+          <Button
+            type="button"
+            variant="secondary"
+            className="w-full h-11"
+            disabled={harvestPounds === null || busy || harvesting}
+            onClick={() => void saveHarvest()}
+          >
+            {harvesting ? 'Recording…' : 'Record harvest'}
+          </Button>
+        </div>
 
         {/* ── Notes: always available; saved with the tree's record ── */}
         <Input
