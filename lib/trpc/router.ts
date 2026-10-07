@@ -427,20 +427,9 @@ export const appRouter = router({
      * the readiness verdict. Null when the variety has no target.
      */
     predictedPick: orchardViewerProcedure
-      .input(
-        z.object({
-          orchardId: z.string().min(1),
-          variety: z.string().min(1),
-          purpose: z.enum(['cider', 'fresh']),
-        }),
-      )
+      .input(z.object({ orchardId: z.string().min(1), variety: z.string().min(1) }))
       .query(({ input }) =>
-        predictedPickFor(
-          input.orchardId,
-          input.variety,
-          input.purpose,
-          new Date().getUTCFullYear(),
-        ),
+        predictedPickFor(input.orchardId, input.variety, new Date().getUTCFullYear()),
       ),
 
     /** Variety options for the picker: the library plus what is already here. */

@@ -342,7 +342,9 @@ export default function InspectionEntry({
     if (!settings.askHarvestReadiness || !variety) return;
     let live = true;
     trpc.tree.predictedPick
-      .query({ orchardId: tree.orchard_id, variety, purpose: 'cider' })
+      // No purpose passed: the orchard's own setting decides it server-side,
+      // so a cidery and a fresh-fruit orchard each get their own target.
+      .query({ orchardId: tree.orchard_id, variety })
       .then((v) => {
         if (!live) return;
         setFetchedCentre(v?.centre ?? null);
