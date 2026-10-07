@@ -1,5 +1,6 @@
 import { TRPCClientError } from '@trpc/client';
 import type { ClientTree } from '../types';
+import type { ManualEventType } from '../db/tree-events';
 import { trpc } from '../trpc/client';
 
 /**
@@ -131,7 +132,12 @@ export async function fetchTreeEvents(treeId: string): Promise<ClientTreeEvent[]
 export async function createTreeEvent(
   treeId: string,
   input: {
-    event_type: string;
+    // The union, not `string`. A type the API does not accept used to be a
+    // runtime failure in the field -- tree_condition and harvest_readiness
+    // were rejected on every inspection for weeks while the rest of the
+    // form saved, so the error looked cosmetic and the data quietly went
+    // nowhere. Now it does not compile.
+    event_type: ManualEventType;
     event_date?: string;
     detail?: string;
     changes?: Record<string, unknown>;

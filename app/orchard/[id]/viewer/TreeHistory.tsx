@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import PhotoButton from '@/components/PhotoButton';
+import type { ManualEventType } from '@/lib/db/tree-events';
 import {
   Select,
   SelectContent,
@@ -32,10 +33,17 @@ const EVENT_LABEL: Record<string, string> = {
   note: 'Note',
   bloom: 'Bloom stage',
   fruit_check: 'Fruit check',
+  tree_condition: 'Trunk and scaffolds',
+  harvest_readiness: 'Picking verdict',
 };
 
-/** Bloom stages and fruit checks are logged through the panel's Inspect form. */
-const MANUAL_TYPES = [
+/**
+ * Hand-logged activities only. The survey types -- bloom, fruit check,
+ * trunk condition and the picking verdict -- are written by the Inspect
+ * form with a structured payload, so they are not offered here: chosen
+ * from this menu they would be an empty row with a label.
+ */
+const MANUAL_TYPES: readonly ManualEventType[] = [
   'observation',
   'pruning',
   'spray',
@@ -79,7 +87,7 @@ export default function TreeHistory({
   const [events, setEvents] = useState<ClientTreeEvent[] | null>(null);
   const [logging, setLogging] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [eventType, setEventType] = useState('observation');
+  const [eventType, setEventType] = useState<ManualEventType>('observation');
   const [eventDate, setEventDate] = useState(todayYMD());
   const [detail, setDetail] = useState('');
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
@@ -133,7 +141,10 @@ export default function TreeHistory({
       {logging && (
         <div className="mt-2 space-y-2 rounded-lg border border-line p-2.5 bg-paper/60">
           <div className="grid grid-cols-2 gap-2">
-            <Select value={eventType} onValueChange={setEventType}>
+            <Select
+              value={eventType}
+              onValueChange={(v) => setEventType(v as ManualEventType)}
+            >
               <SelectTrigger className="h-8 text-sm">
                 <SelectValue />
               </SelectTrigger>

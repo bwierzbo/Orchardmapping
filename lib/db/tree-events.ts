@@ -9,6 +9,21 @@ export const AUTO_EVENT_TYPES = [
   'deleted',
 ] as const;
 
+/**
+ * Passes the walk survey and the Inspect form record, each with a
+ * structured payload in `changes`.
+ *
+ * Named separately from the hand-logged activities below because they are
+ * written by a form rather than chosen from a menu -- the bulk-action
+ * dropdown offers its own list and must not offer these.
+ */
+export const SURVEY_EVENT_TYPES = [
+  'bloom',
+  'fruit_check',
+  'tree_condition',
+  'harvest_readiness',
+] as const;
+
 /** Manual field-activity types a user can log from the tree panel. */
 export const MANUAL_EVENT_TYPES = [
   'pruning',
@@ -17,14 +32,13 @@ export const MANUAL_EVENT_TYPES = [
   'observation',
   'harvest',
   'note',
-  // Walk-survey passes (structured payload in `changes`)
-  'bloom',
-  'fruit_check',
+  ...SURVEY_EVENT_TYPES,
 ] as const;
 
-export type TreeEventType =
-  | (typeof AUTO_EVENT_TYPES)[number]
-  | (typeof MANUAL_EVENT_TYPES)[number];
+/** What a client is allowed to write. The API rejects anything else. */
+export type ManualEventType = (typeof MANUAL_EVENT_TYPES)[number];
+
+export type TreeEventType = (typeof AUTO_EVENT_TYPES)[number] | ManualEventType;
 
 export interface TreeEvent {
   id: number;
