@@ -12,6 +12,7 @@ import { formatYMD } from '@/lib/dates';
 import StatusBadge, { STATUS_LABEL } from '@/components/StatusBadge';
 import FloatingWindow from '@/components/FloatingWindow';
 import TreeHistory from './TreeHistory';
+import TreePhotos from './TreePhotos';
 import { formatAddress, formatTreeLabel } from '@/lib/address';
 import { trpc } from '@/lib/trpc/client';
 import VarietyPicker from './VarietyPicker';
@@ -405,6 +406,7 @@ export default function TreeDetailPanel({
                 </p>
               )}
             </div>
+            <TreePhotos key={`photos-${tree.tree_id}`} treeId={tree.tree_id} refreshKey={historyVersion} />
             <TreeHistory
               key={tree.tree_id}
               treeId={tree.tree_id}
