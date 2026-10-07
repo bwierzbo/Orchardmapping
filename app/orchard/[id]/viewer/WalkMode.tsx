@@ -6,7 +6,9 @@ import { STATUS_LABEL } from '@/components/StatusBadge';
 import { deleteWalkProgress, fetchWalkProgress, putWalkProgress } from '@/lib/api/walk-progress';
 import {
   defaultDirection,
+  pathAlong,
   sampleVarietyRuns,
+  stepBackInRow,
   walkContext,
   walkPathFrom,
   type Heading,
@@ -456,8 +458,31 @@ export default function WalkMode({
    * logic: going back means going back to the tree you just left, even
    * when it is recorded -- that is usually exactly why you are going back.
    */
+  /**
+   * The tree standing behind this one, for when there is no array index to
+   * step back to.
+   *
+   * A walk that starts half way up a row puts the trees behind the start at
+   * the very end of the path, so at index 0 there is nothing before you even
+   * though the previous tree is right there. The direction is read back off
+   * the path rather than from the setup screen's state, because a resumed
+   * walk never stored which way it was built.
+   */
+  const behindCurrent = (() => {
+    if (index > 0 || !current) return -1;
+    const back = stepBackInRow(trees, current.tree_id, pathAlong(path, trees));
+    if (!back) return -1;
+    return path.findIndex((t) => t.tree_id === back.tree_id);
+  })();
+
+  const canGoBack = index > 0 || behindCurrent >= 0;
+
   const goBack = () => {
-    if (index > 0) setIndex(index - 1);
+    if (index > 0) {
+      setIndex(index - 1);
+      return;
+    }
+    if (behindCurrent >= 0) setIndex(behindCurrent);
   };
 
   const advance = () => {
@@ -500,7 +525,7 @@ export default function WalkMode({
           </p>
         </>
       }
-      onBack={index > 0 && !busy ? () => setIndex((i) => i - 1) : undefined}
+      onBack={canGoBack && !busy ? goBack : undefined}
     >
       {/* The same form the tree panel's "Inspect" opens — one code path,
           one set of events. Keyed per tree so entries never carry over. */}
@@ -534,7 +559,7 @@ export default function WalkMode({
               variant="secondary"
               className="h-11 px-3"
               onClick={goBack}
-              disabled={entryBusy || index === 0}
+              disabled={entryBusy || !canGoBack}
               aria-label="Back to the previous tree"
               title="Back to the previous tree"
             >

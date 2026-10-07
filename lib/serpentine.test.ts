@@ -13,6 +13,13 @@ function tree(row: string, position: number): ClientTree {
   } as ClientTree;
 }
 
+/** A 3x3 block, shared by the walk-path, direction and step-back tests. */
+const grid = [
+  tree('1', 1), tree('1', 2), tree('1', 3),
+  tree('2', 1), tree('2', 2), tree('2', 3),
+  tree('3', 1), tree('3', 2), tree('3', 3),
+];
+
 describe('serpentineOrder', () => {
   it('walks up the first row and down the second', () => {
     const trees = [tree('1', 1), tree('1', 2), tree('2', 1), tree('2', 2)];
@@ -63,11 +70,6 @@ describe('varietySamplePath', () => {
 });
 
 describe('walkPathFrom', () => {
-  const grid = [
-    tree('1', 1), tree('1', 2), tree('1', 3),
-    tree('2', 1), tree('2', 2), tree('2', 3),
-    tree('3', 1), tree('3', 2), tree('3', 3),
-  ];
   const ids = (list: ClientTree[]) => list.map((t) => t.tree_id);
 
   it('starts at the chosen tree and serpentines in the chosen directions', async () => {
@@ -112,16 +114,97 @@ describe('walkPathFrom', () => {
     expect(ids(walkPathFrom(grid, null, { along: 1, rows: 1 }).path)).toEqual(ids(serpentineOrder(grid)));
   });
 
-  it('describes the surroundings of a start tree and picks the longer way as default', async () => {
-    const { walkContext, defaultDirection } = await import('./serpentine');
+  it('describes the surroundings of a start tree', async () => {
+    const { walkContext } = await import('./serpentine');
     const ctx = walkContext(grid, 't-R3-P3');
     expect(ctx).toMatchObject({
       row: '3', position: '3',
       aheadUp: 0, aheadDown: 2, nextPosUp: null, nextPosDown: '2',
       rowsUp: 0, rowsDown: 2, nextRowUp: null, nextRowDown: '2',
     });
-    expect(defaultDirection(ctx)).toEqual({ along: -1, rows: -1 });
-    expect(defaultDirection(walkContext(grid, 't-R2-P2'))).toEqual({ along: 1, rows: 1 });
     expect(walkContext(grid, 'nope')).toBeNull();
+  });
+
+  it('always points forward up the row, whichever leg is longer', async () => {
+    const { walkContext, defaultDirection } = await import('./serpentine');
+    // R3/P3 has two trees below it and none above. The old default read that
+    // as "go down", which is what made skip walk away from the walker.
+    expect(defaultDirection(walkContext(grid, 't-R3-P3'))).toEqual({ along: 1, rows: -1 });
+    expect(defaultDirection(walkContext(grid, 't-R2-P2'))).toEqual({ along: 1, rows: 1 });
+    expect(defaultDirection(walkContext(grid, 't-R1-P1'))).toEqual({ along: 1, rows: 1 });
+    expect(defaultDirection(null)).toEqual({ along: 1, rows: 1 });
+  });
+});
+
+describe('pathAlong', () => {
+  it('reads an ascending path', async () => {
+    const { pathAlong, walkPathFrom } = await import('./serpentine');
+    const { path } = walkPathFrom(grid, 't-R2-P1', { along: 1, rows: 1 });
+    expect(pathAlong(path, grid)).toBe(1);
+  });
+
+  it('reads a descending path', async () => {
+    const { pathAlong, walkPathFrom } = await import('./serpentine');
+    const { path } = walkPathFrom(grid, 't-R2-P3', { along: -1, rows: 1 });
+    expect(pathAlong(path, grid)).toBe(-1);
+  });
+
+  it('is what lets a resumed walk navigate the way it was built', async () => {
+    const { pathAlong } = await import('./serpentine');
+    // The stored path is just tree ids; the direction was never saved. Two
+    // consecutive trees in one row are enough to recover it.
+    const descending = [tree('1', 3), tree('1', 2), tree('1', 1)];
+    expect(pathAlong(descending, grid)).toBe(-1);
+  });
+
+  it('skips pairs that straddle a row change', async () => {
+    const { pathAlong } = await import('./serpentine');
+    // R1/P3 -> R2/P1 says nothing about direction along a row; the next
+    // pair, both in row 2, does.
+    const path = [tree('1', 3), tree('2', 1), tree('2', 2)];
+    expect(pathAlong(path, grid)).toBe(1);
+  });
+
+  it('falls forward when a path is too short to tell', async () => {
+    const { pathAlong } = await import('./serpentine');
+    expect(pathAlong([], grid)).toBe(1);
+    expect(pathAlong([tree('1', 1)], grid)).toBe(1);
+  });
+});
+
+describe('stepBackInRow', () => {
+  it('steps down the row when travel is up it', async () => {
+    const { stepBackInRow } = await import('./serpentine');
+    expect(stepBackInRow(grid, 't-R2-P2', 1)?.tree_id).toBe('t-R2-P1');
+  });
+
+  it('steps up the row when travel is down it', async () => {
+    const { stepBackInRow } = await import('./serpentine');
+    expect(stepBackInRow(grid, 't-R2-P2', -1)?.tree_id).toBe('t-R2-P3');
+  });
+
+  it('is the reported case: at P17 walking up, back is P16', async () => {
+    const { stepBackInRow } = await import('./serpentine');
+    const row = Array.from({ length: 32 }, (_, i) => tree('3', i + 1));
+    expect(stepBackInRow(row, 't-R3-P17', 1)?.tree_id).toBe('t-R3-P16');
+    // And the tree ahead, which the walk path already handles, is P18.
+    expect(stepBackInRow(row, 't-R3-P17', -1)?.tree_id).toBe('t-R3-P18');
+  });
+
+  it('has nothing behind the first tree of a row, so Back stays disabled', async () => {
+    const { stepBackInRow } = await import('./serpentine');
+    expect(stepBackInRow(grid, 't-R2-P1', 1)).toBeNull();
+    expect(stepBackInRow(grid, 't-R2-P3', -1)).toBeNull();
+  });
+
+  it('does not wander into a neighbouring row', async () => {
+    const { stepBackInRow } = await import('./serpentine');
+    // R2/P1 going up has no predecessor; it must not return R1/P3.
+    expect(stepBackInRow(grid, 't-R2-P1', 1)).toBeNull();
+  });
+
+  it('returns null for a tree it cannot place', async () => {
+    const { stepBackInRow } = await import('./serpentine');
+    expect(stepBackInRow(grid, 'nope', 1)).toBeNull();
   });
 });
