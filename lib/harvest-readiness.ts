@@ -20,7 +20,7 @@ export const READINESS_VERDICTS = ['now', 'week', 'two_weeks', 'not_yet'] as con
 export type ReadinessVerdict = (typeof READINESS_VERDICTS)[number];
 
 export const READINESS_LABEL: Record<ReadinessVerdict, string> = {
-  now: 'Pick now',
+  now: 'Harvest now',
   week: 'About a week',
   two_weeks: 'Two weeks',
   not_yet: 'Not yet',

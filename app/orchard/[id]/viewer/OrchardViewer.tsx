@@ -1429,7 +1429,6 @@ export default function OrchardViewer({
         <TreeDetailPanel
           key={selectedTree.tree_id}
           tree={selectedTree}
-          onRecordHarvest={() => setHarvestOpen(true)}
           canEdit={canEdit}
           saving={saving}
           walkSettings={walkSettings}

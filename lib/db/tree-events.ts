@@ -1,4 +1,10 @@
 import { sql } from '@vercel/postgres';
+import { toYMD } from '../dates';
+import {
+  isEmptyWithoutPhoto,
+  isRemovableEventType,
+  statusAfterRemoval,
+} from '../event-removal';
 
 /** Automatic event types, written by the API when tree data changes. */
 export const AUTO_EVENT_TYPES = [
@@ -111,6 +117,15 @@ export async function listTreeEvents(
   return rows as TreeEvent[];
 }
 
+/** Events as the client reads them: calendar-day dates, ISO timestamps. */
+export function toClientEvents(events: readonly TreeEvent[]) {
+  return events.map((e) => ({
+    ...e,
+    event_date: toYMD(e.event_date),
+    created_at: e.created_at ? new Date(e.created_at).toISOString() : null,
+  }));
+}
+
 /**
  * Diff two tree records into an audit `changes` object of
  * { field: { from, to } }, restricted to fields present in `patch`.
@@ -167,4 +182,166 @@ export async function lastInspectedByOrchard(
   const out: Record<string, string> = {};
   for (const row of result.rows) out[row.tree_id] = row.last_inspected;
   return out;
+}
+
+// ── Taking a mistake back out ────────────────────────────────────────────
+
+/** Thrown for a request the caller got wrong; the route maps `status`. */
+function httpError(message: string, status: number): Error {
+  return Object.assign(new Error(message), { status });
+}
+
+/**
+ * Delete one event from a tree's history, and undo what it did.
+ *
+ * Soft, like group undo: the row is marked `undone_at` and drops out of the
+ * history, the photos and the inspection map, but is kept. Three kinds of
+ * event wrote somewhere else as well, and those writes go with it:
+ *  - status_change: the tree's status goes back (see statusAfterRemoval);
+ *  - harvest from one tree: its harvests row is undone and last_harvest
+ *    recomputed from the harvests left. A share of a block harvest is only
+ *    this tree's line in it, so the block total is not touched;
+ *  - "Seen on tree": the pest sightings the same Record wrote, which carry
+ *    no link back to the event. They are matched by tree, pest and time --
+ *    written in the two minutes before the event, as saveInspection does.
+ */
+export async function removeTreeEvent(
+  treeId: string,
+  eventId: number
+): Promise<{ status: string | null }> {
+  const client = await sql.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `SELECT id, event_type, event_date::text AS event_date, changes, created_at, group_action_id
+         FROM tree_events
+        WHERE id = $1 AND tree_id = $2 AND undone_at IS NULL
+        FOR UPDATE`,
+      [eventId, treeId]
+    );
+    const event = rows[0];
+    if (!event) throw httpError('That entry is not in this tree\'s history', 404);
+    if (!isRemovableEventType(event.event_type)) {
+      throw httpError('Edits to the tree itself stay in its history', 400);
+    }
+
+    await client.query('UPDATE tree_events SET undone_at = NOW() WHERE id = $1', [eventId]);
+
+    const changes = (event.changes ?? {}) as Record<string, unknown>;
+
+    if (event.event_type === 'status_change' && changes.status) {
+      const removed = changes.status as { from: unknown; to: unknown };
+      const { rows: later } = await client.query(
+        `SELECT 1 FROM tree_events
+          WHERE tree_id = $1 AND event_type = 'status_change' AND undone_at IS NULL
+            AND created_at > $2
+          LIMIT 1`,
+        [treeId, event.created_at]
+      );
+      const { rows: prev } = await client.query(
+        `SELECT changes->'status'->>'to' AS status FROM tree_events
+          WHERE tree_id = $1 AND event_type = 'status_change' AND undone_at IS NULL
+          ORDER BY created_at DESC LIMIT 1`,
+        [treeId]
+      );
+      const { rows: tree } = await client.query(
+        'SELECT status FROM trees WHERE tree_id = $1',
+        [treeId]
+      );
+      const next = statusAfterRemoval({
+        current: tree[0]?.status ?? null,
+        removed,
+        removedIsLatest: later.length === 0,
+        previousTo: prev[0]?.status ?? null,
+      });
+      if (next !== null) {
+        await client.query(
+          'UPDATE trees SET status = $1, updated_at = NOW() WHERE tree_id = $2',
+          [next, treeId]
+        );
+      }
+    }
+
+    if (event.event_type === 'harvest') {
+      if (event.group_action_id == null) {
+        // The closest-in-time match, so two identical picks on one day
+        // lose one row each, not both.
+        await client.query(
+          `UPDATE harvests SET undone_at = NOW()
+            WHERE id = (
+              SELECT id FROM harvests
+               WHERE tree_id = $1 AND group_action_id IS NULL AND undone_at IS NULL
+                 AND harvest_date = $2::date
+                 AND quantity = $3::numeric AND unit = $4
+               ORDER BY ABS(EXTRACT(EPOCH FROM created_at - $5::timestamptz))
+               LIMIT 1
+            )`,
+          [treeId, event.event_date, changes.quantity ?? null, changes.unit ?? null, event.created_at]
+        );
+      }
+      // Only rewound when this harvest was the one that set it: a date
+      // typed into the tree's own form is somebody's decision.
+      await client.query(
+        `UPDATE trees SET last_harvest = (
+            SELECT MAX(event_date) FROM tree_events
+             WHERE tree_id = $1 AND event_type = 'harvest' AND undone_at IS NULL
+          ), updated_at = NOW()
+          WHERE tree_id = $1 AND last_harvest = $2::date`,
+        [treeId, event.event_date]
+      );
+    }
+
+    if (event.event_type === 'observation' && changes.pests && typeof changes.pests === 'object') {
+      await client.query(
+        `UPDATE pest_observations SET deleted_at = NOW()
+          WHERE tree_id = $1 AND pest_key = ANY($2) AND deleted_at IS NULL
+            AND created_at BETWEEN $3::timestamptz - INTERVAL '2 minutes'
+                               AND $3::timestamptz + INTERVAL '5 seconds'`,
+        [treeId, Object.keys(changes.pests as object), event.created_at]
+      );
+    }
+
+    const { rows: after } = await client.query(
+      'SELECT status FROM trees WHERE tree_id = $1',
+      [treeId]
+    );
+    await client.query('COMMIT');
+    return { status: after[0]?.status ?? null };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Take a photo off a tree. The same picture can ride on more than one event
+ * (the photo series shows it once), so it comes off all of them; an event
+ * left with nothing else in it is deleted along with it. The file itself is
+ * left in Blob storage.
+ */
+export async function removeTreePhoto(treeId: string, photoUrl: string): Promise<number> {
+  const client = await sql.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `UPDATE tree_events SET photo_url = NULL
+        WHERE tree_id = $1 AND photo_url = $2 AND undone_at IS NULL
+        RETURNING id, event_type, detail, changes`,
+      [treeId, photoUrl]
+    );
+    if (rows.length === 0) throw httpError('That photo is not on this tree', 404);
+    const empty = rows.filter(isEmptyWithoutPhoto).map((r) => r.id);
+    if (empty.length > 0) {
+      await client.query('UPDATE tree_events SET undone_at = NOW() WHERE id = ANY($1)', [empty]);
+    }
+    await client.query('COMMIT');
+    return rows.length;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
