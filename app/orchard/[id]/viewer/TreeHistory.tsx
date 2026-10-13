@@ -2,11 +2,15 @@
 
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
+import { Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 import {
   fetchTreeEvents,
   createTreeEvent,
+  deleteTreeEvent,
   type ClientTreeEvent,
 } from '@/lib/api/trees';
+import { isRemovableEventType } from '@/lib/event-removal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import PhotoButton from '@/components/PhotoButton';
@@ -35,6 +39,12 @@ const EVENT_LABEL: Record<string, string> = {
   fruit_check: 'Fruit check',
   tree_condition: 'Trunk and scaffolds',
   harvest_readiness: 'Picking verdict',
+};
+
+/** What deleting a row also undoes, said before it happens. */
+const DELETE_CONSEQUENCE: Record<string, string> = {
+  status_change: 'The tree goes back to its previous status.',
+  harvest: 'Its weight comes off the harvest totals.',
 };
 
 /**
@@ -73,16 +83,19 @@ function todayYMD(): string {
  * Per-tree history: automatic audit events plus manually logged field
  * activities (pruning, spray, …). Rendered inside the tree detail panel.
  * Bump `refreshKey` to reload after something else (the Inspect form)
- * writes an event.
+ * writes an event. An entry made by mistake can be deleted from here;
+ * `onChanged` fires afterwards, since a delete can change the tree itself.
  */
 export default function TreeHistory({
   treeId,
   canEdit,
   refreshKey = 0,
+  onChanged,
 }: {
   treeId: string;
   canEdit: boolean;
   refreshKey?: number;
+  onChanged?: () => void;
 }) {
   const [events, setEvents] = useState<ClientTreeEvent[] | null>(null);
   const [logging, setLogging] = useState(false);
@@ -91,6 +104,24 @@ export default function TreeHistory({
   const [eventDate, setEventDate] = useState(todayYMD());
   const [detail, setDetail] = useState('');
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  /** The row asking "delete this?", and the one being deleted. */
+  const [confirmId, setConfirmId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const remove = async (eventId: number) => {
+    setDeletingId(eventId);
+    try {
+      const { events: updated } = await deleteTreeEvent(treeId, eventId);
+      setEvents(updated);
+      setConfirmId(null);
+      toast.success('Entry deleted');
+      onChanged?.();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not delete that entry');
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   // The panel mounts this with key={treeId}, so state resets per tree —
   // the effect only fetches (no synchronous setState).
@@ -200,6 +231,17 @@ export default function TreeHistory({
         <ul className="mt-2 space-y-1.5">
           {events.map((e) => (
             <li key={e.id} className="text-xs leading-snug">
+              {canEdit && isRemovableEventType(e.event_type) && confirmId !== e.id && (
+                <button
+                  type="button"
+                  onClick={() => setConfirmId(e.id)}
+                  aria-label={`Delete this ${EVENT_LABEL[e.event_type] ?? e.event_type} entry`}
+                  title="Delete this entry"
+                  className="float-right ml-2 p-1 -m-1 rounded text-bark/60 hover:text-destructive hover:bg-canopy-50"
+                >
+                  <Trash2 aria-hidden size={13} />
+                </button>
+              )}
               <span className="font-mono text-bark">{e.event_date ?? ''}</span>{' '}
               <span className="font-medium text-ink">
                 {EVENT_LABEL[e.event_type] ?? e.event_type}
@@ -220,6 +262,30 @@ export default function TreeHistory({
                     className="h-14 w-14 rounded-md object-cover border border-line hover:opacity-90"
                   />
                 </a>
+              )}
+              {confirmId === e.id && (
+                <div className="mt-1.5 flex flex-wrap items-center gap-2 rounded-md border border-line bg-paper/60 p-2">
+                  <span className="flex-1 text-bark">
+                    Delete this entry{e.photo_url ? ' and its photo' : ''}?{' '}
+                    {DELETE_CONSEQUENCE[e.event_type] ?? ''}
+                  </span>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setConfirmId(null)}
+                    disabled={deletingId === e.id}
+                  >
+                    Keep
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => void remove(e.id)}
+                    disabled={deletingId === e.id}
+                  >
+                    {deletingId === e.id ? 'Deleting…' : 'Delete'}
+                  </Button>
+                </div>
               )}
             </li>
           ))}

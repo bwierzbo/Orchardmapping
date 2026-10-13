@@ -16,6 +16,13 @@ export function handleApiError(error: unknown, context: string): NextResponse {
     );
   }
 
+  // A deliberate refusal (a missing row, a request that cannot be honoured)
+  // carries its own status and a message written for the user.
+  const status = (error as { status?: unknown } | null)?.status;
+  if (typeof status === 'number' && status >= 400 && status < 500 && error instanceof Error) {
+    return NextResponse.json({ error: error.message }, { status });
+  }
+
   console.error(`[api] ${context}:`, error);
   return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
 }

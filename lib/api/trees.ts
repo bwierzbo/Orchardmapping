@@ -178,3 +178,28 @@ export async function createTreeEvent(
   const body = await parseResponse<{ events: ClientTreeEvent[] }>(response);
   return body.events;
 }
+
+/**
+ * Delete one entry from a tree's history, and what it changed. Returns the
+ * history as it now stands and the tree's status, which may have gone back.
+ */
+export async function deleteTreeEvent(
+  treeId: string,
+  eventId: number
+): Promise<{ events: ClientTreeEvent[]; status: string | null }> {
+  const response = await fetch(
+    `/api/trees/${encodeURIComponent(treeId)}/events/${eventId}`,
+    { method: 'DELETE' }
+  );
+  return parseResponse<{ events: ClientTreeEvent[]; status: string | null }>(response);
+}
+
+/** Take a photo off a tree, from every entry it was attached to. */
+export async function deleteTreePhoto(treeId: string, url: string): Promise<void> {
+  const response = await fetch(`/api/trees/${encodeURIComponent(treeId)}/photos`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+  });
+  await parseResponse<{ success: boolean }>(response);
+}

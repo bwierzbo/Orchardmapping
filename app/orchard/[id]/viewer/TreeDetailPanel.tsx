@@ -51,9 +51,11 @@ interface TreeDetailPanelProps {
   onClose: () => void;
   onDelete: () => Promise<boolean>;
   onStartMove: () => void;
-  /** Record a harvest from this one tree. Omitted where there is nowhere to put it. */
-  onRecordHarvest?: () => void;
-  /** Reload trees after an address change, which no longer alters the id. */
+  /**
+   * Reload trees after a change made here that the map has not seen: an
+   * address or field edit, or a history entry deleted, which can put the
+   * tree's status back.
+   */
   onMoved: () => void;
   /** Status change from the Inspect form (same path as a walk). */
   onSetStatus: (treeId: string, status: TreeStatus) => Promise<boolean>;
@@ -81,7 +83,6 @@ export default function TreeDetailPanel({
   onClose,
   onDelete,
   onStartMove,
-  onRecordHarvest,
   onMoved,
   onSetStatus,
   onInspected,
@@ -328,6 +329,7 @@ export default function TreeDetailPanel({
             settings={walkSettings}
             inspections={ALL_INSPECTIONS}
             detailedFruit
+            bloomOnRequest
             autoSave={false}
             recordLabel="Record"
             onSetStatus={onSetStatus}
@@ -406,12 +408,22 @@ export default function TreeDetailPanel({
                 </p>
               )}
             </div>
-            <TreePhotos key={`photos-${tree.tree_id}`} treeId={tree.tree_id} refreshKey={historyVersion} />
+            <TreePhotos
+              key={`photos-${tree.tree_id}`}
+              treeId={tree.tree_id}
+              canEdit={canEdit}
+              refreshKey={historyVersion}
+              onChanged={() => setHistoryVersion((v) => v + 1)}
+            />
             <TreeHistory
               key={tree.tree_id}
               treeId={tree.tree_id}
               canEdit={canEdit}
               refreshKey={historyVersion}
+              onChanged={() => {
+                setHistoryVersion((v) => v + 1);
+                onMoved();
+              }}
             />
           </>
         ) : (
@@ -533,14 +545,6 @@ export default function TreeDetailPanel({
                 <Button variant="secondary" onClick={startEdit}>
                   Edit tree
                 </Button>
-                {/* Picking one tree at a time is how a lot of fruit comes
-                    off, and the panel is what is open when you are stood
-                    at it. Same record a block harvest writes. */}
-                {onRecordHarvest && (
-                  <Button variant="secondary" onClick={onRecordHarvest}>
-                    Harvest
-                  </Button>
-                )}
                 <Button onClick={() => setInspecting(true)}>Inspect</Button>
               </div>
             )}

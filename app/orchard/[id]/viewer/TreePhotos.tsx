@@ -1,9 +1,10 @@
 'use client';
 
 import Image from 'next/image';
-import { useEffect, useState } from 'react';
-import { ChevronLeft, ChevronRight, X } from 'lucide-react';
-import { fetchTreeEvents, type ClientTreeEvent } from '@/lib/api/trees';
+import { useEffect, useState, type SetStateAction } from 'react';
+import { ChevronLeft, ChevronRight, Trash2, X } from 'lucide-react';
+import { toast } from 'sonner';
+import { deleteTreePhoto, fetchTreeEvents, type ClientTreeEvent } from '@/lib/api/trees';
 import { photosFromEvents, type TreePhoto } from '@/lib/tree-photos';
 import { formatYMD } from '@/lib/dates';
 
@@ -37,13 +38,47 @@ function caption(photo: TreePhoto): string {
 
 export default function TreePhotos({
   treeId,
+  canEdit,
   refreshKey,
+  onChanged,
 }: {
   treeId: string;
+  /** Operators can take a photo off: the wrong tree, or a blurred one. */
+  canEdit: boolean;
   refreshKey?: number;
+  /** A photo came off, so the history beside it is out of date. */
+  onChanged?: () => void;
 }) {
   const [photos, setPhotos] = useState<TreePhoto[] | null>(null);
   const [open, setOpen] = useState<number | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  /** Moving to another photo drops a half-asked "delete this one?". */
+  const show = (next: SetStateAction<number | null>) => {
+    setConfirmDelete(false);
+    setOpen(next);
+  };
+
+  const removeCurrent = async () => {
+    if (open === null || !photos) return;
+    const url = photos[open].url;
+    setDeleting(true);
+    try {
+      await deleteTreePhoto(treeId, url);
+      const rest = photos.filter((p) => p.url !== url);
+      setPhotos(rest);
+      // Stay in the viewer on the photo that slid into this slot, so a run
+      // of bad pictures can be cleared without reopening each one.
+      show(rest.length === 0 ? null : Math.min(open, rest.length - 1));
+      toast.success('Photo deleted');
+      onChanged?.();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not delete that photo');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   // Reads the events the history already serves rather than a photo
   // endpoint of its own: a photo IS an event here, and a second source for
@@ -67,6 +102,7 @@ export default function TreePhotos({
   useEffect(() => {
     if (open === null || !photos) return;
     const onKey = (e: KeyboardEvent) => {
+      setConfirmDelete(false);
       if (e.key === 'Escape') setOpen(null);
       if (e.key === 'ArrowRight') setOpen((i) => (i === null ? null : Math.min(i + 1, photos.length - 1)));
       if (e.key === 'ArrowLeft') setOpen((i) => (i === null ? null : Math.max(i - 1, 0)));
@@ -89,7 +125,7 @@ export default function TreePhotos({
           <button
             key={p.url}
             type="button"
-            onClick={() => setOpen(i)}
+            onClick={() => show(i)}
             title={caption(p)}
             className="relative aspect-square overflow-hidden rounded-md border border-line hover:ring-2 hover:ring-canopy-600"
           >
@@ -111,7 +147,7 @@ export default function TreePhotos({
           aria-modal="true"
           aria-label={`Photo of this tree, ${caption(current)}`}
           className="fixed inset-0 z-50 flex flex-col bg-black/90"
-          onClick={() => setOpen(null)}
+          onClick={() => show(null)}
         >
           <div className="flex items-center justify-between px-4 py-3 text-white">
             <span className="text-sm">
@@ -120,7 +156,7 @@ export default function TreePhotos({
             </span>
             <button
               type="button"
-              onClick={() => setOpen(null)}
+              onClick={() => show(null)}
               aria-label="Close photo"
               className="p-2 -m-2"
             >
@@ -149,20 +185,53 @@ export default function TreePhotos({
           >
             <button
               type="button"
-              onClick={() => setOpen((i) => (i === null ? null : Math.max(i - 1, 0)))}
+              onClick={() => show((i) => (i === null ? null : Math.max(i - 1, 0)))}
               disabled={open === 0}
               aria-label="Newer photo"
               className="p-2 disabled:opacity-30"
             >
               <ChevronLeft aria-hidden size={24} />
             </button>
-            <span className="font-mono text-xs">
-              {open! + 1} / {photos.length}
-            </span>
+            <div className="flex flex-col items-center gap-2">
+              <span className="font-mono text-xs">
+                {open! + 1} / {photos.length}
+              </span>
+              {canEdit &&
+                (confirmDelete ? (
+                  <span className="flex items-center gap-2 text-sm">
+                    Delete this photo?
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDelete(false)}
+                      disabled={deleting}
+                      className="rounded-md border border-white/40 px-2.5 py-1 hover:bg-white/10"
+                    >
+                      Keep
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void removeCurrent()}
+                      disabled={deleting}
+                      className="rounded-md bg-destructive px-2.5 py-1 font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-60"
+                    >
+                      {deleting ? 'Deleting…' : 'Delete'}
+                    </button>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(true)}
+                    className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm text-white/80 hover:bg-white/10 hover:text-white"
+                  >
+                    <Trash2 aria-hidden size={15} />
+                    Delete photo
+                  </button>
+                ))}
+            </div>
             <button
               type="button"
               onClick={() =>
-                setOpen((i) => (i === null ? null : Math.min(i + 1, photos.length - 1)))
+                show((i) => (i === null ? null : Math.min(i + 1, photos.length - 1)))
               }
               disabled={open === photos.length - 1}
               aria-label="Older photo"

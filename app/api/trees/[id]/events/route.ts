@@ -6,9 +6,9 @@ import {
   insertTreeEvent,
   listTreeEvents,
   MANUAL_EVENT_TYPES,
+  toClientEvents,
   type TreeEventType,
 } from '@/lib/db/tree-events';
-import { toYMD } from '@/lib/dates';
 import { assertTreeAccess, requireTreeAccess } from '@/lib/orchard-access';
 
 /**
@@ -26,11 +26,7 @@ export async function GET(
     const events = await listTreeEvents(tree_id);
     return NextResponse.json({
       success: true,
-      events: events.map((e) => ({
-        ...e,
-        event_date: toYMD(e.event_date),
-        created_at: e.created_at ? new Date(e.created_at).toISOString() : null,
-      })),
+      events: toClientEvents(events),
     });
   } catch (error) {
     return handleApiError(error, 'GET /api/trees/[id]/events');
@@ -115,11 +111,7 @@ export async function POST(
     return NextResponse.json(
       {
         success: true,
-        events: events.map((e) => ({
-          ...e,
-          event_date: toYMD(e.event_date),
-          created_at: e.created_at ? new Date(e.created_at).toISOString() : null,
-        })),
+        events: toClientEvents(events),
       },
       { status: 201 }
     );
