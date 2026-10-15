@@ -59,6 +59,10 @@ export function useLasso(
     }
 
     return () => {
+      // Leaving the viewer runs the map's own cleanup first -- it is
+      // declared earlier -- and map.remove() clears map.style, so touching
+      // a layer now throws. Removing the map took the layers with it.
+      if (!map.style) return;
       for (const id of [DRAFT_FILL, DRAFT_LINE]) {
         if (map.getLayer(id)) map.removeLayer(id);
       }
