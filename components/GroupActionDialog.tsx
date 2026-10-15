@@ -23,7 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Undo2 } from 'lucide-react';
+import { Apple, ArrowLeft, ClipboardList, Lasso, PenLine, Undo2 } from 'lucide-react';
 
 const EVENT_OPTIONS = [
   { value: 'spray', label: 'Sprayed' },
@@ -43,6 +43,22 @@ const FIELD_OPTIONS = [
   { value: 'planted_date', label: 'Planted date' },
   { value: 'acquired_date', label: 'Acquired date' },
 ];
+
+type Kind = 'log_event' | 'set_field' | 'harvest';
+
+/** What the dialog opens on: the actions, before any form. */
+const KIND_CHOICES: { kind: Kind | 'select'; label: string; hint: string; icon: typeof Apple }[] = [
+  { kind: 'log_event', label: 'Log event', hint: 'Sprayed, pruned, fertilized, a note', icon: ClipboardList },
+  { kind: 'harvest', label: 'Harvest', hint: 'What came off a group of trees', icon: Apple },
+  { kind: 'select', label: 'Select trees', hint: 'Draw round trees on the map, then edit them', icon: Lasso },
+  { kind: 'set_field', label: 'Set field', hint: 'Status, variety, rootstock, block, dates', icon: PenLine },
+];
+
+const KIND_TITLE: Record<Kind, string> = {
+  log_event: 'Log event',
+  harvest: 'Harvest',
+  set_field: 'Set field',
+};
 
 /** Confirmation is required above this group size for field changes. */
 const CONFIRM_THRESHOLD = 50;
@@ -69,9 +85,11 @@ function chip(active: boolean) {
 }
 
 /**
- * Group actions: apply an event or a field change to any filtered set of
- * trees (rows / variety / status / block, AND-composed) with a live
- * count preview, plus the recent-actions undo list. Phone-friendly.
+ * Group actions: opens on the four things it can do -- log an event,
+ * record a harvest, select trees on the map, set a field -- then, for all
+ * but selecting, which trees (rows / variety / status / block,
+ * AND-composed) with a live count, and the form. The recent-actions undo
+ * list is on the opening screen. Phone-friendly.
  */
 export default function GroupActionDialog({
   open,
@@ -79,21 +97,19 @@ export default function GroupActionDialog({
   orchardId,
   trees,
   onApplied,
-  initialKind = 'log_event',
-  initialFilter,
+  onSelectTrees,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   orchardId: string;
   trees: ClientTree[];
   onApplied: () => void;
-  /** Open straight into one kind — "Harvest" on the toolbar means harvest. */
-  initialKind?: 'log_event' | 'set_field' | 'harvest';
-  /** Pre-scope the group, e.g. to the tree already selected on the map. */
-  initialFilter?: GroupFilter;
+  /** Start the map lasso. Left out where the lasso is not offered (phones). */
+  onSelectTrees?: () => void;
 }) {
-  const [filter, setFilter] = useState<GroupFilter>(initialFilter ?? {});
-  const [kind, setKind] = useState<'log_event' | 'set_field' | 'harvest'>(initialKind);
+  const [filter, setFilter] = useState<GroupFilter>({});
+  /** Null is the opening screen: the choice of action, not yet a form. */
+  const [kind, setKind] = useState<Kind | null>(null);
 
   // Reopening is a fresh action: a dialog that came back holding the last
   // group's filter would apply this harvest to the wrong trees.
@@ -101,8 +117,8 @@ export default function GroupActionDialog({
   if (open !== wasOpen) {
     setWasOpen(open);
     if (open) {
-      setKind(initialKind);
-      setFilter(initialFilter ?? {});
+      setKind(null);
+      setFilter({});
     }
   }
   // harvest fields
@@ -175,13 +191,23 @@ export default function GroupActionDialog({
       return { ...f, [dim]: next.length ? next : undefined };
     });
 
+  const choose = (choice: Kind | 'select') => {
+    if (choice === 'select') {
+      onOpenChange(false);
+      onSelectTrees?.();
+      return;
+    }
+    setMessage(null);
+    setKind(choice);
+  };
+
   const needsConfirm = kind === 'set_field' && matched.length > CONFIRM_THRESHOLD;
   const confirmOk = !needsConfirm || confirmText === String(matched.length);
   const harvestOk =
     kind !== 'harvest' || (Number(weightLbs) > 0 && /^\d{4}-\d{2}-\d{2}$/.test(harvestDate));
 
   const apply = async () => {
-    if (busy || matched.length === 0 || !confirmOk || !harvestOk) return;
+    if (!kind || busy || matched.length === 0 || !confirmOk || !harvestOk) return;
     setBusy(true);
     setMessage(null);
     try {
@@ -261,13 +287,49 @@ export default function GroupActionDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg w-[95vw] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Group action</DialogTitle>
+          <DialogTitle>{kind ? KIND_TITLE[kind] : 'Group action'}</DialogTitle>
           <DialogDescription>
-            Pick which trees, then what happened. Filters combine.
+            {kind
+              ? 'Pick which trees, then what happened. Filters combine.'
+              : 'What would you like to do?'}
           </DialogDescription>
         </DialogHeader>
 
+        {/* ── Opening screen: the actions ── */}
+        {kind === null && (
+          <div className="grid grid-cols-2 gap-2">
+            {KIND_CHOICES.filter((c) => c.kind !== 'select' || onSelectTrees).map((c) => (
+              <button
+                key={c.kind}
+                type="button"
+                onClick={() => choose(c.kind)}
+                className="flex flex-col items-start gap-1 rounded-lg border border-line bg-paper p-3 text-left hover:bg-canopy-50 active:scale-[0.98]"
+              >
+                <span className="flex items-center gap-1.5 text-sm font-medium text-ink">
+                  <c.icon aria-hidden size={16} className="text-canopy-600" />
+                  {c.label}
+                </span>
+                <span className="text-xs text-bark">{c.hint}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {kind !== null && (
+          <button
+            type="button"
+            onClick={() => {
+              setMessage(null);
+              setKind(null);
+            }}
+            className="inline-flex items-center gap-1 self-start text-xs text-bark hover:text-ink"
+          >
+            <ArrowLeft aria-hidden size={13} /> All actions
+          </button>
+        )}
+
         {/* ── Which trees ── */}
+        {kind !== null && (
         <div className="space-y-3">
           <div>
             <Label className="text-xs text-bark">Rows</Label>
@@ -334,29 +396,11 @@ export default function GroupActionDialog({
             <span className="text-bark font-normal"> — {describeFilter(filter)}</span>
           </p>
         </div>
+        )}
 
         {/* ── What happened ── */}
+        {kind !== null && (
         <div className="border-t border-line pt-3 space-y-3">
-          <div className="flex rounded-lg border border-line overflow-hidden">
-            <button
-              className={`flex-1 py-2 text-sm font-medium ${kind === 'log_event' ? 'bg-canopy-600 text-white' : 'bg-paper text-ink'}`}
-              onClick={() => setKind('log_event')}
-            >
-              Log event
-            </button>
-            <button
-              className={`flex-1 py-2 text-sm font-medium border-l border-line ${kind === 'harvest' ? 'bg-canopy-600 text-white' : 'bg-paper text-ink'}`}
-              onClick={() => setKind('harvest')}
-            >
-              Harvest
-            </button>
-            <button
-              className={`flex-1 py-2 text-sm font-medium border-l border-line ${kind === 'set_field' ? 'bg-canopy-600 text-white' : 'bg-paper text-ink'}`}
-              onClick={() => setKind('set_field')}
-            >
-              Set field
-            </button>
-          </div>
 
           {kind === 'harvest' && (
             <div className="space-y-2">
@@ -420,7 +464,7 @@ export default function GroupActionDialog({
             </div>
           )}
 
-          {kind === 'log_event' ? (
+          {kind === 'harvest' ? null : kind === 'log_event' ? (
             <div className="grid grid-cols-2 gap-2">
               <Select value={eventType} onValueChange={setEventType}>
                 <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
@@ -496,9 +540,11 @@ export default function GroupActionDialog({
                 : `Apply to ${matched.length} trees`}
           </Button>
         </div>
+        )}
 
         {/* ── Recent actions / undo ── */}
-        {recent.length > 0 && (
+        {kind === null && message && <p className="text-sm text-ink">{message}</p>}
+        {kind === null && recent.length > 0 && (
           <div className="border-t border-line pt-3">
             <p className="survey-caption mb-2">Recent actions (24h)</p>
             <ul className="space-y-1.5">

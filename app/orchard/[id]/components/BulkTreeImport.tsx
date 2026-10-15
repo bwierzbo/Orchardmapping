@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import {
   ArrowUpDown,
@@ -28,7 +29,6 @@ interface BulkTreeImportProps {
   orchardId: string;
   /** Current trees, used to preview which rows create vs update */
   existingTrees: ClientTree[];
-  onImportComplete?: () => void;
 }
 
 type Step = 'pick' | 'review' | 'importing';
@@ -36,8 +36,8 @@ type Step = 'pick' | 'review' | 'importing';
 export default function BulkTreeImport({
   orchardId,
   existingTrees,
-  onImportComplete,
 }: BulkTreeImportProps) {
+  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [step, setStep] = useState<Step>('pick');
@@ -130,7 +130,8 @@ export default function BulkTreeImport({
       toast.success(
         `Imported ${result.created + result.updated} trees (${result.created} new, ${result.updated} updated)`
       );
-      onImportComplete?.();
+      // The dashboard's counts and tables are server-rendered.
+      router.refresh();
       close();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Import failed');
@@ -411,9 +412,11 @@ export default function BulkTreeImport({
     <>
       <button
         onClick={() => setIsOpen(true)}
-        className="px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-surface text-ink hover:bg-canopy-50 flex items-center gap-2"
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-line bg-surface text-sm font-medium text-ink hover:bg-canopy-50"
+        title="Import or export trees as CSV"
       >
-        <ArrowUpDown aria-hidden size={15} /> Import/Export
+        <ArrowUpDown aria-hidden size={15} />
+        <span className="hidden sm:inline">Import/Export</span>
       </button>
       {mounted && dialog && createPortal(dialog, document.body)}
     </>

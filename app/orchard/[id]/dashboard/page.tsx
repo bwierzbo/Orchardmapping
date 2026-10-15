@@ -12,6 +12,7 @@ import { getTreesByOrchard } from '@/lib/db/trees';
 import { serializeTree } from '@/lib/serialize';
 import { computeOrchardStats } from '@/lib/dashboard-stats';
 import OrchardSwitcher from '../viewer/OrchardSwitcher';
+import BulkTreeImport from '../components/BulkTreeImport';
 import SeasonCard from './SeasonCard';
 import RegionCard from './RegionCard';
 import { orchardRegion, listRegions } from '@/lib/db/regions';
@@ -167,6 +168,7 @@ export default async function DashboardPage({ params }: PageProps) {
 
           <div className="flex items-center gap-2 shrink-0">
             <OrchardSwitcher orchards={allOrchards} currentId={orchard.id} target="dashboard" />
+            {canEdit && <BulkTreeImport orchardId={orchard.id} existingTrees={trees} />}
             <Link
               href={`/orchard/${orchard.id}`}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-canopy-600 text-white dark:text-paper text-sm font-medium rounded-lg hover:bg-canopy-700"
