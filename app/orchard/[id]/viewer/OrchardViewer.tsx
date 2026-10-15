@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Apple, BarChart3, CalendarRange, Eye, Table2 } from 'lucide-react';
+import { BarChart3, CalendarRange, Eye, Table2 } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { OrchardConfig, ClientTree, TreeStatus } from '@/lib/types';
@@ -17,7 +17,6 @@ import { normalizeAddressPart, normalizeRowId } from '@/lib/address';
 import { aimPixel } from '@/lib/aim-point';
 import { useCoarsePointer } from '@/lib/use-coarse-pointer';
 import { comparePositions, nextPosition } from '@/lib/position';
-import BulkTreeImport from '../components/BulkTreeImport';
 import { useTrees } from './useTrees';
 import { useTreeLayer } from './useTreeLayer';
 import { useTreeSelection, useMapUrlState, parseMapHash } from './useUrlState';
@@ -77,7 +76,6 @@ import {
 import { nextTrapLabel, type TrapType } from '@/lib/traps';
 import { fetchScheduleSummary, type ScheduleSummary } from '@/lib/api/program';
 import AreaTools from './AreaTools';
-import PhotoDropController from './PhotoDropController';
 import MoveTreeController from './MoveTreeController';
 import DetectTreesController from './DetectTreesController';
 import { fetchAreas, type OrchardArea } from '@/lib/api/areas';
@@ -129,11 +127,8 @@ export default function OrchardViewer({
   const selectedTree = selectedTreeId ? (byId.get(selectedTreeId) ?? null) : null;
   const [saving, setSaving] = useState(false);
 
-  // Group actions (bulk event/field changes with undo)
+  // Group actions: log event, harvest, select trees, set field -- with undo
   const [groupActionOpen, setGroupActionOpen] = useState(false);
-  // "Harvest" is the same dialog opened straight into its harvest kind, and
-  // it belongs on a phone: picking happens under the tree, not at a desk.
-  const [harvestOpen, setHarvestOpen] = useState(false);
 
   // Area features (garden beds, berry fields, …)
   const [areas, setAreas] = useState<OrchardArea[]>([]);
@@ -156,15 +151,11 @@ export default function OrchardViewer({
   // Walk (survey) mode — one-tap-per-tree recording, pass-based decks
   const [walkMode, setWalkMode] = useState(false);
   const [walkSettings, setWalkSettings] = useState<WalkSettings>(DEFAULT_WALK_SETTINGS);
-  const [photoSettings, setPhotoSettings] = useState<{ geotagOnMap: boolean }>({
-    geotagOnMap: true,
-  });
   useEffect(() => {
     fetch('/api/settings')
       .then((r) => r.json())
       .then((b) => {
         if (b?.walk) setWalkSettings(normalizeWalkSettings(b.walk));
-        if (b?.photos) setPhotoSettings(b.photos);
       })
       .catch(() => {}); // defaults are fine offline
   }, []);
@@ -1114,17 +1105,6 @@ export default function OrchardViewer({
             Sign in to edit
           </Link>
         )}
-        {atDesk && canEdit && !editMode && !detectMode && (
-          <BulkTreeImport orchardId={orchard.id} existingTrees={trees} onImportComplete={refresh} />
-        )}
-        {canEdit && !editMode && !walkMode && !areaMode && !detectMode && (
-          <PhotoDropController
-            map={mapObj}
-            trees={trees}
-            targetTree={selectedTree}
-            enabled={photoSettings.geotagOnMap}
-          />
-        )}
         {atDesk && canEdit && !editMode && !walkMode && !areaMode && !detectMode && (
           <button
             onClick={() => setDetectMode(true)}
@@ -1141,22 +1121,14 @@ export default function OrchardViewer({
             >
               Walk Survey
             </button>
-            {atDesk && (
-              <>
-                <button
-                  onClick={() => setLassoMode('replace')}
-                  className="px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-surface text-ink hover:bg-canopy-50"
-                >
-                  Select Trees
-                </button>
-                <button
-                  onClick={() => setGroupActionOpen(true)}
-                  className="px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-surface text-ink hover:bg-canopy-50"
-                >
-                  Group Action
-                </button>
-              </>
-            )}
+            {/* On phones too: harvest lives in here now, and picking
+                happens under the tree with a phone in hand. */}
+            <button
+              onClick={() => setGroupActionOpen(true)}
+              className="px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-surface text-ink hover:bg-canopy-50"
+            >
+              Group Action
+            </button>
           </>
         )}
         {canEdit && !walkMode && !areaMode && !detectMode && !trapMode && (
@@ -1172,24 +1144,6 @@ export default function OrchardViewer({
             }`}
           >
             {editMode ? 'Done Adding' : 'Add Trees'}
-          </button>
-        )}
-        {/*
-          Harvest is a field action, so it is not behind the desk split:
-          picking happens under the tree with a phone in hand.
-        */}
-        {canEdit && !editMode && !walkMode && !areaMode && !detectMode && !trapMode && trees.length > 0 && (
-          <button
-            onClick={() => setHarvestOpen(true)}
-            title={
-              selectedTreeId
-                ? 'Record a harvest from the selected tree'
-                : 'Record a harvest by block, variety or row'
-            }
-            className="inline-flex items-center gap-1.5 px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-surface text-ink hover:bg-canopy-50"
-          >
-            <Apple aria-hidden size={16} />
-            {selectedTreeId ? 'Harvest tree' : 'Harvest'}
           </button>
         )}
         {canEdit && !walkMode && !editMode && !areaMode && !detectMode && (
@@ -1322,23 +1276,8 @@ export default function OrchardViewer({
           orchardId={orchard.id}
           trees={trees}
           onApplied={refresh}
-        />
-      )}
-
-      {/*
-        The same dialog, opened on harvest. Scoped to the selected tree when
-        there is one, so picking a single tree is two taps, and left open to
-        the block and variety chips when there is not.
-      */}
-      {harvestOpen && (
-        <GroupActionDialog
-          open={harvestOpen}
-          onOpenChange={setHarvestOpen}
-          orchardId={orchard.id}
-          trees={trees}
-          onApplied={refresh}
-          initialKind="harvest"
-          initialFilter={selectedTreeId ? { treeIds: [selectedTreeId] } : undefined}
+          // The lasso and the grid editor it feeds are desk tools.
+          onSelectTrees={atDesk ? () => setLassoMode('replace') : undefined}
         />
       )}
 
