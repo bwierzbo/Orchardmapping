@@ -25,6 +25,14 @@ describe('which history rows can be deleted', () => {
     }
   });
 
+  it('keeps harvest complete and reopened, whose undo is the opposite button', () => {
+    // Deleting the row would leave trees.harvest_completed_on set with no
+    // history saying when or by whom.
+    for (const t of ['harvest_complete', 'harvest_reopened']) {
+      expect(isRemovableEventType(t), `${t} should stay`).toBe(false);
+    }
+  });
+
   it('only ever protects automatic types', () => {
     // A manual type in the permanent list would be a row the user wrote
     // and can never remove.

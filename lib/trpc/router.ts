@@ -74,6 +74,8 @@ import { listPeople, setGlobalRole } from '@/lib/db/people';
 import { listVarietyOptions, listFruitTypes } from '@/lib/db/varieties';
 import { lastObservationForTree } from '@/lib/db/last-observation';
 import { predictedPickFor } from '@/lib/db/harvest-plan';
+import { listTreeHarvests } from '@/lib/db/tree-harvests';
+import { harvestSeason } from '@/lib/tree-harvest-season';
 import { listRegions, getRegion, setOrchardRegion, orchardRegion } from '@/lib/db/regions';
 import { toYMD } from '@/lib/dates';
 import { TRPCError } from '@trpc/server';
@@ -254,6 +256,31 @@ export const appRouter = router({
           event_date: toYMD(e.event_date),
           created_at: e.created_at ? new Date(e.created_at).toISOString() : null,
         }));
+      }),
+    /**
+     * What this tree has given in one season and whether it is picked out.
+     * The year comes from the caller because it is the grower's calendar
+     * that decides it, not the server's clock in UTC.
+     */
+    harvestSeason: treeViewerProcedure
+      .input(
+        z.object({
+          treeId: z.string().min(1),
+          year: z.number().int().min(1900).max(2200),
+        })
+      )
+      .query(async ({ input }) => {
+        const tree = await getTreeById(input.treeId);
+        if (!tree) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Tree not found' });
+        }
+        const picks = await listTreeHarvests(input.treeId);
+        return harvestSeason(
+          picks,
+          input.year,
+          tree.fruit_type,
+          toYMD(tree.harvest_completed_on ?? null)
+        );
       }),
     create: orchardOperatorProcedure
       .input(

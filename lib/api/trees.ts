@@ -149,6 +149,25 @@ export async function recordTreeHarvest(
   return parseResponse<{ weight_lbs: number; detail: string }>(response);
 }
 
+/**
+ * Mark a tree picked out for the season, or open it again. `date` is the
+ * grower's today, which decides the season it counts for.
+ */
+export async function setTreeHarvestComplete(
+  treeId: string,
+  input: { complete: boolean; date?: string },
+): Promise<{ harvest_completed_on: string | null }> {
+  const response = await fetch(
+    `/api/trees/${encodeURIComponent(treeId)}/harvest-complete`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  );
+  return parseResponse<{ harvest_completed_on: string | null }>(response);
+}
+
 export async function fetchTreeEvents(treeId: string): Promise<ClientTreeEvent[]> {
   const response = await fetch(`/api/trees/${encodeURIComponent(treeId)}/events`);
   const body = await parseResponse<{ events: ClientTreeEvent[] }>(response);

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ClientTree, TreeStatus } from '@/lib/types';
 import { STATUS_COLORS } from '@/lib/trees-geojson';
-import { createTreeEvent, recordTreeHarvest } from '@/lib/api/trees';
+import { createTreeEvent, recordTreeHarvest, setTreeHarvestComplete } from '@/lib/api/trees';
 import { sgToBrix } from '@/lib/sugar';
 import { bloomStagesFor, FRUIT_METRIC_CATALOG, type WalkSettings } from '@/lib/settings';
 import type { WalkInspection } from '@/lib/walk-progress';
@@ -22,6 +22,8 @@ import {
   toPounds,
   type HarvestUnit,
 } from '@/lib/harvest-units';
+import { isHarvestComplete, type HarvestSeason } from '@/lib/tree-harvest-season';
+import { dateToYMD, formatYMD } from '@/lib/dates';
 import type { LastObservation } from '@/lib/db/last-observation';
 import { CONDITION_METRIC_CATALOG } from '@/lib/settings';
 import {
@@ -57,10 +59,16 @@ export interface InspectionAnswers {
   /** What the model predicted when the verdict was given, ISO date. */
   predictedCentre: string | null;
   /**
-   * What came off the tree, asked only on "Harvest now". The amount is kept
-   * as typed; blank means the verdict was given and nothing weighed.
+   * What came off the tree on this visit. The amount is kept as typed;
+   * blank means nothing was picked.
    */
   harvest: { quantity: string; unit: HarvestUnit };
+  /**
+   * The tree picked out for the season (true), opened again (false), or
+   * left as it is (null). A pending answer like the rest, so the last pick
+   * and "that's the lot" go in with one Record.
+   */
+  harvestComplete: boolean | null;
   bloom: string | null;
   fruit: number | null;
   metrics: Record<string, string>;
@@ -99,6 +107,8 @@ export interface InspectionSaved {
  *  - bloom → a bloom event with the stage;
  *  - fruit → a fruit_check event with load 1–5 and any detailed metrics
  *    (sugar stored as °Bx, with the entered SG kept alongside);
+ *  - harvest → a harvests row for what came off today, then the season
+ *    marked complete or reopened if that was asked for;
  *  - a note with no health answer → its own observation.
  */
 export async function saveInspection(
@@ -111,6 +121,9 @@ export async function saveInspection(
 ): Promise<InspectionSaved> {
   const noteText = answers.note.trim();
   const pestKeys = Object.keys(answers.pests);
+  // The grower's day, not the server's: a pick at 6pm in October is not
+  // tomorrow's, and the season total and "complete" both go by this date.
+  const today = dateToYMD(new Date());
   let saved = 0;
   let noteUsed = false;
   if (answers.health) {
@@ -200,21 +213,31 @@ export async function saveInspection(
     saved++;
   }
 
-  // Recorded with everything else rather than from a button of its own: a
-  // harvest is what "Harvest now" means, and two save buttons on one form
-  // was one too many to remember to press.
+  // Recorded with everything else rather than from a button of its own:
+  // two save buttons on one form was one too many to remember to press.
+  // Not tied to the picking verdict -- a tree with no variety is never
+  // asked for one, and its fruit still comes off.
   let harvested = false;
   const harvestQty = Number(answers.harvest.quantity);
   if (
-    answers.readiness === 'now' &&
     answers.harvest.quantity.trim() !== '' &&
     toPounds(harvestQty, answers.harvest.unit, tree.fruit_type) !== null
   ) {
     await recordTreeHarvest(tree.tree_id, {
       quantity: harvestQty,
       unit: answers.harvest.unit,
+      harvest_date: today,
     });
     harvested = true;
+    saved++;
+  }
+  // After the pick, so "the last 20 lb, and that's the lot" lands in that
+  // order in the tree's history.
+  if (answers.harvestComplete !== null) {
+    await setTreeHarvestComplete(tree.tree_id, {
+      complete: answers.harvestComplete,
+      date: today,
+    });
     saved++;
   }
 
@@ -345,6 +368,7 @@ export default function InspectionEntry({
     readiness: null,
     predictedCentre: null,
     harvest: { quantity: '', unit: 'lb' },
+    harvestComplete: null,
     bloom: null,
     fruit: null,
     metrics: {},
@@ -361,7 +385,7 @@ export default function InspectionEntry({
   const [readiness, setReadiness] = useState<ReadinessVerdict | null>(null);
   /** Photos taken on this tree in this sitting, newest last. */
   const [photos, setPhotos] = useState<string[]>([]);
-  /** Only asked on "Harvest now"; pounds unless the picker says otherwise. */
+  /** Pounds unless the picker says otherwise. */
   const [harvestQty, setHarvestQtyState] = useState('');
   const [harvestUnit, setHarvestUnitState] = useState<HarvestUnit>('lb');
   const setHarvestQty = (q: string) => {
@@ -374,6 +398,41 @@ export default function InspectionEntry({
   };
   /** The entered amount in pounds, or null while it is not a usable number. */
   const harvestPounds = toPounds(Number(harvestQty), harvestUnit, tree.fruit_type);
+  const [harvestCompleteChoice, setHarvestCompleteChoice] = useState<boolean | null>(null);
+  /**
+   * What this tree has given so far this season. The season is the
+   * grower's calendar year, so the year is worked out here, not on a
+   * server running in UTC.
+   */
+  const [season, setSeason] = useState<HarvestSeason | null>(null);
+  const seasonYear = new Date().getFullYear();
+  useEffect(() => {
+    let live = true;
+    trpc.tree.harvestSeason
+      .query({ treeId: tree.tree_id, year: seasonYear })
+      .then((v) => {
+        if (live) setSeason(v);
+      })
+      .catch(() => {
+        // Context, not a gate: a pick can be recorded without the total.
+      });
+    return () => {
+      live = false;
+    };
+  }, [tree.tree_id, seasonYear]);
+  // Until the season loads, the tree record says whether it was closed.
+  const savedComplete =
+    season?.complete ?? isHarvestComplete(tree.harvest_completed_on, seasonYear);
+  const shownComplete = harvestCompleteChoice ?? savedComplete;
+  /**
+   * The first tap asks for the opposite of what is saved; a second takes
+   * the request back, so a mis-tap never needs a reopen to undo it.
+   */
+  const toggleHarvestComplete = () => {
+    const next = harvestCompleteChoice === null ? !savedComplete : null;
+    answersRef.current.harvestComplete = next;
+    setHarvestCompleteChoice(next);
+  };
   const [bloomOpen, setBloomOpen] = useState(!bloomOnRequest);
 
   /**
@@ -570,9 +629,6 @@ export default function InspectionEntry({
     const next = answersRef.current.readiness === verdict ? null : verdict;
     answersRef.current.readiness = next;
     setReadiness(next);
-    // An amount typed under "Harvest now" means nothing under any other
-    // verdict, and must not be saved behind the picker's back.
-    if (next !== 'now') setHarvestQty('');
   };
 
   const setMetric = (key: string, value: string) => {
@@ -608,6 +664,7 @@ export default function InspectionEntry({
     causes.length > 0 ||
     readiness !== null ||
     harvestQty !== '' ||
+    harvestCompleteChoice !== null ||
     Object.values(condition).some((v) => v !== '') ||
     note.trim() !== '';
 
@@ -619,6 +676,7 @@ export default function InspectionEntry({
     causes.length > 0 ||
     readiness !== null ||
     harvestQty !== '' ||
+    harvestCompleteChoice !== null ||
     Object.values(metrics).some((v) => v !== '') ||
     Object.values(condition).some((v) => v !== '');
 
@@ -656,7 +714,7 @@ export default function InspectionEntry({
   };
 
   const enabledMetrics = FRUIT_METRIC_CATALOG.filter((m) => settings.fruitMetrics.includes(m.key));
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = dateToYMD(new Date());
   const predictionLine = describePrediction(predictedCentre, todayIso);
   const enabledCondition = CONDITION_METRIC_CATALOG.filter((m) =>
     settings.conditionMetrics.includes(m.key),
@@ -1105,52 +1163,106 @@ export default function InspectionEntry({
                 );
               })}
             </div>
-            {readiness === 'now' && (
-              <div className="space-y-1.5 pt-1">
-                <p className="text-[11px] font-medium text-bark">
-                  Picked from this tree (optional) — saved with {recordLabel}
-                </p>
-                <div className="flex gap-2">
-                  <Input
-                    type="number"
-                    inputMode="decimal"
-                    min="0"
-                    step="any"
-                    placeholder="Amount"
-                    value={harvestQty}
-                    onChange={(e) => setHarvestQty(e.target.value)}
-                    disabled={busy}
-                    className="h-11 flex-1"
-                    aria-label="Amount harvested"
-                  />
-                  <div className="flex rounded-lg border border-line overflow-hidden">
-                    {HARVEST_UNITS.map((u) => (
-                      <button
-                        key={u}
-                        type="button"
-                        onClick={() => setHarvestUnit(u)}
-                        aria-pressed={harvestUnit === u}
-                        disabled={busy}
-                        className={`px-3 text-sm font-medium ${
-                          harvestUnit === u
-                            ? 'bg-canopy-700 text-white'
-                            : 'bg-paper text-ink hover:bg-canopy-50'
-                        }`}
-                      >
-                        {u}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                {harvestPounds !== null && (
-                  <p className="text-xs text-bark">
-                    {describeHarvest(Number(harvestQty), harvestUnit, tree.fruit_type)}
-                  </p>
-                )}
-              </div>
-            )}
           </div>
         )}
+
+        {/*
+          ── Harvest ──
+
+          Always here, not behind the picking verdict: that is only asked of
+          a tree with a variety, and plenty of trees without one still bear.
+          A tree is seldom picked in one go, so the season so far sits above
+          the amount, and "complete" is the grower's word that it is done --
+          no total can say whether 40 lb is all of it or half.
+        */}
+        <div className="space-y-1.5">
+          {sectionLabel('Harvest', harvestPounds !== null || harvestCompleteChoice !== null, {
+            summary: 'What came off this tree today, added to its season so far.',
+            scale:
+              'Pick it as often as it needs. Mark it complete when nothing is left; that holds until the end of the year.',
+          })}
+          <p className="text-[11px] text-bark">
+            {season === null
+              ? `${seasonYear} so far: …`
+              : season.picks.length === 0
+                ? `Nothing picked in ${seasonYear} yet`
+                : `${seasonYear} so far: ${season.total_lbs} lb · ${season.total_kg} kg · ${season.total_bushels} bu` +
+                  ` from ${season.picks.length} pick${season.picks.length === 1 ? '' : 's'}`}
+          </p>
+          {season && season.picks.length > 0 && (
+            <ul className="space-y-0.5 text-[11px] text-bark">
+              {season.picks.map((p) => (
+                <li key={p.id} className="flex justify-between gap-2">
+                  <span>{formatYMD(p.harvest_date)}</span>
+                  <span className="font-mono text-ink">{p.detail}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="flex gap-2">
+            <Input
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="any"
+              placeholder="Picked today"
+              value={harvestQty}
+              onChange={(e) => setHarvestQty(e.target.value)}
+              disabled={busy}
+              className="h-11 flex-1"
+              aria-label="Amount harvested"
+            />
+            <div className="flex rounded-lg border border-line overflow-hidden">
+              {HARVEST_UNITS.map((u) => (
+                <button
+                  key={u}
+                  type="button"
+                  onClick={() => setHarvestUnit(u)}
+                  aria-pressed={harvestUnit === u}
+                  disabled={busy}
+                  className={`px-3 text-sm font-medium ${
+                    harvestUnit === u
+                      ? 'bg-canopy-700 text-white'
+                      : 'bg-paper text-ink hover:bg-canopy-50'
+                  }`}
+                >
+                  {u}
+                </button>
+              ))}
+            </div>
+          </div>
+          {harvestPounds !== null && (
+            <p className="text-xs text-bark">
+              {describeHarvest(Number(harvestQty), harvestUnit, tree.fruit_type)} — saved with{' '}
+              {recordLabel}
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={toggleHarvestComplete}
+            aria-pressed={shownComplete}
+            disabled={busy}
+            className={`w-full h-11 rounded-lg text-sm font-medium border active:scale-[0.97] disabled:opacity-50 inline-flex items-center justify-center gap-1.5 ${
+              shownComplete
+                ? 'bg-canopy-600 border-canopy-600 text-white'
+                : 'border-line text-ink bg-paper hover:bg-canopy-50'
+            }`}
+          >
+            {shownComplete && <Check aria-hidden size={14} />}
+            {shownComplete ? 'Harvest complete' : 'Mark harvest complete'}
+          </button>
+          {/* Says what the button will do, since tapping a finished tree
+              reopens it and a pending change waits for the record button. */}
+          <p className="text-[11px] text-bark">
+            {harvestCompleteChoice === true
+              ? `Closes this tree for ${seasonYear} — saved with ${recordLabel}`
+              : harvestCompleteChoice === false
+                ? `Reopens this tree — saved with ${recordLabel}`
+                : savedComplete
+                  ? `Picked out ${formatYMD(season?.completed_on ?? tree.harvest_completed_on)} · tap to reopen`
+                  : 'Tap when there is nothing left to pick'}
+          </p>
+        </div>
 
         {/* ── Notes: always available; saved with the tree's record ── */}
         <Input

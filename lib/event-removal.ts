@@ -7,12 +7,21 @@
 /**
  * The rows that stay. They are the audit trail of edits to the tree itself
  * -- created, edited, moved, deleted -- and deleting one would not undo the
- * edit, only hide that it happened.
+ * edit, only hide that it happened. Marking a tree's harvest complete or
+ * reopening it is the same: the undo is the button that does the opposite,
+ * which leaves a row of its own.
  *
  * Everything else can go: whatever could be written by hand, everything the
  * Inspect form writes, and the status change an inspection makes.
  */
-export const PERMANENT_EVENT_TYPES = ['created', 'updated', 'moved', 'deleted'] as const;
+export const PERMANENT_EVENT_TYPES = [
+  'created',
+  'updated',
+  'moved',
+  'deleted',
+  'harvest_complete',
+  'harvest_reopened',
+] as const;
 
 export function isRemovableEventType(type: string): boolean {
   return !(PERMANENT_EVENT_TYPES as readonly string[]).includes(type);

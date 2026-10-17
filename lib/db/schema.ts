@@ -85,6 +85,8 @@ export const trees = pgTable(
     lng: decimal('lng', { precision: 11, scale: 8 }),
     lastPruned: date('last_pruned'),
     lastHarvest: date('last_harvest'),
+    /** Picked out for the season; complete only within that year (073). */
+    harvestCompletedOn: date('harvest_completed_on'),
     yieldEstimate: decimal('yield_estimate', { precision: 8, scale: 2 }),
     notes: text('notes'),
     rootstock: varchar('rootstock', { length: 100 }),

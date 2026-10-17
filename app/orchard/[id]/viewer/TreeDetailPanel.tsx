@@ -9,6 +9,7 @@ import InspectionEntry from './InspectionEntry';
 import type { PickablePest } from '@/lib/pest-picker';
 import { recordInspectionInSavedWalk } from '@/lib/api/walk-progress';
 import { formatYMD } from '@/lib/dates';
+import { isHarvestComplete } from '@/lib/tree-harvest-season';
 import StatusBadge, { STATUS_LABEL } from '@/components/StatusBadge';
 import FloatingWindow from '@/components/FloatingWindow';
 import TreeHistory from './TreeHistory';
@@ -366,6 +367,9 @@ export default function TreeDetailPanel({
             {field('Height', tree.height != null ? `${tree.height} m` : null)}
             {field('Last pruned', formatYMD(tree.last_pruned))}
             {field('Last harvest', formatYMD(tree.last_harvest))}
+            {/* Only this season's: last year's "complete" says nothing about now. */}
+            {isHarvestComplete(tree.harvest_completed_on, new Date().getFullYear()) &&
+              field('Harvest complete', formatYMD(tree.harvest_completed_on))}
             {field('Yield estimate', tree.yield_estimate != null ? `${tree.yield_estimate} kg` : null)}
             <div className="py-2">
               <div className="flex items-center justify-between gap-2">
