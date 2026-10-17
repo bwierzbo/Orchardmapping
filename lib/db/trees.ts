@@ -55,6 +55,8 @@ export interface Tree {
   lng?: number;
   last_pruned?: Date | string;
   last_harvest?: Date | string;
+  /** Marked finished for the season (073); set only through its own route. */
+  harvest_completed_on?: Date | string | null;
   yield_estimate?: number;
   notes?: string;
   rootstock?: string;

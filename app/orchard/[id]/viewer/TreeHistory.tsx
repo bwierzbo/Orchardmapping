@@ -39,6 +39,8 @@ const EVENT_LABEL: Record<string, string> = {
   fruit_check: 'Fruit check',
   tree_condition: 'Trunk and scaffolds',
   harvest_readiness: 'Picking verdict',
+  harvest_complete: 'Harvest complete',
+  harvest_reopened: 'Harvest reopened',
 };
 
 /** What deleting a row also undoes, said before it happens. */

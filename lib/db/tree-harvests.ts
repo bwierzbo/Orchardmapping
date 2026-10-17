@@ -1,5 +1,8 @@
 import { sql } from '@vercel/postgres';
 import { toPounds, type HarvestUnit } from '../harvest-units';
+import { asHarvestUnit, type TreePick } from '../tree-harvest-season';
+import { toYMD } from '../dates';
+import { toNum, toNumOrUndefined } from './decode';
 
 /**
  * A harvest recorded at one tree.
@@ -21,15 +24,6 @@ export interface TreeHarvestInput {
   fruitType?: string | null;
   notes?: string | null;
   createdBy?: string | null;
-}
-
-export interface TreeHarvestRow {
-  id: number;
-  harvest_date: string;
-  quantity: string | null;
-  unit: string | null;
-  weight_lbs: string;
-  notes: string | null;
 }
 
 /**
@@ -72,13 +66,44 @@ export async function insertTreeHarvest(
   return { weightLbs };
 }
 
-/** This tree's harvests, newest first. */
-export async function listTreeHarvests(treeId: string): Promise<TreeHarvestRow[]> {
-  const { rows } = await sql<TreeHarvestRow>`
-    SELECT id, harvest_date, quantity, unit, weight_lbs, notes
+/**
+ * This tree's harvests, newest first, decoded for the client: the date as
+ * YYYY-MM-DD and the DECIMAL columns, which the driver hands back as
+ * strings, as numbers.
+ */
+export async function listTreeHarvests(treeId: string): Promise<TreePick[]> {
+  const { rows } = await sql`
+    SELECT id, harvest_date, quantity, unit, weight_lbs
     FROM harvests
     WHERE tree_id = ${treeId} AND undone_at IS NULL
     ORDER BY harvest_date DESC, id DESC
   `;
-  return rows;
+  return rows.map((r) => {
+    const quantity = toNumOrUndefined(r.quantity);
+    return {
+      id: Number(r.id),
+      harvest_date: toYMD(r.harvest_date) ?? '',
+      quantity: quantity ?? null,
+      unit: asHarvestUnit(r.unit),
+      weight_lbs: toNum(r.weight_lbs, 0),
+    };
+  });
+}
+
+/**
+ * Mark a tree finished for the season, or open it again (null).
+ *
+ * Its own write rather than a column in TREE_UPDATABLE_COLUMNS: the edit
+ * form must not be able to set it in passing, and every change to it writes
+ * a history row of its own, which a generic update would not.
+ */
+export async function setTreeHarvestCompletedOn(
+  treeId: string,
+  completedOn: string | null,
+): Promise<void> {
+  await sql`
+    UPDATE trees
+    SET harvest_completed_on = ${completedOn}, updated_at = NOW()
+    WHERE tree_id = ${treeId}
+  `;
 }

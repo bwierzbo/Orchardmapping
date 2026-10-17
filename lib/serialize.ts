@@ -27,6 +27,7 @@ export function serializeTree(tree: Tree): ClientTree {
     lng: tree.lng ?? null,
     last_pruned: toYMD(tree.last_pruned),
     last_harvest: toYMD(tree.last_harvest),
+    harvest_completed_on: toYMD(tree.harvest_completed_on),
     yield_estimate: tree.yield_estimate ?? null,
     notes: tree.notes ?? null,
     rootstock: tree.rootstock ?? null,

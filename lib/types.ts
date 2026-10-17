@@ -108,6 +108,8 @@ export interface ClientTree {
   lng?: number | null;
   last_pruned?: string | null;
   last_harvest?: string | null;
+  /** When the tree was marked picked out; complete only for that year. */
+  harvest_completed_on?: string | null;
   yield_estimate?: number | null;
   notes?: string | null;
   rootstock?: string | null;

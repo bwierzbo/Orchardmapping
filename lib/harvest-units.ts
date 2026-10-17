@@ -60,7 +60,7 @@ export function toPounds(
 }
 
 /** One decimal, matching the DECIMAL(10,1) the column stores. */
-function round1(n: number): number {
+export function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
 

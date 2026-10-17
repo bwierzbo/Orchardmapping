@@ -13,6 +13,11 @@ export const AUTO_EVENT_TYPES = [
   'status_change',
   'moved',
   'deleted',
+  // trees.harvest_completed_on set or cleared (073). Written by its own
+  // route, never chosen from a menu: an empty "harvest complete" row with
+  // nothing set on the tree would say the opposite of what the tree says.
+  'harvest_complete',
+  'harvest_reopened',
 ] as const;
 
 /**
