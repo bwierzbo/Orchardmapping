@@ -5,6 +5,8 @@ import { OrchardBoundary, OrchardConfig } from '../types';
 import { buildUpdateSet } from './sql-helpers';
 import { toNum } from './decode';
 import { parseBoundary } from '../orchard-boundary';
+import { harvestPurposeFor } from '../harvest-target';
+import { asFruitPurpose } from '../nutrition';
 
 /**
  * Columns a caller may change through updateOrchard. The primary key and
@@ -68,7 +70,7 @@ export interface Orchard {
   // opt-in since migration 063 — see the column comments for why.
   ipm_enabled?: boolean;
   nutrition_enabled?: boolean;
-  harvest_purpose?: string;
+  fruit_purpose?: string;
   // Timestamps
   created_at?: Date;
   updated_at?: Date;
@@ -146,9 +148,9 @@ export function dbRowToOrchardConfig(row: Orchard): OrchardConfig {
     // safe reading, matching the column default.
     ipmEnabled: row.ipm_enabled === true,
     nutritionEnabled: row.nutrition_enabled === true,
-    // Fresh is the column default and the safe reading of a row written
-    // before migration 066: an orchard someone has mapped is not a cidery.
-    harvestPurpose: row.harvest_purpose === 'cider' ? 'cider' : 'fresh',
+    // Derived from what the fruit is for (migration 074 dropped the
+    // separate harvest_purpose column that had drifted from it).
+    harvestPurpose: harvestPurposeFor(asFruitPurpose(row.fruit_purpose)),
   };
 }
 

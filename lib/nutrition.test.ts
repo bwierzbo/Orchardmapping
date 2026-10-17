@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   LEAF_SUFFICIENCY,
+  asFruitPurpose,
   NUTRIENTS,
   assessLeafTest,
   assessNutrient,
@@ -111,5 +112,14 @@ describe('samplingGuidance', () => {
       expect(g.soilEvery).toMatch(/year/);
       expect(g.note.length).toBeGreaterThan(20);
     }
+  });
+});
+
+describe('asFruitPurpose', () => {
+  it('keeps a stored purpose and reads anything else as the cider default', () => {
+    const read = ['dessert', 'mixed', 'fresh', '', null, undefined, 42].map(asFruitPurpose);
+    console.log('read back:', read);
+    // 'fresh' was harvest_purpose's word, never fruit_purpose's.
+    expect(read).toEqual(['dessert', 'mixed', 'cider', 'cider', 'cider', 'cider', 'cider']);
   });
 });

@@ -5,7 +5,8 @@
  * orchard someone is a member of, or inside one of them.
  */
 import { sql } from '@vercel/postgres';
-import type { HarvestPurpose, TargetBasis } from '../harvest-target';
+import { harvestPurposeFor, type HarvestPurpose, type TargetBasis } from '../harvest-target';
+import { asFruitPurpose } from '../nutrition';
 
 export interface HarvestPlanRow {
   variety: string;
@@ -123,10 +124,9 @@ export async function predictedPickFor(
   // against the wrong target: a cider window sits a week later than a
   // fresh one for the same variety.
   const { rows: orchardRows } = await sql`
-    SELECT harvest_purpose FROM orchards WHERE id = ${orchardId}
+    SELECT fruit_purpose FROM orchards WHERE id = ${orchardId}
   `;
-  const purpose: HarvestPurpose =
-    orchardRows[0]?.harvest_purpose === 'cider' ? 'cider' : 'fresh';
+  const purpose: HarvestPurpose = harvestPurposeFor(asFruitPurpose(orchardRows[0]?.fruit_purpose));
   const { rows } = await sql`
     WITH target AS (
       SELECT DISTINCT ON (lower(btrim(variety)))

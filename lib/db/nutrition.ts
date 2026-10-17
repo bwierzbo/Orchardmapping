@@ -1,6 +1,6 @@
 import { sql } from '@vercel/postgres';
 import {
-  FRUIT_PURPOSES,
+  asFruitPurpose,
   NUTRIENTS,
   OPERATION_SCALES,
   type FruitPurpose,
@@ -24,12 +24,9 @@ export interface OrchardIntent {
 export async function getOrchardIntent(orchardId: string): Promise<OrchardIntent> {
   const { rows } = await sql`
     SELECT fruit_purpose, operation_scale FROM orchards WHERE id = ${orchardId}`;
-  const purpose = String(rows[0]?.fruit_purpose ?? 'cider');
   const scale = String(rows[0]?.operation_scale ?? 'small_business');
   return {
-    fruitPurpose: (FRUIT_PURPOSES as readonly string[]).includes(purpose)
-      ? (purpose as FruitPurpose)
-      : 'cider',
+    fruitPurpose: asFruitPurpose(rows[0]?.fruit_purpose),
     operationScale: (OPERATION_SCALES as readonly string[]).includes(scale)
       ? (scale as OperationScale)
       : 'small_business',
