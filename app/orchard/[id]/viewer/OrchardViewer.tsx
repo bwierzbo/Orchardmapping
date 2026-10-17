@@ -62,6 +62,8 @@ import {
   type RecencyBand,
 } from '@/lib/inspection-recency';
 import OrchardSwitcher from './OrchardSwitcher';
+import FindTree from './FindTree';
+import MoreActionsMenu from './MoreActionsMenu';
 import { useAreaLayer } from './useAreaLayer';
 import { useTrapLayer } from './useTrapLayer';
 import TrapModePanel from './TrapModePanel';
@@ -1057,6 +1059,21 @@ export default function OrchardViewer({
             <h1 className="text-base sm:text-lg font-bold text-ink truncate">{orchard.name}</h1>
             <p className="text-xs text-bark truncate">{orchard.location}</p>
           </div>
+          {trees.length > 0 && !walkMode && !detectMode && (
+            <FindTree
+              trees={trees}
+              onPick={(tree) => {
+                select(tree.tree_id);
+                if (mapObj && tree.lat != null && tree.lng != null) {
+                  // Close enough that its neighbours are separate dots
+                  mapObj.flyTo({
+                    center: [tree.lng, tree.lat],
+                    zoom: Math.min(Math.max(mapObj.getZoom(), 19), mapObj.getMaxZoom()),
+                  });
+                }
+              }}
+            />
+          )}
           <OrchardSwitcher orchards={allOrchards} currentId={orchard.id} />
         </div>
       </div>
@@ -1088,7 +1105,7 @@ export default function OrchardViewer({
             <p className="text-sm font-medium text-ink">No trees mapped yet</p>
             <p className="text-xs text-bark mt-1">
               {canEdit
-                ? 'Tap “Add Trees” to place them, or import a CSV.'
+                ? 'Tap “Add Trees” to place them, or import a CSV from the dashboard.'
                 : 'Sign in to start mapping trees.'}
             </p>
           </div>
@@ -1105,15 +1122,12 @@ export default function OrchardViewer({
             Sign in to edit
           </Link>
         )}
-        {atDesk && canEdit && !editMode && !walkMode && !areaMode && !detectMode && (
-          <button
-            onClick={() => setDetectMode(true)}
-            className="px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-surface text-ink hover:bg-canopy-50"
-          >
-            Detect Trees
-          </button>
-        )}
-        {canEdit && !editMode && !walkMode && !detectMode && trees.length > 0 && (
+        {/*
+          What happens every visit comes first; the occasional actions sit
+          behind More. A mode that is on shows its own Done button, so
+          getting out of it is still one tap.
+        */}
+        {canEdit && !editMode && !walkMode && !detectMode && !areaMode && !trapMode && trees.length > 0 && (
           <>
             <button
               onClick={startWalk}
@@ -1131,50 +1145,62 @@ export default function OrchardViewer({
             </button>
           </>
         )}
-        {canEdit && !walkMode && !areaMode && !detectMode && !trapMode && (
+        {/* An orchard with no trees yet has one job: put some on it. */}
+        {canEdit && !editMode && !walkMode && !detectMode && !areaMode && !trapMode && trees.length === 0 && (
           <button
             onClick={() => {
               setAreaMode(false);
               toggleAdding();
             }}
-            className={`px-4 py-3 rounded-lg shadow-lg text-sm font-medium ${
-              editMode
-                ? 'bg-flag-600 text-white hover:bg-flag-700'
-                : 'bg-surface text-ink hover:bg-canopy-50'
-            }`}
+            className="px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-canopy-600 text-white hover:bg-canopy-700"
           >
-            {editMode ? 'Done Adding' : 'Add Trees'}
+            Add Trees
           </button>
         )}
-        {canEdit && !walkMode && !editMode && !areaMode && !detectMode && (
-          <button
-            onClick={() => {
-              setSelectedTrapId(null);
-              setTrapMode((v) => !v);
+        {canEdit && !editMode && !walkMode && !detectMode && !areaMode && !trapMode && (
+          <MoreActionsMenu
+            atDesk={atDesk}
+            onAddTrees={() => {
+              setAreaMode(false);
+              toggleAdding();
             }}
-            className={`px-4 py-3 rounded-lg shadow-lg text-sm font-medium ${
-              trapMode
-                ? 'bg-canopy-600 text-white hover:bg-canopy-700'
-                : 'bg-surface text-ink hover:bg-canopy-50'
-            }`}
-          >
-            {trapMode ? 'Done Hanging' : 'Traps'}
-          </button>
-        )}
-        {atDesk && canEdit && !walkMode && !editMode && !detectMode && !trapMode && (
-          <button
-            onClick={() => {
+            onTraps={() => {
+              setSelectedTrapId(null);
+              setTrapMode(true);
+            }}
+            onAreas={() => {
               stopAdding();
               setSelectedAreaId(null);
-              setAreaMode((v) => !v);
+              setAreaMode(true);
             }}
-            className={`px-4 py-3 rounded-lg shadow-lg text-sm font-medium ${
-              areaMode
-                ? 'bg-canopy-700 text-white hover:bg-canopy-800'
-                : 'bg-surface text-ink hover:bg-canopy-50'
-            }`}
+            onDetect={() => setDetectMode(true)}
+          />
+        )}
+        {canEdit && editMode && (
+          <button
+            onClick={stopAdding}
+            className="px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-flag-600 text-white hover:bg-flag-700"
           >
-            {areaMode ? 'Done with Areas' : 'Areas'}
+            Done Adding
+          </button>
+        )}
+        {canEdit && trapMode && (
+          <button
+            onClick={() => setTrapMode(false)}
+            className="px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-canopy-600 text-white hover:bg-canopy-700"
+          >
+            Done Hanging
+          </button>
+        )}
+        {canEdit && areaMode && (
+          <button
+            onClick={() => {
+              setSelectedAreaId(null);
+              setAreaMode(false);
+            }}
+            className="px-4 py-3 rounded-lg shadow-lg text-sm font-medium bg-canopy-700 text-white hover:bg-canopy-800"
+          >
+            Done with Areas
           </button>
         )}
       </div>
