@@ -14,9 +14,24 @@
  * at a research station.
  */
 import { estimatePickDate } from './harvest-window';
+import type { FruitPurpose } from './nutrition';
 
 export const HARVEST_PURPOSES = ['cider', 'fresh'] as const;
 export type HarvestPurpose = (typeof HARVEST_PURPOSES)[number];
+
+/**
+ * The picking target for what an orchard's fruit is for.
+ *
+ * One answer to "what is this fruit for", kept as orchards.fruit_purpose
+ * and set on the nutrition page; the harvest windows only need to know
+ * which of the two targets it means. Dessert and baking fruit come off
+ * firm, on the fresh target. Mixed takes the cider one: picking cider
+ * fruit early is the failure that cannot be undone, and an orchard that
+ * says it grows some cider fruit is better told to wait.
+ */
+export function harvestPurposeFor(fruitPurpose: FruitPurpose): HarvestPurpose {
+  return fruitPurpose === 'dessert' || fruitPurpose === 'baking' ? 'fresh' : 'cider';
+}
 
 /**
  * How far either side of the predicted date the window runs.

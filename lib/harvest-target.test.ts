@@ -7,7 +7,9 @@ import {
   parseBloomHarvestPair,
   deriveDaysFromBloom,
   harvestWindowFor,
+  harvestPurposeFor,
 } from './harvest-target';
+import { FRUIT_PURPOSES } from './nutrition';
 
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
 
@@ -188,5 +190,13 @@ describe('harvestWindowFor', () => {
     const original = new Date(Date.UTC(2026, 4, 12));
     harvestWindowFor(original, 141, 'cider');
     expect(ymd(original)).toBe('2026-05-12');
+  });
+});
+
+describe('harvestPurposeFor', () => {
+  it('puts cider and mixed fruit on the cider target, dessert and baking on fresh', () => {
+    const map = Object.fromEntries(FRUIT_PURPOSES.map((p) => [p, harvestPurposeFor(p)]));
+    console.log('fruit purpose -> harvest target:', map);
+    expect(map).toEqual({ cider: 'cider', dessert: 'fresh', baking: 'fresh', mixed: 'cider' });
   });
 });

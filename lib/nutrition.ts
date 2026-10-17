@@ -104,6 +104,11 @@ export function assessLeafTest(
 export const FRUIT_PURPOSES = ['cider', 'dessert', 'baking', 'mixed'] as const;
 export type FruitPurpose = (typeof FRUIT_PURPOSES)[number];
 
+/** A stored fruit_purpose, read safely. Cider is the column default. */
+export function asFruitPurpose(value: unknown): FruitPurpose {
+  return (FRUIT_PURPOSES as readonly unknown[]).includes(value) ? (value as FruitPurpose) : 'cider';
+}
+
 export const OPERATION_SCALES = ['home', 'small_business', 'commercial'] as const;
 export type OperationScale = (typeof OPERATION_SCALES)[number];
 
