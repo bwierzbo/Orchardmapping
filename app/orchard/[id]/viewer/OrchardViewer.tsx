@@ -62,6 +62,7 @@ import {
   type RecencyBand,
 } from '@/lib/inspection-recency';
 import OrchardSwitcher from './OrchardSwitcher';
+import { hiddenByHarvest, pickedOutIds, type HarvestFilter } from '@/lib/tree-harvest-season';
 import FindTree from './FindTree';
 import MoreActionsMenu from './MoreActionsMenu';
 import { useAreaLayer } from './useAreaLayer';
@@ -512,16 +513,30 @@ export default function OrchardViewer({
     [lastSeenMap, trees, todayYmd, recencyBands]
   );
 
+  // Picked out this season vs still to pick. The year is the grower's
+  // local one: complete means complete in the season they are standing in.
+  const [harvestFilter, setHarvestFilter] = useState<HarvestFilter>('all');
+  const seasonYear = new Date().getFullYear();
+  const harvestComplete = useMemo(() => pickedOutIds(trees, seasonYear), [trees, seasonYear]);
+  // With nothing picked out the filter is not shown, so it cannot be left
+  // hiding every tree after the last one is reopened.
+  const activeHarvestFilter: HarvestFilter = harvestComplete.size > 0 ? harvestFilter : 'all';
+
   // Legend chips switched off hide their trees, which is what makes
   // "Never inspected" useful: tap it and the map becomes the to-do list.
+  // The harvest filter hides the same way, so "To pick" does it mid-harvest.
   const hiddenIds = useMemo(() => {
-    if (!recencyByTree || activeBands.size === RECENCY_BANDS.length) return null;
+    const bandsOff = !!recencyByTree && activeBands.size < RECENCY_BANDS.length;
+    if (!bandsOff && activeHarvestFilter === 'all') return null;
     const hidden = new Set<string>();
-    for (const [treeId, band] of recencyByTree) {
-      if (!activeBands.has(band)) hidden.add(treeId);
+    if (bandsOff) {
+      for (const [treeId, band] of recencyByTree) {
+        if (!activeBands.has(band)) hidden.add(treeId);
+      }
     }
+    for (const id of hiddenByHarvest(trees, harvestComplete, activeHarvestFilter)) hidden.add(id);
     return hidden;
-  }, [recencyByTree, activeBands]);
+  }, [recencyByTree, activeBands, activeHarvestFilter, trees, harvestComplete]);
   const toggleBand = useCallback((band: RecencyBand) => {
     setActiveBands((prev) => {
       const next = new Set(prev);
@@ -1081,6 +1096,16 @@ export default function OrchardViewer({
       {/* Legend / filter — condition by default, recency in the other mode */}
       <MapLegend
         chips={legendChips}
+        harvest={
+          harvestComplete.size > 0
+            ? {
+                filter: activeHarvestFilter,
+                onChange: setHarvestFilter,
+                complete: harvestComplete.size,
+                open: trees.length - harvestComplete.size,
+              }
+            : undefined
+        }
         active={recencyActive ? activeBands : activeStatuses}
         onToggle={
           recencyActive
@@ -1318,6 +1343,7 @@ export default function OrchardViewer({
           onProgress={handleWalkProgress}
           onSetStatus={walkSetStatus}
           onFocusTree={focusWalkTree}
+          onTreeChanged={refresh}
           pests={pestLibrary.entries}
           pestSightings={pestLibrary.counts}
           pestsRanked={pestsRanked}

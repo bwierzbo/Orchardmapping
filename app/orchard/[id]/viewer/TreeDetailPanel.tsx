@@ -9,7 +9,16 @@ import InspectionEntry from './InspectionEntry';
 import type { PickablePest } from '@/lib/pest-picker';
 import { recordInspectionInSavedWalk } from '@/lib/api/walk-progress';
 import { formatYMD } from '@/lib/dates';
-import { isHarvestComplete } from '@/lib/tree-harvest-season';
+import { isHarvestComplete, type HarvestSeason } from '@/lib/tree-harvest-season';
+import {
+  EVENT_LABEL,
+  describeSeasonTotal,
+  latestActivity,
+  latestCropLoad,
+  latestInspection,
+} from '@/lib/tree-activity';
+import { fetchTreeEvents, type ClientTreeEvent } from '@/lib/api/trees';
+import { Check, ChevronDown } from 'lucide-react';
 import StatusBadge, { STATUS_LABEL } from '@/components/StatusBadge';
 import FloatingWindow from '@/components/FloatingWindow';
 import TreeHistory from './TreeHistory';
@@ -22,6 +31,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   Select,
   SelectContent,
@@ -75,6 +90,10 @@ interface TreeDetailPanelProps {
  * "Inspect" mode that is the walk survey's per-tree form for just this
  * tree — same controls, same events — for spot checks from the map.
  * Right-side panel on desktop, bottom sheet on small screens.
+ *
+ * The read view leads with where the tree stands now -- the last thing
+ * done to it, this season's pick and crop load, whether it is picked out
+ * -- then the photo, then the full history.
  */
 export default function TreeDetailPanel({
   tree,
@@ -137,6 +156,53 @@ export default function TreeDetailPanel({
     return true;
   };
   const [historyVersion, setHistoryVersion] = useState(0);
+  // The history is loaded here rather than in TreeHistory because the
+  // summary at the top reads the same list: one request serves both.
+  const [events, setEvents] = useState<ClientTreeEvent[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    fetchTreeEvents(tree.tree_id)
+      .then((e) => {
+        if (live) setEvents(e);
+      })
+      .catch(() => {
+        if (live) setEvents([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [tree.tree_id, historyVersion]);
+
+  /**
+   * What this tree has given so far this season. The season is the
+   * grower's calendar year, so the year is worked out here, not on a
+   * server running in UTC (same as the Inspect form's harvest section).
+   */
+  const seasonYear = new Date().getFullYear();
+  const [season, setSeason] = useState<HarvestSeason | null>(null);
+  useEffect(() => {
+    let live = true;
+    trpc.tree.harvestSeason
+      .query({ treeId: tree.tree_id, year: seasonYear })
+      .then((v) => {
+        if (live) setSeason(v);
+      })
+      .catch(() => {
+        // The summary line is context; the panel is whole without it.
+      });
+    return () => {
+      live = false;
+    };
+  }, [tree.tree_id, seasonYear, historyVersion]);
+
+  // Until the season loads, the tree record says whether it was closed.
+  const harvestComplete =
+    season?.complete ?? isHarvestComplete(tree.harvest_completed_on, seasonYear);
+  const completedOn = season?.completed_on ?? tree.harvest_completed_on ?? null;
+  const lastActivity = events ? latestActivity(events) : null;
+  const lastInspection = events ? latestInspection(events) : null;
+  const cropLoad = events ? latestCropLoad(events) : null;
+  const seasonTotal = season ? describeSeasonTotal(season) : null;
   // Notes are edited in place rather than through the whole form: a note is
   // the thing most often added to a tree and the least worth opening an
   // eleven-field editor for.
@@ -288,26 +354,55 @@ export default function TreeDetailPanel({
       dockedClassName="inset-x-0 bottom-0 max-h-[70vh] rounded-t-2xl
                  md:inset-x-auto md:right-4 md:top-20 md:bottom-auto md:w-96 md:max-h-[calc(100vh-7rem)] md:rounded-xl"
       header={
-      <div className="flex items-start justify-between px-5 pt-4 pb-3 border-b border-line">
-        <div>
-          <p className="font-mono text-xs text-bark tracking-wide">{formatAddress(tree)}</p>
-          <h2 className="text-lg font-semibold text-ink">
-            {tree.variety ? (
-              <a
-                href={`/varieties/${encodeURIComponent(tree.variety)}`}
-                target="_blank"
-                rel="noreferrer"
-                className="hover:text-canopy-700 hover:underline"
-                title="Open in Variety Library"
+      <div className="flex items-start justify-between gap-2 px-5 pt-4 pb-3 border-b border-line">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <h2 className="text-lg font-semibold text-ink">
+              {tree.tree_no != null ? `Tree ${tree.tree_no}` : tree.name || 'Tree'}
+              {/* A given name ("the big Kingston by the gate") is how the
+                  grower knows the tree; the number is how the app does. */}
+              {tree.tree_no != null && tree.name?.trim() && (
+                <>
+                  <span className="text-bark/60 font-normal"> · </span>
+                  {tree.name.trim()}
+                </>
+              )}
+              {tree.variety && (
+                <>
+                  <span className="text-bark/60 font-normal"> · </span>
+                  <a
+                    href={`/varieties/${encodeURIComponent(tree.variety)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="hover:text-canopy-700 hover:underline"
+                    title="Open in Variety Library"
+                  >
+                    {tree.variety}
+                  </a>
+                </>
+              )}
+            </h2>
+            {/* This season only: last year's "complete" says nothing about now. */}
+            {harvestComplete && (
+              <span
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-canopy-50 dark:bg-canopy-600/15 text-canopy-700 dark:text-canopy-100"
+                title={completedOn ? `Picked out ${formatYMD(completedOn)}` : undefined}
               >
-                {tree.variety}
-              </a>
-            ) : (
-              tree.name || 'Tree'
+                <Check aria-hidden size={13} strokeWidth={3} />
+                Harvest complete
+              </span>
             )}
-          </h2>
-          <div className="mt-1">
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="font-mono text-xs text-bark tracking-wide">{formatAddress(tree)}</span>
             <StatusBadge status={tree.status} />
+            <button
+              onClick={() => navigator.clipboard?.writeText(tree.tree_id)}
+              className="font-mono text-xs text-bark/70 hover:text-ink"
+              title="Copy tree ID"
+            >
+              {tree.tree_id}
+            </button>
           </div>
         </div>
         <button
@@ -339,8 +434,11 @@ export default function TreeDetailPanel({
             pestsRanked={pestsRanked}
             onBusyChange={setInspectBusy}
             onDirtyChange={setInspectDirty}
-            onSaved={({ saved, inspected, photo }) => {
+            onSaved={({ saved, inspected, photo, treeChanged }) => {
               setHistoryVersion((v) => v + 1);
+              // A pick or a closed season changed the tree row, so the map
+              // reloads it -- that is what puts the check on its dot.
+              if (treeChanged) onMoved();
               if (photo) return;
               if (inspected) onInspected(tree.tree_id);
               const where = `R${tree.row_id ?? '—'} P${tree.position ?? '—'}`;
@@ -358,6 +456,36 @@ export default function TreeDetailPanel({
           />
         ) : !editing ? (
           <>
+            {/* Where the tree stands now, before the reference fields. */}
+            <div className="space-y-1 pb-2 mb-1 border-b border-line text-sm">
+              <p>
+                <span className="text-bark">Last activity: </span>
+                {events === null ? (
+                  <span className="text-bark">…</span>
+                ) : lastActivity ? (
+                  <span className="font-medium text-ink">
+                    {EVENT_LABEL[lastActivity.event_type] ?? lastActivity.event_type} —{' '}
+                    {formatYMD(lastActivity.event_date)}
+                  </span>
+                ) : (
+                  <span className="text-bark">nothing recorded yet</span>
+                )}
+              </p>
+              {(seasonTotal || cropLoad) && (
+                <p>
+                  <span className="text-bark">This season: </span>
+                  <span className="font-medium text-ink">
+                    {[
+                      seasonTotal,
+                      cropLoad && `crop load ${cropLoad.load}/5 (${formatYMD(cropLoad.date)})`,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </span>
+                </p>
+              )}
+            </div>
+            {field('Last inspected', lastInspection ? formatYMD(lastInspection.event_date) : null)}
             {field('Fruit', tree.fruit_type)}
             {field('Rootstock', tree.rootstock)}
             {field('Source', tree.source)}
@@ -367,9 +495,6 @@ export default function TreeDetailPanel({
             {field('Height', tree.height != null ? `${tree.height} m` : null)}
             {field('Last pruned', formatYMD(tree.last_pruned))}
             {field('Last harvest', formatYMD(tree.last_harvest))}
-            {/* Only this season's: last year's "complete" says nothing about now. */}
-            {isHarvestComplete(tree.harvest_completed_on, new Date().getFullYear()) &&
-              field('Harvest complete', formatYMD(tree.harvest_completed_on))}
             {field('Yield estimate', tree.yield_estimate != null ? `${tree.yield_estimate} kg` : null)}
             <div className="py-2">
               <div className="flex items-center justify-between gap-2">
@@ -423,7 +548,8 @@ export default function TreeDetailPanel({
               key={tree.tree_id}
               treeId={tree.tree_id}
               canEdit={canEdit}
-              refreshKey={historyVersion}
+              events={events}
+              onEventsChange={setEvents}
               onChanged={() => {
                 setHistoryVersion((v) => v + 1);
                 onMoved();
@@ -509,6 +635,9 @@ export default function TreeDetailPanel({
         )}
       </div>
 
+      {/* Outside the scrolling body, so the actions stay in reach however
+          long the history runs. A viewer has none, so gets no bar. */}
+      {(inspecting || editing || canEdit) && (
       <div className="px-5 py-3 border-t border-line space-y-2">
         {inspecting ? (
           <div className="flex items-center justify-between gap-2">
@@ -531,28 +660,33 @@ export default function TreeDetailPanel({
             </Button>
           </div>
         ) : !editing ? (
-          <div className="flex items-center justify-between gap-2">
-            <button
-              onClick={() => navigator.clipboard?.writeText(tree.tree_id)}
-              className="font-mono text-xs text-bark/70 hover:text-ink"
-              title={`Copy tree ID (${tree.tree_id})`}
-            >
-              {tree.tree_no != null ? `Tree ${tree.tree_no}` : tree.tree_id}
-            </button>
-            {canEdit && (
-              <div className="flex gap-2">
-                {tree.lat != null && tree.lng != null && (
-                  <Button variant="secondary" onClick={onStartMove}>
-                    Move on map
+          // Inspect first: it is what the panel is opened for most. Moving
+          // the dot is an edit of the tree, so it lives under Edit tree.
+          canEdit && (
+            <div className="flex gap-2">
+              <Button className="h-11 flex-1" onClick={() => setInspecting(true)}>
+                Inspect
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="secondary" className="h-11 flex-1">
+                    Edit tree
+                    <ChevronDown aria-hidden />
                   </Button>
-                )}
-                <Button variant="secondary" onClick={startEdit}>
-                  Edit tree
-                </Button>
-                <Button onClick={() => setInspecting(true)}>Inspect</Button>
-              </div>
-            )}
-          </div>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem className="min-h-11" onSelect={startEdit}>
+                    Edit details
+                  </DropdownMenuItem>
+                  {tree.lat != null && tree.lng != null && (
+                    <DropdownMenuItem className="min-h-11" onSelect={onStartMove}>
+                      Move on map
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          )
         ) : confirmingDelete ? (
           <div className="flex items-center justify-between gap-2">
             <span className="text-sm text-destructive">Delete this tree?</span>
@@ -586,6 +720,7 @@ export default function TreeDetailPanel({
           </div>
         )}
       </div>
+      )}
     </FloatingWindow>
   );
 }

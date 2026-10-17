@@ -1,5 +1,6 @@
 import { sql } from '@vercel/postgres';
 import { toYMD } from '../dates';
+import { INSPECTION_EVENT_TYPES } from '../tree-activity';
 import {
   isEmptyWithoutPhoto,
   isRemovableEventType,
@@ -147,23 +148,6 @@ export function diffTreeChanges(
   }
   return changes;
 }
-
-/**
- * Event types that count as having looked at the tree.
- *
- * The test is whether the event records something about the tree's
- * CONDITION, not whether somebody stood next to it. Pruning, spray and
- * fertilize record work done; a note can be a reminder to order rootstock.
- * None of those tell you how the tree is, so none of them should make a
- * tree look freshly inspected on the map.
- */
-export const INSPECTION_EVENT_TYPES = [
-  'observation',
-  'bloom',
-  'fruit_check',
-  'status_change',
-  'harvest',
-] as const;
 
 /**
  * The last day each tree in an orchard was looked at.

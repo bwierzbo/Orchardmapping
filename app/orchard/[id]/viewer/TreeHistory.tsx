@@ -1,16 +1,12 @@
 'use client';
 
 import Image from 'next/image';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
-import {
-  fetchTreeEvents,
-  createTreeEvent,
-  deleteTreeEvent,
-  type ClientTreeEvent,
-} from '@/lib/api/trees';
+import { createTreeEvent, deleteTreeEvent, type ClientTreeEvent } from '@/lib/api/trees';
 import { isRemovableEventType } from '@/lib/event-removal';
+import { EVENT_LABEL } from '@/lib/tree-activity';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import PhotoButton from '@/components/PhotoButton';
@@ -22,26 +18,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-
-const EVENT_LABEL: Record<string, string> = {
-  created: 'Created',
-  updated: 'Updated',
-  status_change: 'Status changed',
-  moved: 'Moved',
-  deleted: 'Deleted',
-  pruning: 'Pruned',
-  spray: 'Sprayed',
-  fertilize: 'Fertilized',
-  observation: 'Observation',
-  harvest: 'Harvested',
-  note: 'Note',
-  bloom: 'Bloom stage',
-  fruit_check: 'Fruit check',
-  tree_condition: 'Trunk and scaffolds',
-  harvest_readiness: 'Picking verdict',
-  harvest_complete: 'Harvest complete',
-  harvest_reopened: 'Harvest reopened',
-};
 
 /** What deleting a row also undoes, said before it happens. */
 const DELETE_CONSEQUENCE: Record<string, string> = {
@@ -83,23 +59,27 @@ function todayYMD(): string {
 
 /**
  * Per-tree history: automatic audit events plus manually logged field
- * activities (pruning, spray, …). Rendered inside the tree detail panel.
- * Bump `refreshKey` to reload after something else (the Inspect form)
- * writes an event. An entry made by mistake can be deleted from here;
- * `onChanged` fires afterwards, since a delete can change the tree itself.
+ * activities (pruning, spray, …). Rendered inside the tree detail panel,
+ * which loads the events -- its summary reads the same list, so one fetch
+ * serves both. Logging or deleting an entry hands the server's new list
+ * back through `onEventsChange`. An entry made by mistake can be deleted
+ * from here; `onChanged` fires afterwards, since a delete can change the
+ * tree itself.
  */
 export default function TreeHistory({
   treeId,
   canEdit,
-  refreshKey = 0,
+  events,
+  onEventsChange,
   onChanged,
 }: {
   treeId: string;
   canEdit: boolean;
-  refreshKey?: number;
+  /** Newest first; null while loading. */
+  events: ClientTreeEvent[] | null;
+  onEventsChange: (events: ClientTreeEvent[]) => void;
   onChanged?: () => void;
 }) {
-  const [events, setEvents] = useState<ClientTreeEvent[] | null>(null);
   const [logging, setLogging] = useState(false);
   const [saving, setSaving] = useState(false);
   const [eventType, setEventType] = useState<ManualEventType>('observation');
@@ -114,7 +94,7 @@ export default function TreeHistory({
     setDeletingId(eventId);
     try {
       const { events: updated } = await deleteTreeEvent(treeId, eventId);
-      setEvents(updated);
+      onEventsChange(updated);
       setConfirmId(null);
       toast.success('Entry deleted');
       onChanged?.();
@@ -125,18 +105,6 @@ export default function TreeHistory({
     }
   };
 
-  // The panel mounts this with key={treeId}, so state resets per tree —
-  // the effect only fetches (no synchronous setState).
-  useEffect(() => {
-    let cancelled = false;
-    fetchTreeEvents(treeId)
-      .then((e) => !cancelled && setEvents(e))
-      .catch(() => !cancelled && setEvents([]));
-    return () => {
-      cancelled = true;
-    };
-  }, [treeId, refreshKey]);
-
   const submit = async () => {
     setSaving(true);
     try {
@@ -146,7 +114,7 @@ export default function TreeHistory({
         detail: detail || undefined,
         photo_url: photoUrl ?? undefined,
       });
-      setEvents(updated);
+      onEventsChange(updated);
       setLogging(false);
       setDetail('');
       setPhotoUrl(null);
