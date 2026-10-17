@@ -1,5 +1,7 @@
 'use client';
 
+import { HARVEST_BADGE_COLOR } from '@/lib/trees-geojson';
+
 export interface LegendChip {
   key: string;
   label: string;
@@ -19,7 +21,8 @@ interface MapLegendProps {
 }
 
 /**
- * Legend chips that double as filters.
+ * Legend chips that double as filters, plus the key to the check drawn on
+ * trees picked out this season.
  *
  * Deliberately one component for both map modes: the colours mean
  * different things in each, but the gesture — tap a colour to keep only
@@ -55,6 +58,22 @@ export default function MapLegend({ chips, active, onToggle, caption }: MapLegen
             </button>
           );
         })}
+        {/* A key, not a filter: the check sits on top of whichever colour
+            the dot is, so it reads the same in both modes. */}
+        <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium shadow whitespace-nowrap bg-surface/80 text-ink">
+          <svg aria-hidden viewBox="0 0 14 14" className="w-3.5 h-3.5">
+            <circle cx="7" cy="7" r="6" fill={HARVEST_BADGE_COLOR} stroke="white" strokeWidth="1.5" />
+            <path
+              d="M4.2 7.3 6.3 9.2 9.9 5.2"
+              fill="none"
+              stroke="white"
+              strokeWidth="1.75"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          Harvest complete
+        </span>
       </div>
       {caption && (
         <p className="text-[11px] text-bark bg-surface/80 rounded-full px-2.5 py-0.5 shadow-sm whitespace-nowrap max-w-full overflow-x-auto">

@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import type { ClientTree, TreeStatus } from '@/lib/types';
 import { clearArea, panToReveal } from '@/lib/reveal-point';
-import { treesToFeatureCollection, STATUS_COLORS } from '@/lib/trees-geojson';
+import { treesToFeatureCollection, STATUS_COLORS, HARVEST_BADGE_COLOR } from '@/lib/trees-geojson';
 import { BAND_STYLE, type RecencyBand } from '@/lib/inspection-recency';
 import { STATUS_LABEL } from '@/components/StatusBadge';
 
@@ -32,6 +32,44 @@ const SOURCE_ID = 'trees';
 const CIRCLES = 'trees-circles';
 const CLUSTERS = 'trees-clusters';
 const CLUSTER_COUNT = 'trees-cluster-count';
+const HARVEST_BADGE = 'trees-harvest-badge';
+const HARVEST_BADGE_IMAGE = 'tree-harvest-complete';
+
+/**
+ * The check drawn on a tree picked out this season. Its own small disc
+ * rather than a change to the dot, because the dot's fill already means
+ * condition (or recency) and a tree can be finished and stressed at once.
+ * Drawn on a canvas, not set as a text glyph: the style's font stack is
+ * not promised to carry a check mark, and a missing glyph draws nothing.
+ * Dark green with a white ring and tick reads on the orthomosaic and on
+ * the plain background in either theme.
+ */
+function harvestBadgeImage(): ImageData | null {
+  const ratio = 2;
+  const size = 14 * ratio;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  const c = size / 2;
+  ctx.beginPath();
+  ctx.arc(c, c, c - ratio, 0, Math.PI * 2);
+  ctx.fillStyle = HARVEST_BADGE_COLOR;
+  ctx.fill();
+  ctx.lineWidth = 1.5 * ratio;
+  ctx.strokeStyle = '#ffffff';
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(size * 0.3, size * 0.52);
+  ctx.lineTo(size * 0.45, size * 0.66);
+  ctx.lineTo(size * 0.71, size * 0.37);
+  ctx.lineWidth = 1.75 * ratio;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+  return ctx.getImageData(0, 0, size, size);
+}
 
 export interface TreeLayerCallbacks {
   onSelect: (treeId: string) => void;
@@ -201,6 +239,37 @@ export function useTreeLayer(
         'circle-stroke-opacity': [
           'case',
           ['==', ['coalesce', ['feature-state', 'walk'], ''], 'done'], 0.5,
+          1,
+        ],
+      },
+    });
+
+    // Harvest complete: a check on the dot's shoulder, for single trees
+    // only -- a cluster has no one tree to be finished.
+    const badge = harvestBadgeImage();
+    if (badge && !map.hasImage(HARVEST_BADGE_IMAGE)) {
+      map.addImage(HARVEST_BADGE_IMAGE, badge, { pixelRatio: 2 });
+    }
+    map.addLayer({
+      id: HARVEST_BADGE,
+      type: 'symbol',
+      source: SOURCE_ID,
+      filter: ['all', ['!', ['has', 'point_count']], ['==', ['get', 'harvest_complete'], true]],
+      layout: {
+        'icon-image': HARVEST_BADGE_IMAGE,
+        // The dot's radius is 7, so this sits the disc on its upper right
+        // edge: attached to the tree, without covering its colour.
+        'icon-offset': [7, -7],
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+      },
+      paint: {
+        // Follows the dot it belongs to: gone while that tree is dragged,
+        // faded with it once a walk has assessed it.
+        'icon-opacity': [
+          'case',
+          ['boolean', ['feature-state', 'dragging'], false], 0,
+          ['==', ['coalesce', ['feature-state', 'walk'], ''], 'done'], 0.35,
           1,
         ],
       },
@@ -401,6 +470,8 @@ export function useTreeLayer(
       // already run map.remove(), destroying map.style — touching
       // layers then throws. Removing the whole map removed them anyway.
       if (!map.style) return;
+      if (map.getLayer(HARVEST_BADGE)) map.removeLayer(HARVEST_BADGE);
+      if (map.hasImage(HARVEST_BADGE_IMAGE)) map.removeImage(HARVEST_BADGE_IMAGE);
       if (map.getLayer(CLUSTER_COUNT)) map.removeLayer(CLUSTER_COUNT);
       if (map.getLayer(CLUSTERS)) map.removeLayer(CLUSTERS);
       if (map.getLayer(CIRCLES)) map.removeLayer(CIRCLES);
@@ -413,7 +484,9 @@ export function useTreeLayer(
     if (!mapReady || !map) return;
     const source = map.getSource(SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
     const visible = hiddenIds?.size ? trees.filter((t) => !hiddenIds.has(t.tree_id)) : trees;
-    source?.setData(treesToFeatureCollection(visible, statusFilter ?? undefined));
+    source?.setData(
+      treesToFeatureCollection(visible, statusFilter ?? undefined, new Date().getFullYear())
+    );
   }, [map, mapReady, trees, statusFilter, hiddenIds]);
 
   // Selection feature-state sync

@@ -96,6 +96,12 @@ export interface InspectionSaved {
   inspected: boolean;
   /** True when this was a photo, not the record button (a walk stays on the tree). */
   photo: boolean;
+  /**
+   * The tree record itself changed: a pick moves last_harvest, closing or
+   * reopening the season sets harvest_completed_on. A caller holding the
+   * tree list reloads it so the map's harvest badge follows.
+   */
+  treeChanged: boolean;
 }
 
 /**
@@ -287,6 +293,7 @@ export async function saveInspection(
       harvested ||
       pestKeys.length > 0,
     photo: false,
+    treeChanged: harvested || answers.harvestComplete !== null,
   };
 }
 
@@ -699,7 +706,7 @@ export default function InspectionEntry({
         photo_url: url,
       });
       changeNote('');
-      onSaved({ saved: 1, inspected: false, photo: true });
+      onSaved({ saved: 1, inspected: false, photo: true, treeChanged: false });
       // A photo saves by itself and the rest does not. Saying only
       // "Photo saved" reads as "it is saved", and an assessment tapped
       // out before the photo is then lost on closing the panel.
