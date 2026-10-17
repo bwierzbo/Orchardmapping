@@ -359,6 +359,14 @@ export default function TreeDetailPanel({
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <h2 className="text-lg font-semibold text-ink">
               {tree.tree_no != null ? `Tree ${tree.tree_no}` : tree.name || 'Tree'}
+              {/* A given name ("the big Kingston by the gate") is how the
+                  grower knows the tree; the number is how the app does. */}
+              {tree.tree_no != null && tree.name?.trim() && (
+                <>
+                  <span className="text-bark/60 font-normal"> · </span>
+                  {tree.name.trim()}
+                </>
+              )}
               {tree.variety && (
                 <>
                   <span className="text-bark/60 font-normal"> · </span>

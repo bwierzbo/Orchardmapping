@@ -65,6 +65,36 @@ export function isHarvestComplete(completedOn: string | null | undefined, year: 
   return yearOf(completedOn) === year;
 }
 
+/** The map's harvest filter: every tree, those still to pick, or those picked out. */
+export type HarvestFilter = 'all' | 'open' | 'complete';
+
+/** The trees picked out in `year`, by tree_id. */
+export function pickedOutIds(
+  trees: readonly { tree_id: string; harvest_completed_on?: string | null }[],
+  year: number,
+): Set<string> {
+  const done = new Set<string>();
+  for (const t of trees) {
+    if (isHarvestComplete(t.harvest_completed_on, year)) done.add(t.tree_id);
+  }
+  return done;
+}
+
+/**
+ * The trees a harvest filter leaves off the map. "To pick" hides the
+ * picked-out ones and "Picked out" hides the rest; "All" hides nothing.
+ */
+export function hiddenByHarvest(
+  trees: readonly { tree_id: string }[],
+  pickedOut: ReadonlySet<string>,
+  filter: HarvestFilter,
+): string[] {
+  if (filter === 'all') return [];
+  return trees
+    .filter((t) => pickedOut.has(t.tree_id) !== (filter === 'complete'))
+    .map((t) => t.tree_id);
+}
+
 /**
  * Add up one tree's picks for a season.
  *

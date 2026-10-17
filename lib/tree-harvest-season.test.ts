@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   asHarvestUnit,
   harvestSeason,
+  hiddenByHarvest,
   isHarvestComplete,
+  pickedOutIds,
   type TreePick,
 } from './tree-harvest-season';
 import { toPounds } from './harvest-units';
@@ -144,5 +146,39 @@ describe('asHarvestUnit', () => {
     expect(asHarvestUnit('kg')).toBe('kg');
     expect(asHarvestUnit('lbs')).toBeNull();
     expect(asHarvestUnit(null)).toBeNull();
+  });
+});
+
+describe('map harvest filter', () => {
+  // Terry Anderson on 2026-10-17: #2 and #3 picked out, #1 still being picked,
+  // #4 picked out last season (open again this year).
+  const trees = [
+    { tree_id: 'TA-001-0001', harvest_completed_on: null },
+    { tree_id: 'TA-001-0002', harvest_completed_on: '2026-10-17' },
+    { tree_id: 'TA-001-0003', harvest_completed_on: '2026-10-17' },
+    { tree_id: 'TA-001-0004', harvest_completed_on: '2025-10-30' },
+  ];
+
+  it('counts only trees picked out this season', () => {
+    const done = pickedOutIds(trees, 2026);
+    console.log('picked out 2026:', [...done]);
+    expect([...done].sort()).toEqual(['TA-001-0002', 'TA-001-0003']);
+    expect(pickedOutIds(trees, 2027).size).toBe(0);
+  });
+
+  it('"To pick" hides the picked-out trees and keeps last season\'s', () => {
+    const hidden = hiddenByHarvest(trees, pickedOutIds(trees, 2026), 'open');
+    console.log('hidden by To pick:', hidden);
+    expect(hidden.sort()).toEqual(['TA-001-0002', 'TA-001-0003']);
+  });
+
+  it('"Picked out" hides everything still to pick', () => {
+    const hidden = hiddenByHarvest(trees, pickedOutIds(trees, 2026), 'complete');
+    console.log('hidden by Picked out:', hidden);
+    expect(hidden.sort()).toEqual(['TA-001-0001', 'TA-001-0004']);
+  });
+
+  it('"All" hides nothing', () => {
+    expect(hiddenByHarvest(trees, pickedOutIds(trees, 2026), 'all')).toEqual([]);
   });
 });

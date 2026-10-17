@@ -69,6 +69,12 @@ interface WalkModeProps {
   onSetStatus: (treeId: string, status: TreeStatus) => Promise<boolean>;
   /** Pan the map + highlight the current tree. */
   onFocusTree: (tree: ClientTree) => void;
+  /**
+   * A save changed the tree record itself (a pick, or the season closed or
+   * reopened), so the map's copy is stale -- the harvest check would not
+   * appear until the next reload.
+   */
+  onTreeChanged?: () => void;
   onExit: () => void;
   /** This orchard's pest library, for the "what did you see" section. */
   pests: readonly PickablePest[];
@@ -111,6 +117,7 @@ export default function WalkMode({
   onProgress,
   onSetStatus,
   onFocusTree,
+  onTreeChanged,
   onExit,
   pests,
   pestSightings,
@@ -542,8 +549,9 @@ export default function WalkMode({
         pestSightings={pestSightings}
         pestsRanked={pestsRanked}
         onBusyChange={setBusy}
-        onSaved={({ saved, inspected, photo }) => {
+        onSaved={({ saved, inspected, photo, treeChanged }) => {
           if (saved > 0) setRecorded((n) => n + saved);
+          if (treeChanged) onTreeChanged?.();
           if (inspected) setDone((prev) => new Set(prev).add(current.tree_id));
           // A photo alone stays on the tree — a status tap usually follows
           if (!photo) advance();
