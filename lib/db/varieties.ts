@@ -22,10 +22,9 @@ export interface VarietyOption {
   /** How many trees in this orchard already carry it. */
   treeCount: number;
   /**
-   * apple, pear, plum, … from the library. Null for a name that only
-   * exists on trees here, which the library has never seen -- those are
-   * offered whatever species is being placed, since nothing says they
-   * are the wrong one.
+   * apple, pear, plum, … from the library, or for a name only found on
+   * trees here, the species those trees are recorded as. Null when neither
+   * says -- those are offered whatever species is being placed.
    */
   fruitType: string | null;
 }
@@ -47,15 +46,18 @@ export async function listVarietyOptions(orchardId: string): Promise<VarietyOpti
          OR va.site_id = (SELECT site_id FROM site)
       ORDER BY lower(va.variety), (va.site_id IS NULL)
     ),
+    -- A name the library has never seen takes the species most of its
+    -- trees here are recorded as, so it is filtered like any other.
     used AS (
-      SELECT variety AS name, count(*)::int AS tree_count
+      SELECT variety AS name, count(*)::int AS tree_count,
+             mode() WITHIN GROUP (ORDER BY lower(btrim(fruit_type))) AS fruit_type
       FROM trees
       WHERE orchard_id = ${orchardId} AND variety IS NOT NULL AND btrim(variety) <> ''
       GROUP BY variety
     )
     SELECT
       COALESCE(v.variety, used.name)  AS name,
-      v.fruit_type,
+      COALESCE(v.fruit_type, used.fruit_type) AS fruit_type,
       v.cider_type,
       v.bloom_group,
       v.acidity,
@@ -127,7 +129,7 @@ const COMMON_FRUIT_TYPES = [
 
 export async function listFruitTypes(orchardId: string): Promise<string[]> {
   const { rows } = await sql`
-    SELECT DISTINCT btrim(fruit_type) AS fruit_type
+    SELECT DISTINCT lower(btrim(fruit_type)) AS fruit_type
     FROM trees
     WHERE orchard_id = ${orchardId} AND btrim(COALESCE(fruit_type, '')) <> ''
   `;

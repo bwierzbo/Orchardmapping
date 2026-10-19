@@ -3,6 +3,7 @@
 import { Undo2, Check, Crosshair, MousePointerClick } from 'lucide-react';
 import { formatAddress } from '@/lib/address';
 import VarietyPicker from './VarietyPicker';
+import SpeciesPicker from './SpeciesPicker';
 import type { TreeStatus } from '@/lib/types';
 import { TREE_STATUSES } from '@/lib/types';
 
@@ -20,7 +21,6 @@ interface AddTreesPanelProps {
   autoIncrement: boolean;
   orchardId: string;
   fruitType: string;
-  fruitTypes: string[];
   variety: string;
   status: TreeStatus;
   existingBlocks: string[];
@@ -56,7 +56,6 @@ export default function AddTreesPanel({
   autoIncrement,
   orchardId,
   fruitType,
-  fruitTypes,
   variety,
   status,
   existingBlocks,
@@ -152,22 +151,17 @@ export default function AddTreesPanel({
 
       {/* What the tree is. Species first, because it narrows the varieties. */}
       <div className="grid grid-cols-2 gap-2 mb-2">
-        <label className="block">
+        <div className="block">
           <span className="text-xs font-medium text-bark">Species</span>
-          <input
-            type="text"
-            value={fruitType}
-            onChange={(e) => onFruitTypeChange(e.target.value)}
-            placeholder="apple"
-            list="fruit-types"
-            className={field}
-          />
-          <datalist id="fruit-types">
-            {fruitTypes.map((f) => (
-              <option key={f} value={f} />
-            ))}
-          </datalist>
-        </label>
+          <div className="mt-1">
+            <SpeciesPicker
+              orchardId={orchardId}
+              value={fruitType}
+              onChange={onFruitTypeChange}
+              placeholder="apple"
+            />
+          </div>
+        </div>
         <div className="block">
           <span className="text-xs font-medium text-bark">Variety</span>
           <div className="mt-1">

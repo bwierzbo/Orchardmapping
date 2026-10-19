@@ -26,6 +26,7 @@ import TreePhotos from './TreePhotos';
 import { formatAddress, formatTreeLabel } from '@/lib/address';
 import { trpc } from '@/lib/trpc/client';
 import VarietyPicker from './VarietyPicker';
+import SpeciesPicker from './SpeciesPicker';
 import type { TreeUpdateInput } from '@/lib/api/trees';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -112,23 +113,6 @@ export default function TreeDetailPanel({
 }: TreeDetailPanelProps) {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
-  // Suggested fruit types come from the orchard, not a hardcoded list
-  const [fruitTypes, setFruitTypes] = useState<string[]>([]);
-
-  useEffect(() => {
-    let live = true;
-    trpc.tree.fruitTypes
-      .query({ orchardId: tree.orchard_id })
-      .then((f) => {
-        if (live) setFruitTypes(f);
-      })
-      .catch(() => {
-        // Suggestions only; the field accepts any value regardless.
-      });
-    return () => {
-      live = false;
-    };
-  }, [tree.orchard_id]);
   const [inspecting, setInspecting] = useState(false);
   const [inspectBusy, setInspectBusy] = useState(false);
   // Answers tapped out but not recorded. A photo saves on its own, so
@@ -568,28 +552,22 @@ export default function TreeDetailPanel({
             </p>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
+                <Label className="text-xs text-bark">Species</Label>
+                <SpeciesPicker
+                  orchardId={tree.orchard_id}
+                  value={(form.fruit_type as string) ?? ''}
+                  onChange={(v) => setForm((f) => ({ ...f, fruit_type: v }))}
+                  placeholder="apple"
+                />
+              </div>
+              <div className="space-y-1">
                 <Label className="text-xs text-bark">Variety</Label>
                 <VarietyPicker
                   orchardId={tree.orchard_id}
                   value={(form.variety as string) ?? ''}
                   onChange={(v) => setForm((f) => ({ ...f, variety: v }))}
+                  fruitType={(form.fruit_type as string) ?? ''}
                 />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-bark">Fruit</Label>
-                <Input
-                  list="fruit-types"
-                  value={(form.fruit_type as string) ?? ''}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, fruit_type: e.target.value.toLowerCase() }))
-                  }
-                  placeholder="apple"
-                />
-                <datalist id="fruit-types">
-                  {fruitTypes.map((t) => (
-                    <option key={t} value={t} />
-                  ))}
-                </datalist>
               </div>
             </div>
             <div className="space-y-1">
