@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { matchesSpecies, visibleVarieties, varietyDescription } from './variety-filter';
+import {
+  matchesSpecies,
+  normalizeSpecies,
+  visibleVarieties,
+  varietyIsOtherSpecies,
+} from './variety-filter';
 import type { VarietyOption } from './db/varieties';
 
 const option = (over: Partial<VarietyOption> = {}): VarietyOption => ({
@@ -44,17 +49,17 @@ describe('visibleVarieties', () => {
     expect(visibleVarieties(list, 'pear').map((o) => o.name)).toEqual(['Conference']);
   });
 
-  it('keeps something already growing here even when the species differs', () => {
-    // The orchard has it recorded as a pear; the person is placing apples.
-    // It stays, so an existing tree can still be matched to its own name.
+  it('drops another species even when it is growing here', () => {
+    // Mantooth, 2026-10-18: Fuji stayed on the pear list because the orchard
+    // had Fuji trees, and two pears went in as Fuji.
     const list = [
-      option({ name: 'Kingston Black', fruitType: 'apple' }),
-      option({ name: 'Old Bremerton', fruitType: 'pear', treeCount: 12 }),
+      option({ name: 'Fuji', fruitType: 'apple', treeCount: 4 }),
+      option({ name: 'Conference', fruitType: 'pear' }),
+      option({ name: 'Our Seedling', fruitType: null, treeCount: 1 }),
     ];
-    expect(visibleVarieties(list, 'apple').map((o) => o.name)).toEqual([
-      'Kingston Black',
-      'Old Bremerton',
-    ]);
+    const shown = visibleVarieties(list, 'pear').map((o) => o.name);
+    console.log('[pear list]', shown);
+    expect(shown).toEqual(['Conference', 'Our Seedling']);
   });
 
   it('keeps the incoming order', () => {
@@ -76,30 +81,44 @@ describe('visibleVarieties', () => {
   });
 });
 
-describe('varietyDescription', () => {
-  it('is the summary when the species matches', () => {
-    expect(varietyDescription(option({ summary: 'bittersharp' }), 'apple')).toBe('bittersharp');
+describe('normalizeSpecies', () => {
+  it('stores one spelling per species', () => {
+    expect(normalizeSpecies(' Pear ')).toBe('pear');
+    expect(normalizeSpecies('APPLE')).toBe('apple');
   });
 
-  it('is the summary when no species is chosen', () => {
-    expect(varietyDescription(option({ summary: 'bittersharp' }), undefined)).toBe('bittersharp');
+  it('is empty for nothing', () => {
+    expect(normalizeSpecies(null)).toBe('');
+    expect(normalizeSpecies(undefined)).toBe('');
+    expect(normalizeSpecies('  ')).toBe('');
+  });
+});
+
+describe('varietyIsOtherSpecies', () => {
+  const list = [
+    option({ name: 'Fuji', fruitType: 'apple' }),
+    option({ name: 'Conference', fruitType: 'pear' }),
+    option({ name: 'Our Seedling', fruitType: null }),
+  ];
+
+  it('is true for a variety of another species, ignoring case', () => {
+    expect(varietyIsOtherSpecies(list, 'fuji', 'Pear')).toBe(true);
   });
 
-  it('explains why an off-species name is still listed', () => {
-    const text = varietyDescription(
-      option({ summary: 'late', fruitType: 'pear', treeCount: 3 }),
-      'apple'
-    );
-    expect(text).toBe('late · pear, already here');
+  it('is false for a variety of the chosen species', () => {
+    expect(varietyIsOtherSpecies(list, 'Conference', 'pear')).toBe(false);
   });
 
-  it('explains it even with nothing else to say', () => {
-    expect(
-      varietyDescription(option({ summary: null, fruitType: 'pear', treeCount: 3 }), 'apple')
-    ).toBe('pear, already here');
+  it('leaves a name with no recorded species alone', () => {
+    expect(varietyIsOtherSpecies(list, 'Our Seedling', 'pear')).toBe(false);
   });
 
-  it('is undefined rather than empty when there is nothing to show', () => {
-    expect(varietyDescription(option({ summary: null }), 'apple')).toBeUndefined();
+  it('leaves a name not on the list alone', () => {
+    expect(varietyIsOtherSpecies(list, 'Typed In', 'pear')).toBe(false);
+  });
+
+  it('is false with no variety or no species', () => {
+    expect(varietyIsOtherSpecies(list, '', 'pear')).toBe(false);
+    expect(varietyIsOtherSpecies(list, 'Fuji', '')).toBe(false);
   });
 });

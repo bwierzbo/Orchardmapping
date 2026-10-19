@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { trpc } from '@/lib/trpc/client';
 import type { VarietyOption } from '@/lib/db/varieties';
-import { visibleVarieties, varietyDescription } from '@/lib/variety-filter';
+import { visibleVarieties, varietyIsOtherSpecies } from '@/lib/variety-filter';
 
 /**
  * Pick a variety by name, with the curated library behind it.
@@ -31,10 +31,9 @@ export default function VarietyPicker({
   onChange: (variety: string) => void;
   placeholder?: string;
   /**
-   * Narrow the list to one species. A variety the library doesn't know is
-   * always offered: nothing says a grower's own seedling is the wrong
-   * species, and hiding it would push them to retype a name that already
-   * exists -- the duplicate this picker exists to prevent.
+   * Narrow the list to one species (see lib/variety-filter.ts). Changing it
+   * clears a variety that belongs to another species, so a pear placed
+   * after a row of Fuji does not go in as a Fuji pear.
    */
   fruitType?: string;
 }) {
@@ -57,6 +56,15 @@ export default function VarietyPicker({
     };
   }, [orchardId]);
 
+  // Only on a change of species, not on opening: an existing tree whose
+  // record disagrees is shown as it is until someone changes it.
+  const lastFruitType = useRef(fruitType);
+  useEffect(() => {
+    if (lastFruitType.current === fruitType) return;
+    lastFruitType.current = fruitType;
+    if (varietyIsOtherSpecies(options, value, fruitType)) onChange('');
+  }, [fruitType, options, value, onChange]);
+
   const items = useMemo(() => {
     const visible = visibleVarieties(options, fruitType);
     const seen = new Set(visible.map((o) => o.name.toLowerCase()));
@@ -72,7 +80,7 @@ export default function VarietyPicker({
     return [...extra, ...visible].map((o) => ({
       value: o.name,
       label: o.name,
-      description: varietyDescription(o, fruitType),
+      description: o.summary ?? undefined,
     }));
   }, [options, typed, value, fruitType]);
 

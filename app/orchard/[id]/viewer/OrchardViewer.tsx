@@ -257,22 +257,6 @@ export default function OrchardViewer({
     return [...blocks].sort((a, b) => a.localeCompare(b));
   }, [trees]);
 
-  // Fruit types to suggest: what is planted here, plus a common set.
-  const [fruitTypes, setFruitTypes] = useState<string[]>([]);
-  useEffect(() => {
-    let live = true;
-    trpc.tree.fruitTypes
-      .query({ orchardId: orchard.id })
-      .then((f) => {
-        if (live) setFruitTypes(f);
-      })
-      .catch(() => {
-        // The field is free text; suggestions are a convenience, not a gate.
-      });
-    return () => {
-      live = false;
-    };
-  }, [orchard.id]);
 
   // Rows that already exist in the block being worked, numerically first.
   // Scoped to the block: row 3 of the Upper block and row 3 of the Lower
@@ -1391,7 +1375,6 @@ export default function OrchardViewer({
           position={position}
           autoIncrement={autoIncrement}
           fruitType={placeFruitType}
-          fruitTypes={fruitTypes}
           variety={placeVariety}
           status={placeStatus}
           existingBlocks={existingBlocks}
