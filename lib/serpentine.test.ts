@@ -208,3 +208,60 @@ describe('stepBackInRow', () => {
     expect(stepBackInRow(grid, 'nope', 1)).toBeNull();
   });
 });
+
+describe('directionToward', () => {
+  it('heads through the rows toward the end row, leaving the start row direction to the walker', async () => {
+    const { directionToward } = await import('./serpentine');
+    expect(directionToward(grid, 't-R1-P2', 't-R3-P1', 1)).toEqual({ along: 1, rows: 1 });
+    expect(directionToward(grid, 't-R1-P2', 't-R3-P1', -1)).toEqual({ along: -1, rows: 1 });
+    expect(directionToward(grid, 't-R3-P2', 't-R1-P1', 1)).toEqual({ along: 1, rows: -1 });
+  });
+
+  it('within one row, points along it toward the end tree whatever was asked', async () => {
+    const { directionToward } = await import('./serpentine');
+    expect(directionToward(grid, 't-R2-P3', 't-R2-P1', 1)).toEqual({ along: -1, rows: 1 });
+    expect(directionToward(grid, 't-R2-P1', 't-R2-P3', -1)).toEqual({ along: 1, rows: 1 });
+  });
+
+  it('is null for the same tree, or a tree it cannot place', async () => {
+    const { directionToward } = await import('./serpentine');
+    expect(directionToward(grid, 't-R2-P2', 't-R2-P2', 1)).toBeNull();
+    expect(directionToward(grid, 't-R2-P2', 'nope', 1)).toBeNull();
+  });
+});
+
+describe('walkPathBetween', () => {
+  const ids = (list: ClientTree[]) => list.map((t) => t.tree_id);
+
+  it('serpentines from the start and stops at the end tree, with no second leg', async () => {
+    const { walkPathBetween } = await import('./serpentine');
+    const walk = walkPathBetween(grid, 't-R1-P2', 't-R3-P2', 1)!;
+    // Up row 1 from P2, down row 2, up row 3 as far as P2. R1-P1 is behind
+    // the start and is not walked.
+    expect(ids(walk.path)).toEqual([
+      't-R1-P2', 't-R1-P3',
+      't-R2-P3', 't-R2-P2', 't-R2-P1',
+      't-R3-P1', 't-R3-P2',
+    ]);
+    expect(walk.turnaround).toBe(walk.path.length);
+  });
+
+  it('walks down the rows when the end is below the start', async () => {
+    const { walkPathBetween } = await import('./serpentine');
+    const walk = walkPathBetween(grid, 't-R3-P1', 't-R2-P2', 1)!;
+    expect(ids(walk.path)).toEqual(['t-R3-P1', 't-R3-P2', 't-R3-P3', 't-R2-P3', 't-R2-P2']);
+  });
+
+  it('covers just the stretch between two trees in one row', async () => {
+    const { walkPathBetween } = await import('./serpentine');
+    expect(ids(walkPathBetween(grid, 't-R2-P3', 't-R2-P1', 1)!.path)).toEqual([
+      't-R2-P3', 't-R2-P2', 't-R2-P1',
+    ]);
+  });
+
+  it('is null when the two trees cannot anchor a route', async () => {
+    const { walkPathBetween } = await import('./serpentine');
+    expect(walkPathBetween(grid, 't-R2-P2', 't-R2-P2', 1)).toBeNull();
+    expect(walkPathBetween(grid, 'nope', 't-R2-P2', 1)).toBeNull();
+  });
+});

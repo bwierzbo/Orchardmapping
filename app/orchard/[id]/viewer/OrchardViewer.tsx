@@ -1322,7 +1322,8 @@ export default function OrchardViewer({
           orchardId={orchard.id}
           trees={trees}
           settings={walkSettings}
-          startTreeId={selectedTreeId}
+          selectedTreeId={selectedTreeId}
+          lastInspected={lastSeenMap}
           onPathPreview={setWalkPath}
           onProgress={handleWalkProgress}
           onSetStatus={walkSetStatus}
