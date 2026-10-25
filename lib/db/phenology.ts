@@ -143,7 +143,8 @@ export async function markStageForAll(input: {
 export async function listVarieties(orchardId: string): Promise<string[]> {
   const { rows } = await sql`
     SELECT DISTINCT variety FROM trees
-    WHERE orchard_id = ${orchardId} AND variety IS NOT NULL AND variety <> ''
+    WHERE orchard_id = ${orchardId} AND removed_on IS NULL
+      AND variety IS NOT NULL AND variety <> ''
     ORDER BY variety
   `;
   return rows.map((r) => String(r.variety));
@@ -218,6 +219,7 @@ export async function refBlooms(orchardId: string): Promise<RefBloom[]> {
     FROM trees t
     LEFT JOIN variety_attributes va ON va.variety = t.variety
     WHERE t.orchard_id = ${orchardId}
+      AND t.removed_on IS NULL
       AND t.variety IS NOT NULL AND t.variety <> ''
     GROUP BY t.variety, va.ref_bloom_mmdd
     ORDER BY va.ref_bloom_mmdd NULLS LAST, t.variety

@@ -37,7 +37,7 @@ export default async function VarietiesPage() {
            COALESCE(t.n, 0)::int AS tree_count
     FROM variety_attributes va
     LEFT JOIN (
-      SELECT variety, COUNT(*) AS n FROM trees GROUP BY variety
+      SELECT variety, COUNT(*) AS n FROM trees WHERE removed_on IS NULL GROUP BY variety
     ) t ON t.variety = va.variety
     ORDER BY t.n DESC NULLS LAST, va.variety
   `;
@@ -73,7 +73,7 @@ export default async function VarietiesPage() {
            COALESCE(t.n, 0)::int AS tree_count
     FROM rootstock_attributes ra
     LEFT JOIN (
-      SELECT rootstock, COUNT(*) AS n FROM trees GROUP BY rootstock
+      SELECT rootstock, COUNT(*) AS n FROM trees WHERE removed_on IS NULL GROUP BY rootstock
     ) t ON t.rootstock = ra.rootstock
     ORDER BY t.n DESC NULLS LAST, ra.rootstock
   `;

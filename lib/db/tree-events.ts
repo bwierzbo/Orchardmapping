@@ -19,6 +19,10 @@ export const AUTO_EVENT_TYPES = [
   // nothing set on the tree would say the opposite of what the tree says.
   'harvest_complete',
   'harvest_reopened',
+  // The old tree taken out and the new one planted in its spot (075),
+  // written together by replaceTree.
+  'removed',
+  'replanted',
 ] as const;
 
 /**

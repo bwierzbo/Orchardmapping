@@ -98,7 +98,7 @@ export default async function VarietyDetailPage({
   const v = rows[0];
   if (!v) notFound();
   const { rows: countRows } = await sql`
-    SELECT COUNT(*)::int AS n FROM trees WHERE variety = ${name}
+    SELECT COUNT(*)::int AS n FROM trees WHERE variety = ${name} AND removed_on IS NULL
   `;
   const treeCount = countRows[0]?.n ?? 0;
   const [observations, sites] = await Promise.all([

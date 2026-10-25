@@ -52,7 +52,8 @@ export async function listVarietyOptions(orchardId: string): Promise<VarietyOpti
       SELECT variety AS name, count(*)::int AS tree_count,
              mode() WITHIN GROUP (ORDER BY lower(btrim(fruit_type))) AS fruit_type
       FROM trees
-      WHERE orchard_id = ${orchardId} AND variety IS NOT NULL AND btrim(variety) <> ''
+      WHERE orchard_id = ${orchardId} AND removed_on IS NULL
+        AND variety IS NOT NULL AND btrim(variety) <> ''
       GROUP BY variety
     )
     SELECT
@@ -131,7 +132,8 @@ export async function listFruitTypes(orchardId: string): Promise<string[]> {
   const { rows } = await sql`
     SELECT DISTINCT lower(btrim(fruit_type)) AS fruit_type
     FROM trees
-    WHERE orchard_id = ${orchardId} AND btrim(COALESCE(fruit_type, '')) <> ''
+    WHERE orchard_id = ${orchardId} AND removed_on IS NULL
+      AND btrim(COALESCE(fruit_type, '')) <> ''
   `;
   const used = rows.map((r) => String(r.fruit_type));
   const seen = new Set(used.map((f) => f.toLowerCase()));
@@ -196,7 +198,7 @@ export async function sitesGrowing(variety: string): Promise<Array<{ site: strin
     FROM trees t
     JOIN orchards o ON o.id = t.orchard_id
     LEFT JOIN sites s ON s.id = o.site_id
-    WHERE lower(t.variety) = ${variety.toLowerCase()}
+    WHERE lower(t.variety) = ${variety.toLowerCase()} AND t.removed_on IS NULL
     GROUP BY 1
     ORDER BY trees DESC
   `;

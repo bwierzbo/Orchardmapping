@@ -30,6 +30,8 @@ export const EVENT_LABEL: Record<string, string> = {
   harvest_readiness: 'Picking verdict',
   harvest_complete: 'Harvest complete',
   harvest_reopened: 'Harvest reopened',
+  removed: 'Removed',
+  replanted: 'Planted in place of another',
 };
 
 /**
