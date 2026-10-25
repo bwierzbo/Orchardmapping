@@ -21,6 +21,10 @@ export const PERMANENT_EVENT_TYPES = [
   'deleted',
   'harvest_complete',
   'harvest_reopened',
+  // Deleting either would leave trees.removed_on or replaces_tree_id set
+  // with nothing in the history saying when, why or by whom.
+  'removed',
+  'replanted',
 ] as const;
 
 export function isRemovableEventType(type: string): boolean {

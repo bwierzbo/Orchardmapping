@@ -31,9 +31,10 @@ import {
   insertTree,
   updateTree,
   deleteTree,
-
+  replaceTree,
   TreeInsertData,
 } from '@/lib/db/trees';
+import { replacementProblems } from '@/lib/tree-replacement';
 import { diffTreeChanges } from '@/lib/db/tree-events';
 import {
   programDrift,
@@ -426,6 +427,46 @@ export const appRouter = router({
           );
         }
         return { success: true };
+      }),
+    /**
+     * Take this tree out and plant another in its spot. The old tree keeps
+     * its id and history and is reached from the new one; see replaceTree.
+     * `today` is the grower's calendar day, for the "not in the future"
+     * check, since this server's clock runs in UTC.
+     */
+    replace: treeOperatorProcedure
+      .input(
+        z.object({
+          treeId: z.string().min(1),
+          today: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          removedOn: z.string(),
+          reason: z.string().trim().max(500).optional(),
+          plantedOn: z.string(),
+          variety: z.string().max(100),
+          fruitType: z.string().max(100).optional(),
+          rootstock: z.string().max(100).optional(),
+          source: z.string().max(200).optional(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const { treeId, today, ...replacement } = input;
+        const problems = replacementProblems(replacement, today);
+        if (problems.length > 0) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: problems.join(' ') });
+        }
+        try {
+          const { removed, planted } = await replaceTree(treeId, replacement, ctx.userId);
+          return { removed: serializeTree(removed), planted: serializeTree(planted) };
+        } catch (error) {
+          const status = (error as { status?: number }).status;
+          if (status === 404) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: (error as Error).message });
+          }
+          if (status === 409) {
+            throw new TRPCError({ code: 'CONFLICT', message: (error as Error).message });
+          }
+          throw error;
+        }
       }),
     /**
      * Save per-tree edits as one action.

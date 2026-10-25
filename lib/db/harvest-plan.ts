@@ -46,6 +46,7 @@ export async function harvestPlan(
              mode() WITHIN GROUP (ORDER BY btrim(t.fruit_type)) AS fruit_type
       FROM trees t
       WHERE t.orchard_id = ANY(${orchardIds as unknown as string})
+        AND t.removed_on IS NULL
         AND btrim(COALESCE(t.variety, '')) <> ''
       GROUP BY btrim(t.variety)
     ),

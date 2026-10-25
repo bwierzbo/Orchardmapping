@@ -23,6 +23,8 @@ import StatusBadge, { STATUS_LABEL } from '@/components/StatusBadge';
 import FloatingWindow from '@/components/FloatingWindow';
 import TreeHistory from './TreeHistory';
 import TreePhotos from './TreePhotos';
+import ReplaceTreeForm from './ReplaceTreeForm';
+import ReplacedTree from './ReplacedTree';
 import { formatAddress, formatTreeLabel } from '@/lib/address';
 import { trpc } from '@/lib/trpc/client';
 import VarietyPicker from './VarietyPicker';
@@ -74,6 +76,8 @@ interface TreeDetailPanelProps {
    * tree's status back.
    */
   onMoved: () => void;
+  /** This tree was taken out and another planted in its spot; open that one. */
+  onReplaced: (plantedTreeId: string) => void;
   /** Status change from the Inspect form (same path as a walk). */
   onSetStatus: (treeId: string, status: TreeStatus) => Promise<boolean>;
   /** A spot check landed, so the recency map should stop calling it unvisited. */
@@ -105,6 +109,7 @@ export default function TreeDetailPanel({
   onDelete,
   onStartMove,
   onMoved,
+  onReplaced,
   onSetStatus,
   onInspected,
   pests,
@@ -112,6 +117,7 @@ export default function TreeDetailPanel({
   pestsRanked,
 }: TreeDetailPanelProps) {
   const [editing, setEditing] = useState(false);
+  const [replacing, setReplacing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [inspecting, setInspecting] = useState(false);
   const [inspectBusy, setInspectBusy] = useState(false);
@@ -402,7 +408,13 @@ export default function TreeDetailPanel({
       }
     >
       <div className={`overflow-y-auto flex-1 min-h-0 ${inspecting ? 'py-3' : 'px-5 py-3'}`}>
-        {inspecting ? (
+        {replacing ? (
+          <ReplaceTreeForm
+            tree={tree}
+            onCancel={() => setReplacing(false)}
+            onReplaced={onReplaced}
+          />
+        ) : inspecting ? (
           <InspectionEntry
             key={tree.tree_id}
             tree={tree}
@@ -528,6 +540,7 @@ export default function TreeDetailPanel({
               refreshKey={historyVersion}
               onChanged={() => setHistoryVersion((v) => v + 1)}
             />
+            {tree.replaces_tree_id && <ReplacedTree treeId={tree.replaces_tree_id} />}
             <TreeHistory
               key={tree.tree_id}
               treeId={tree.tree_id}
@@ -615,7 +628,7 @@ export default function TreeDetailPanel({
 
       {/* Outside the scrolling body, so the actions stay in reach however
           long the history runs. A viewer has none, so gets no bar. */}
-      {(inspecting || editing || canEdit) && (
+      {!replacing && (inspecting || editing || canEdit) && (
       <div className="px-5 py-3 border-t border-line space-y-2">
         {inspecting ? (
           <div className="flex items-center justify-between gap-2">
@@ -661,6 +674,9 @@ export default function TreeDetailPanel({
                       Move on map
                     </DropdownMenuItem>
                   )}
+                  <DropdownMenuItem className="min-h-11" onSelect={() => setReplacing(true)}>
+                    Replace tree…
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>

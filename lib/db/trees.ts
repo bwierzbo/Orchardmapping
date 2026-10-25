@@ -3,6 +3,8 @@ import { buildUpdateSet } from './sql-helpers';
 import { insertTreeEvent } from './tree-events';
 import { toNumOrUndefined } from './decode';
 import { normalizeAddress, addressKey, formatAddress, type TreeAddress } from '../address';
+import { toYMD } from '../dates';
+import type { TreeReplacementInput } from '../tree-replacement';
 
 /**
  * Columns a client is allowed to change through updateTree.
@@ -62,6 +64,11 @@ export interface Tree {
   rootstock?: string;
   source?: string;
   acquired_date?: Date | string;
+  /** Taken out of the ground (075); set only through replaceTree. */
+  removed_on?: Date | string | null;
+  removed_reason?: string | null;
+  /** The removed tree this one was planted in place of. */
+  replaces_tree_id?: string | null;
   created_at?: Date;
   updated_at?: Date;
 }
@@ -231,9 +238,119 @@ export async function insertTree(treeData: TreeInsertData): Promise<Tree> {
 }
 
 /**
+ * Take a tree out and plant another in its spot, as one change.
+ *
+ * The old tree is retired, not deleted: it keeps its id, its variety and
+ * every event, harvest and observation recorded against it, so its history
+ * still reads as the tree it was. It keeps its address too, to say where it
+ * stood, but stops occupying it (address_key goes NULL), which frees the
+ * spot for the new tree. The new tree gets the next number, the old tree's
+ * spot and map position, and a pointer back.
+ *
+ * Both history rows are written inside the transaction rather than best
+ * effort: a replacement with no record of when the old tree came out is
+ * exactly what this exists to prevent.
+ */
+export async function replaceTree(
+  oldTreeId: string,
+  input: TreeReplacementInput,
+  userId: string
+): Promise<{ removed: Tree; planted: Tree }> {
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+
+    const { rows: found } = await client.query(
+      'SELECT * FROM trees WHERE tree_id = $1 FOR UPDATE',
+      [oldTreeId]
+    );
+    if (found.length === 0) {
+      throw Object.assign(new Error('Tree not found'), { status: 404 });
+    }
+    const old = decodeTreeRow(found[0]);
+    if (old.removed_on) {
+      throw Object.assign(
+        new Error(`Tree ${old.tree_no ?? old.tree_id} was already removed on ${toYMD(old.removed_on)}.`),
+        { status: 409 }
+      );
+    }
+
+    const reason = input.reason?.trim() || null;
+    const { rows: removedRows } = await client.query(
+      `UPDATE trees
+          SET removed_on = $2, removed_reason = $3, updated_at = CURRENT_TIMESTAMP
+        WHERE tree_id = $1
+        RETURNING *`,
+      [oldTreeId, input.removedOn, reason]
+    );
+    const removed = decodeTreeRow(removedRows[0]);
+
+    const [{ treeId, treeNo }] = await allocateTreeIds(client, old.orchard_id, 1);
+    const { rows: plantedRows } = await client.query(
+      `INSERT INTO trees
+         (tree_id, tree_no, orchard_id, block_id, row_id, position, lat, lng,
+          variety, fruit_type, rootstock, source, planted_date, status, replaces_tree_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'healthy', $14)
+       RETURNING *`,
+      [
+        treeId,
+        treeNo,
+        old.orchard_id,
+        old.block_id ?? null,
+        old.row_id ?? null,
+        old.position ?? null,
+        old.lat ?? null,
+        old.lng ?? null,
+        input.variety.trim(),
+        input.fruitType?.trim() || old.fruit_type || null,
+        input.rootstock?.trim() || null,
+        input.source?.trim() || null,
+        input.plantedOn,
+        oldTreeId,
+      ]
+    );
+    const planted = decodeTreeRow(plantedRows[0]);
+
+    const where = formatAddress(old);
+    const events: Array<[string, string, string, string, Record<string, unknown>]> = [
+      [
+        oldTreeId,
+        'removed',
+        input.removedOn,
+        `${old.variety ?? 'Unknown variety'} taken out at ${where}${reason ? ` — ${reason}` : ''}`,
+        { replaced_by: treeId, reason },
+      ],
+      [
+        treeId,
+        'replanted',
+        input.plantedOn,
+        `${planted.variety} planted at ${where}, in place of ${old.variety ?? 'an unknown variety'} (tree ${old.tree_no ?? oldTreeId})`,
+        { replaces: oldTreeId },
+      ],
+    ];
+    for (const [id, type, date, detail, changes] of events) {
+      await client.query(
+        `INSERT INTO tree_events (tree_id, orchard_id, event_type, event_date, detail, changes, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [id, old.orchard_id, type, date, detail, JSON.stringify(changes), userId]
+      );
+    }
+
+    await client.query('COMMIT');
+    return { removed, planted };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
  * The tree already standing at an address, if any. Null parts compare as
  * equal (IS NOT DISTINCT FROM) so "block Upper, no row, position 5" is one
- * spot rather than a wildcard. An unplaced tree occupies nothing.
+ * spot rather than a wildcard. An unplaced tree occupies nothing, and
+ * neither does a removed one: its spot went to whatever was planted there.
  */
 async function addressOccupant(
   client: SqlClient,
@@ -250,6 +367,7 @@ async function addressOccupant(
         AND block_id IS NOT DISTINCT FROM $2
         AND row_id   IS NOT DISTINCT FROM $3
         AND position IS NOT DISTINCT FROM $4
+        AND removed_on IS NULL
         AND ($5::text IS NULL OR tree_id <> $5)
       LIMIT 1`,
     [orchardId, a.block_id, a.row_id, a.position, excludeTreeId ?? null]
@@ -297,12 +415,16 @@ export async function deleteTree(tree_id: string): Promise<boolean> {
 }
 
 /**
- * Get all trees for a specific orchard, ordered by row and position.
+ * The trees standing in an orchard, ordered by row and position.
+ *
+ * A removed tree is not among them: it is reached from the tree planted in
+ * its place (getTreeById), so the map, the walk, the dashboard and every
+ * group action only ever see what is in the ground.
  */
 export async function getTreesByOrchard(orchard_id: string): Promise<Tree[]> {
   const result = await sql`
     SELECT * FROM trees
-    WHERE orchard_id = ${orchard_id}
+    WHERE orchard_id = ${orchard_id} AND removed_on IS NULL
     ORDER BY block_id NULLS FIRST,
       NULLIF(substring(row_id from '^\d+'), '')::int NULLS LAST,
       row_id,
@@ -352,6 +474,7 @@ export async function getTreesForOrchards(orchardIds: string[]): Promise<Portfol
     LEFT JOIN visible v
       ON v.orchard_id = o.id AND lower(v.variety) = lower(btrim(t.variety))
     WHERE t.orchard_id = ANY(${orchardIds as unknown as string})
+      AND t.removed_on IS NULL
     ORDER BY o.name,
       t.block_id NULLS FIRST,
       NULLIF(substring(t.row_id from '^\d+'), '')::int NULLS LAST,
@@ -383,7 +506,7 @@ export async function getTreeById(tree_id: string): Promise<Tree | null> {
 export async function getTreesCount(orchard_id: string): Promise<number> {
   const result = await sql`
     SELECT COUNT(*) as count FROM trees
-    WHERE orchard_id = ${orchard_id}
+    WHERE orchard_id = ${orchard_id} AND removed_on IS NULL
   `;
   return parseInt(result.rows[0].count, 10) || 0;
 }
@@ -395,6 +518,7 @@ export async function getTreeCountsByOrchard(): Promise<Record<string, number>> 
   const result = await sql`
     SELECT orchard_id, COUNT(*) as count
     FROM trees
+    WHERE removed_on IS NULL
     GROUP BY orchard_id
   `;
   const counts: Record<string, number> = {};
@@ -461,7 +585,7 @@ export async function getTreeExtentsByOrchard(
                   CEIL(COUNT(*) OVER (PARTITION BY orchard_id)::numeric / $1)
                 )::int AS stride
            FROM trees
-          WHERE lat IS NOT NULL AND lng IS NOT NULL
+          WHERE lat IS NOT NULL AND lng IS NOT NULL AND removed_on IS NULL
        ) placed
       GROUP BY orchard_id`,
     [sampleSize]
@@ -575,7 +699,9 @@ export async function bulkUpsertTrees(
     await client.query('SET CONSTRAINTS trees_orchard_address_uniq DEFERRED');
 
     const { rows: existing } = await client.query(
-      'SELECT tree_id, legacy_tree_id, block_id, row_id, position FROM trees WHERE orchard_id = $1',
+      // A removed tree is never matched: re-importing a spot updates the
+      // tree standing there now, not the one taken out of it.
+      'SELECT tree_id, legacy_tree_id, block_id, row_id, position FROM trees WHERE orchard_id = $1 AND removed_on IS NULL',
       [orchard_id]
     );
     const idIndex = new Map<string, string>();

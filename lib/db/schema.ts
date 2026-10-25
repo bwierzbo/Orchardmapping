@@ -92,6 +92,11 @@ export const trees = pgTable(
     rootstock: varchar('rootstock', { length: 100 }),
     source: varchar('source', { length: 200 }),
     acquiredDate: date('acquired_date'),
+    /** Taken out of the ground (075); set only by replaceTree. */
+    removedOn: date('removed_on'),
+    removedReason: text('removed_reason'),
+    /** The removed tree this one was planted in place of. */
+    replacesTreeId: text('replaces_tree_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
   },

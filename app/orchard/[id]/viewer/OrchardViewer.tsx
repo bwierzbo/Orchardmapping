@@ -1418,6 +1418,10 @@ export default function OrchardViewer({
             clear();
           }}
           onMoved={refresh}
+          onReplaced={async (plantedTreeId) => {
+            await refresh();
+            select(plantedTreeId);
+          }}
         />
       )}
 

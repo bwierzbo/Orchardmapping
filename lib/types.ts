@@ -115,6 +115,11 @@ export interface ClientTree {
   rootstock?: string | null;
   source?: string | null;
   acquired_date?: string | null;
+  /** Taken out of the ground; a removed tree is only reached from its replacement. */
+  removed_on?: string | null;
+  removed_reason?: string | null;
+  /** The removed tree this one was planted in place of. */
+  replaces_tree_id?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
 }

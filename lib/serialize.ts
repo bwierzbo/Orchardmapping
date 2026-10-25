@@ -33,6 +33,9 @@ export function serializeTree(tree: Tree): ClientTree {
     rootstock: tree.rootstock ?? null,
     source: tree.source ?? null,
     acquired_date: toYMD(tree.acquired_date),
+    removed_on: toYMD(tree.removed_on),
+    removed_reason: tree.removed_reason ?? null,
+    replaces_tree_id: tree.replaces_tree_id ?? null,
     created_at: tree.created_at ? new Date(tree.created_at).toISOString() : null,
     updated_at: tree.updated_at ? new Date(tree.updated_at).toISOString() : null,
   };
