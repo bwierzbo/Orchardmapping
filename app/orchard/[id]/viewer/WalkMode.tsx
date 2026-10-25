@@ -10,6 +10,7 @@ import {
   sampleVarietyRuns,
   stepBackInRow,
   walkContext,
+  walkPathBetween,
   walkPathFrom,
   type Heading,
   type WalkDirection,
@@ -44,7 +45,10 @@ const INSPECTION_LABEL: Record<Inspection, string> = {
   fruit: 'Fruit',
 };
 
-/** Server mirror of the progress waits this long after the last step. */
+/**
+ * Server mirror of the progress waits this long after a step that only
+ * moved the walker. A step that recorded a tree is sent at once.
+ */
 const SYNC_DELAY_MS = 1500;
 
 export interface WalkProgressView {
@@ -57,11 +61,17 @@ interface WalkModeProps {
   trees: ClientTree[];
   settings: WalkSettings;
   /**
-   * The tree currently selected on the map. During setup it is the
-   * starting point (tapping another tree changes it); null starts at
-   * the top of the orchard.
+   * The tree currently selected on the map. During setup a tap sets the
+   * starting point -- or the end tree, after "Stop at a tree" -- and with
+   * no start the walk begins at the top of the orchard.
    */
-  startTreeId: string | null;
+  selectedTreeId: string | null;
+  /**
+   * The server's day of each tree's latest inspection, so resuming counts
+   * every tree actually recorded, even if the walk's own progress save was
+   * lost with the phone.
+   */
+  lastInspected: ReadonlyMap<string, string>;
   /** Route to draw on the map — the preview during setup, the fixed path during the walk; null clears it. */
   onPathPreview: (path: ClientTree[] | null) => void;
   /** Which trees are assessed / still to visit, for the map to style; null clears it. */
@@ -97,12 +107,17 @@ interface WalkModeProps {
  * The route starts at the tree selected on the map (tap to change it)
  * and heads the chosen way along that row, then through the rows the
  * chosen way, serpentine. Anything behind the start is picked up on a
- * second leg so the walk still covers the whole orchard.
+ * second leg so the walk still covers the whole orchard -- unless an end
+ * tree is picked, in which case the walk runs from the start to it and
+ * the direction follows from the two.
  *
- * Progress is saved after every tree (locally at once, to the server a
- * moment later), so closing the sheet pauses the walk and "Walk Survey"
- * offers to resume it — on this device or another — with the assessed
- * and remaining trees marked on the map.
+ * Every Record goes to the server as it is made, and the walk's progress
+ * with it (locally at once; to the server at once when a tree was
+ * recorded, a moment later when the walker only moved). Closing the sheet
+ * pauses the walk and "Walk Survey" offers to resume it — on this device
+ * or another — counting every tree the server holds an inspection for
+ * since the walk began. "End walk here" stops it early; trees not reached
+ * stay uninspected.
  *
  * A notes field is always on screen. Notes ride along with whatever is
  * recorded for the tree; a stressed tree also takes a highlighted key
@@ -112,7 +127,8 @@ export default function WalkMode({
   orchardId,
   trees,
   settings,
-  startTreeId,
+  selectedTreeId,
+  lastInspected,
   onPathPreview,
   onProgress,
   onSetStatus,
@@ -146,11 +162,31 @@ export default function WalkMode({
       cancelled = true;
     };
   }, [orchardId]);
-  const resumable = useMemo(() => (saved ? resumeRoute(saved, trees) : null), [saved, trees]);
+  const resumable = useMemo(
+    () => (saved ? resumeRoute(saved, trees, lastInspected) : null),
+    [saved, trees, lastInspected]
+  );
 
   // ---- route ----
-  // Start tree = the map selection; the direction resets to "the longer
-  // way" whenever the start changes, and the user can flip either axis.
+  // A tap on the map sets the start tree, or the end tree when one is
+  // being picked. The direction resets whenever the start changes, and the
+  // user can flip either axis -- unless an end tree decides it.
+  const [picking, setPicking] = useState<'start' | 'end'>('start');
+  const [startTreeId, setStartTreeId] = useState<string | null>(selectedTreeId);
+  const [endTreeId, setEndTreeId] = useState<string | null>(null);
+  const [seenSelection, setSeenSelection] = useState<string | null>(selectedTreeId);
+  if (!started && seenSelection !== selectedTreeId) {
+    setSeenSelection(selectedTreeId);
+    if (selectedTreeId) {
+      if (picking === 'end') {
+        setPicking('start');
+        if (selectedTreeId !== startTreeId) setEndTreeId(selectedTreeId);
+      } else {
+        setStartTreeId(selectedTreeId);
+        if (selectedTreeId === endTreeId) setEndTreeId(null);
+      }
+    }
+  }
   const startTree = useMemo(
     () => (startTreeId ? trees.find((t) => t.tree_id === startTreeId) ?? null : null),
     [trees, startTreeId]
@@ -167,14 +203,27 @@ export default function WalkMode({
   }
   const sampled =
     (chosen.has('bloom') || chosen.has('fruit')) && settings.surveyScope === 'variety_sample';
+  const endTree = useMemo(
+    () => (endTreeId ? trees.find((t) => t.tree_id === endTreeId) ?? null : null),
+    [trees, endTreeId]
+  );
   const preview = useMemo(() => {
-    const { path: full, turnaround } = walkPathFrom(trees, context ? startTreeId : null, direction);
+    const between =
+      context && startTreeId && endTreeId
+        ? walkPathBetween(trees, startTreeId, endTreeId, direction.along)
+        : null;
+    const { path: full, turnaround } =
+      between ?? walkPathFrom(trees, context ? startTreeId : null, direction);
     if (!sampled) return { path: full, turnaround };
     // Sampling drops trees; keep the turnaround pointing at the same spot
     const mainLeg = sampleVarietyRuns(full.slice(0, turnaround), settings.sampleSize);
     const secondLeg = sampleVarietyRuns(full.slice(turnaround), settings.sampleSize);
     return { path: [...mainLeg, ...secondLeg], turnaround: mainLeg.length };
-  }, [trees, context, startTreeId, direction, sampled, settings.sampleSize]);
+  }, [trees, context, startTreeId, endTreeId, direction, sampled, settings.sampleSize]);
+  /** An end tree was picked that no route from this start reaches. */
+  const endUnreachable =
+    endTreeId !== null &&
+    (!context || !startTreeId || !walkPathBetween(trees, startTreeId, endTreeId, direction.along));
 
   // Path is fixed at start; edits during the walk don't reshuffle it
   const [route, setRoute] = useState<{ path: ClientTree[]; turnaround: number }>({
@@ -223,6 +272,7 @@ export default function WalkMode({
   const finishedRef = useRef(false);
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const snapshotRef = useRef<WalkProgress | null>(null);
+  const lastSentRecordedRef = useRef<{ done: number; recorded: number }>({ done: 0, recorded: 0 });
   const flushSync = useCallback(() => {
     if (syncTimerRef.current) {
       clearTimeout(syncTimerRef.current);
@@ -250,7 +300,15 @@ export default function WalkMode({
     snapshotRef.current = snap;
     saveLocalWalkProgress(snap);
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
-    syncTimerRef.current = setTimeout(flushSync, SYNC_DELAY_MS);
+    // A tree just recorded goes to the server now, not in a moment: the
+    // phone dying in the next second must not cost the walk its place.
+    const sent = lastSentRecordedRef.current;
+    if (done.size !== sent.done || recorded !== sent.recorded) {
+      lastSentRecordedRef.current = { done: done.size, recorded };
+      flushSync();
+    } else {
+      syncTimerRef.current = setTimeout(flushSync, SYNC_DELAY_MS);
+    }
     // chosen/detailedFruit are fixed once started; only steps re-save
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [started, index, done, recorded]);
@@ -280,6 +338,7 @@ export default function WalkMode({
     setRoute(preview);
     setDone(new Set());
     setRecorded(0);
+    lastSentRecordedRef.current = { done: 0, recorded: 0 };
     setIndex(0);
     setStarted(true);
   };
@@ -293,6 +352,7 @@ export default function WalkMode({
     setRoute({ path: resumable.path, turnaround: resumable.turnaround });
     setDone(new Set(resumable.done));
     setRecorded(saved.recorded);
+    lastSentRecordedRef.current = { done: resumable.done.size, recorded: saved.recorded };
     setIndex(resumable.index);
     setStarted(true);
   };
@@ -311,6 +371,23 @@ export default function WalkMode({
       toast.info('Walk paused — open Walk Survey to pick it up again');
     }
     onExit();
+  };
+
+  /**
+   * Stop wherever the walker is. Everything recorded is already saved; the
+   * trees not reached simply stay uninspected, which the recency map shows.
+   */
+  const endHere = () => {
+    const left = path.length - done.size;
+    if (
+      left > 0 &&
+      !window.confirm(
+        `End the walk here?\n\n${done.size} of ${path.length} trees assessed. Everything recorded is saved; the other ${left} stay not inspected.`
+      )
+    ) {
+      return;
+    }
+    finish();
   };
 
   const finish = () => {
@@ -430,6 +507,15 @@ export default function WalkMode({
         <RouteSetup
           startTree={startTree}
           context={context}
+          endTree={endTree}
+          endUnreachable={endUnreachable}
+          picking={picking}
+          onPickEnd={() => setPicking('end')}
+          onCancelPick={() => setPicking('start')}
+          onClearEnd={() => {
+            setEndTreeId(null);
+            setPicking('start');
+          }}
           direction={direction}
           onDirection={setDirection}
           preview={preview}
@@ -437,7 +523,7 @@ export default function WalkMode({
         <div className="px-4 pb-2">
           <Button
             className="w-full h-12 text-base"
-            disabled={chosen.size === 0 || preview.path.length === 0}
+            disabled={chosen.size === 0 || preview.path.length === 0 || endUnreachable}
             onClick={startNew}
           >
             Start walk
@@ -530,6 +616,14 @@ export default function WalkMode({
             {path.length}
             {done.has(current.tree_id) && ' · this tree done'}
           </p>
+          <button
+            type="button"
+            onClick={endHere}
+            disabled={busy}
+            className="mt-0.5 text-xs font-medium text-canopy-700 dark:text-canopy-100 underline underline-offset-2 disabled:opacity-40"
+          >
+            End walk here
+          </button>
         </>
       }
       onBack={canGoBack && !busy ? goBack : undefined}
@@ -603,12 +697,24 @@ function relativeTime(iso: string): string {
 function RouteSetup({
   startTree,
   context,
+  endTree,
+  endUnreachable,
+  picking,
+  onPickEnd,
+  onCancelPick,
+  onClearEnd,
   direction,
   onDirection,
   preview,
 }: {
   startTree: ClientTree | null;
   context: ReturnType<typeof walkContext>;
+  endTree: ClientTree | null;
+  endUnreachable: boolean;
+  picking: 'start' | 'end';
+  onPickEnd: () => void;
+  onCancelPick: () => void;
+  onClearEnd: () => void;
   direction: WalkDirection;
   onDirection: (d: WalkDirection) => void;
   preview: { path: ClientTree[]; turnaround: number };
@@ -690,21 +796,68 @@ function RouteSetup({
         )}
       </div>
       {context && (
+        <div className="rounded-xl border border-line bg-paper px-3 py-2">
+          <p className="text-[11px] font-semibold tracking-wide text-bark uppercase">End at</p>
+          {picking === 'end' ? (
+            <p className="text-sm text-ink">
+              Tap the tree to stop at.{' '}
+              <button type="button" onClick={onCancelPick} className="text-xs text-bark underline">
+                Cancel
+              </button>
+            </p>
+          ) : endTree ? (
+            <p className="text-sm text-ink">
+              <span className="font-mono">
+                R{endTree.row_id} · P{endTree.position}
+              </span>
+              {endTree.variety ? ` — ${endTree.variety}` : ''}{' '}
+              <button type="button" onClick={onPickEnd} className="text-xs text-bark underline">
+                Change
+              </button>{' '}
+              <button type="button" onClick={onClearEnd} className="text-xs text-bark underline">
+                Walk on to the end
+              </button>
+            </p>
+          ) : (
+            <p className="text-sm text-ink">
+              The end of the orchard{' '}
+              <button
+                type="button"
+                onClick={onPickEnd}
+                className="text-xs font-medium text-canopy-700 dark:text-canopy-100 underline"
+              >
+                Stop at a tree…
+              </button>
+            </p>
+          )}
+        </div>
+      )}
+      {context && (
         <>
-          <div className="grid grid-cols-2 gap-2">
-            {choice('pos', -1, ArrowLeft)}
-            {choice('pos', 1, ArrowRight)}
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            {choice('row', -1, ArrowDown)}
-            {choice('row', 1, ArrowUp)}
-          </div>
+          {/* Across rows, which way to set off is still yours; in one row,
+              and through the rows, the end tree decides. */}
+          {(!endTree || endTree.row_id !== startTree?.row_id) && (
+            <div className="grid grid-cols-2 gap-2">
+              {choice('pos', -1, ArrowLeft)}
+              {choice('pos', 1, ArrowRight)}
+            </div>
+          )}
+          {!endTree && (
+            <div className="grid grid-cols-2 gap-2">
+              {choice('row', -1, ArrowDown)}
+              {choice('row', 1, ArrowUp)}
+            </div>
+          )}
         </>
       )}
       <p className="text-[11px] text-bark">
-        {preview.path.length === 0
+        {endUnreachable
+          ? 'Pick an end tree with a row and position, other than the start.'
+          : preview.path.length === 0
           ? 'No trees with a row and position to walk.'
-          : behind > 0
+          : endTree
+            ? `${preview.path.length} trees, ending at R${endTree.row_id} P${endTree.position}.`
+            : behind > 0
             ? `${preview.path.length} trees. ${behind} behind your start are covered on a second leg back from R${context?.row} P${context?.position}.`
             : `${preview.path.length} trees, one pass.`}
       </p>

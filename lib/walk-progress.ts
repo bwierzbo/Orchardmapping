@@ -1,10 +1,12 @@
 import type { ClientTree } from './types';
+import { dateToYMD } from './dates';
 
 /**
  * A walk survey in progress — enough to put the surveyor back on the
  * same tree with the same route after closing the app. Saved locally on
  * every step (works offline in the field) and mirrored to the server so
- * another device can pick it up.
+ * another device can pick it up: at once when a tree is recorded, a
+ * moment later when the walker only moved.
  */
 export type WalkInspection = 'health' | 'bloom' | 'fruit';
 
@@ -134,8 +136,20 @@ export function markTreeInspected(
  * the walker resumes on the saved tree — or, if that one is gone or
  * has since been assessed, the next unassessed tree after it. Null
  * when nothing of the route survives.
+ *
+ * `lastInspected` is the server's record (tree id → day of its latest
+ * inspection). Any tree on the route inspected on or after the day the
+ * walk started counts as done, whatever the saved progress says: every
+ * Record lands on the server the moment it is made, so a walk cut short
+ * by a dead phone, a sign-out or a progress save that never arrived picks
+ * up after the last tree actually recorded, not the last one the device
+ * managed to note down.
  */
-export function resumeRoute(progress: WalkProgress, trees: ClientTree[]): ResumedRoute | null {
+export function resumeRoute(
+  progress: WalkProgress,
+  trees: ClientTree[],
+  lastInspected?: ReadonlyMap<string, string>
+): ResumedRoute | null {
   const byId = new Map(trees.map((t) => [t.tree_id, t]));
   const path: ClientTree[] = [];
   let turnaround = 0;
@@ -147,6 +161,13 @@ export function resumeRoute(progress: WalkProgress, trees: ClientTree[]): Resume
   });
   if (path.length === 0) return null;
   const done = new Set(progress.doneIds.filter((id) => byId.has(id)));
+  if (lastInspected) {
+    const startDay = dateToYMD(new Date(progress.startedAt));
+    for (const t of path) {
+      const seen = lastInspected.get(t.tree_id);
+      if (seen && seen >= startDay) done.add(t.tree_id);
+    }
+  }
   const savedAt = progress.currentId ? path.findIndex((t) => t.tree_id === progress.currentId) : -1;
   let index = savedAt >= 0 && !done.has(path[savedAt].tree_id) ? savedAt : -1;
   if (index < 0) index = nextUnassessed(path, done, savedAt + 1);

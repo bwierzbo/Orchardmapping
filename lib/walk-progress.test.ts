@@ -98,6 +98,38 @@ describe('resumeRoute', () => {
     const all = resumeRoute({ ...saved, doneIds: ['a', 'b', 'c', 'd', 'e'] }, trees)!;
     expect(all.index).toBe(4); // nothing left: land on the end so Finish shows
   });
+
+  // The walk started on the walker's local day; inspections are dated by day.
+  const startDay = (() => {
+    const d = new Date(saved.startedAt);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })();
+
+  it('counts trees the server has recorded since the walk began, even if the progress save never arrived', () => {
+    // The phone died after c and d were recorded but before the walk's own
+    // progress (still saying "on c, a and b done") reached anywhere.
+    const trees = ['a', 'b', 'c', 'd', 'e'].map(tree);
+    const lastInspected = new Map([
+      ['c', startDay],
+      ['d', startDay],
+    ]);
+    const r = resumeRoute(saved, trees, lastInspected)!;
+    expect([...r.done].sort()).toEqual(['a', 'b', 'c', 'd']);
+    expect(r.path[r.index].tree_id).toBe('e');
+  });
+
+  it('ignores inspections from before the walk began', () => {
+    const trees = ['a', 'b', 'c', 'd', 'e'].map(tree);
+    const r = resumeRoute(saved, trees, new Map([['c', '2026-09-01']]))!;
+    expect([...r.done]).toEqual(['a', 'b']);
+    expect(r.path[r.index].tree_id).toBe('c');
+  });
+
+  it('ignores recorded trees that are not on the route', () => {
+    const trees = ['a', 'b', 'c', 'd', 'e', 'z'].map(tree);
+    const r = resumeRoute(saved, trees, new Map([['z', startDay]]))!;
+    expect(r.done.has('z')).toBe(false);
+  });
 });
 
 describe('markTreeInspected', () => {

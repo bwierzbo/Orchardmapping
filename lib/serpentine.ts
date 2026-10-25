@@ -237,6 +237,64 @@ export function walkPathFrom(
 }
 
 /**
+ * The direction a walk must take to reach an end tree from its start.
+ *
+ * With an end tree chosen, the walker no longer has to say which way to
+ * go: through the rows toward the end tree's row, and -- when both are in
+ * the same row -- along it toward the end tree. Across rows, which way to
+ * set off along the start row is still the walker's choice (`along`), since
+ * either reaches the end. Null when either tree has no row/position, or
+ * they are the same tree.
+ */
+export function directionToward(
+  trees: ClientTree[],
+  startTreeId: string,
+  endTreeId: string,
+  along: Heading
+): WalkDirection | null {
+  if (startTreeId === endTreeId) return null;
+  const { rows, byRow } = groupRows(trees);
+  const place = (id: string): { r: number; p: number } | null => {
+    for (let r = 0; r < rows.length; r++) {
+      const p = byRow.get(rows[r])!.findIndex((t) => t.tree_id === id);
+      if (p >= 0) return { r, p };
+    }
+    return null;
+  };
+  const start = place(startTreeId);
+  const end = place(endTreeId);
+  if (!start || !end) return null;
+  if (start.r === end.r) {
+    return { along: end.p > start.p ? 1 : -1, rows: 1 };
+  }
+  return { along, rows: end.r > start.r ? 1 : -1 };
+}
+
+/**
+ * A walk from a start tree that stops at an end tree, inclusive.
+ *
+ * The route is the usual serpentine (see walkPathFrom) in the direction
+ * directionToward gives, cut at the end tree. The end always falls on the
+ * first leg, so there is no second leg: a partial walk covers what lies
+ * between the two trees and nothing behind the start. Null when the two
+ * trees cannot anchor a route.
+ */
+export function walkPathBetween(
+  trees: ClientTree[],
+  startTreeId: string,
+  endTreeId: string,
+  along: Heading
+): WalkPath | null {
+  const direction = directionToward(trees, startTreeId, endTreeId, along);
+  if (!direction) return null;
+  const { path, turnaround } = walkPathFrom(trees, startTreeId, direction);
+  const end = path.findIndex((t) => t.tree_id === endTreeId);
+  if (end < 0 || end >= turnaround) return null;
+  const cut = path.slice(0, end + 1);
+  return { path: cut, turnaround: cut.length };
+}
+
+/**
  * Sampled walk path: within an ordered path, keep only the first
  * `sampleSize` trees of each contiguous variety run (a stretch of the
  * same variety along the walk). Used by bloom/fruit passes when the
