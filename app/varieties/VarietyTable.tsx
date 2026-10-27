@@ -30,6 +30,8 @@ export interface VarietyRow {
   typical_sg: string | null;
   confidence: string | null;
   tree_count: number;
+  /** Limbs grafted onto trees of another variety. */
+  graft_count: number;
 }
 
 type GroupKey = 'cls' | 'harvest' | 'tannin' | 'planted';
@@ -87,7 +89,7 @@ export default function VarietyTable({
       case 'tannin':
         return [row.tannin?.toLowerCase() ?? null];
       case 'planted':
-        return [row.tree_count > 0 ? 'yes' : 'no'];
+        return [row.tree_count + row.graft_count > 0 ? 'yes' : 'no'];
     }
   };
   const searchFields = (row: VarietyRow) => [
@@ -235,7 +237,11 @@ export default function VarietyTable({
                     {v.typical_sg ?? '—'}
                   </td>
                   <td className="px-3 py-2 text-right font-mono text-xs text-ink">
-                    {v.tree_count || '—'}
+                    {v.tree_count + v.graft_count === 0
+                      ? '—'
+                      : v.graft_count === 0
+                        ? v.tree_count
+                        : `${v.tree_count} + ${v.graft_count} graft${v.graft_count === 1 ? '' : 's'}`}
                   </td>
                 </tr>
               ))

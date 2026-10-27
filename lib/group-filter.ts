@@ -1,5 +1,6 @@
 import type { ClientTree } from './types';
 import { normalizeRowId } from './address';
+import { varietiesOf } from './grafts';
 
 /**
  * A composable tree filter — dimensions AND together; within one
@@ -29,7 +30,9 @@ export function matchesFilter(tree: ClientTree, filter: GroupFilter): boolean {
     if (!row || !filter.rows.map(normalizeRowId).includes(row)) return false;
   }
   if (filter.varieties?.length) {
-    if (!tree.variety || !filter.varieties.includes(tree.variety)) return false;
+    // A grafted limb of the variety counts: spraying "the Chehalis" means
+    // the Gala tree with a Chehalis scaffold too.
+    if (!varietiesOf(tree).some((v) => filter.varieties!.includes(v))) return false;
   }
   if (filter.statuses?.length) {
     if (!filter.statuses.includes(tree.status)) return false;

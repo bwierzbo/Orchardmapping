@@ -12,6 +12,7 @@
  *  - anything else: words in the variety or name, "kingston black"
  * Client-safe.
  */
+import { varietiesOf } from './grafts';
 import { compareRowIds, normalizeAddressPart, normalizeRowId } from './address';
 import { comparePositions, normalizePosition } from './position';
 
@@ -21,6 +22,8 @@ export interface FindableTree {
   legacy_tree_id?: string | null;
   name?: string | null;
   variety?: string | null;
+  /** Varieties grafted onto it; searching one finds the tree (076). */
+  graft_varieties?: readonly string[] | null;
   row_id?: string | null;
   position?: string | null;
 }
@@ -86,7 +89,7 @@ export function findTrees<T extends FindableTree>(
   return take(
     trees
       .filter((t) => {
-        const text = `${t.variety ?? ''} ${t.name ?? ''}`.toLowerCase();
+        const text = `${varietiesOf(t).join(' ')} ${t.name ?? ''}`.toLowerCase();
         return words.every((w) => text.includes(w));
       })
       .sort(walkingOrder)

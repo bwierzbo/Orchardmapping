@@ -48,13 +48,13 @@ export async function listVarietyOptions(orchardId: string): Promise<VarietyOpti
     ),
     -- A name the library has never seen takes the species most of its
     -- trees here are recorded as, so it is filtered like any other.
+    -- Grafts count: a Chehalis limb is Chehalis growing here (076/077).
     used AS (
-      SELECT variety AS name, count(*)::int AS tree_count,
+      SELECT min(variety) AS name, count(*)::int AS tree_count,
              mode() WITHIN GROUP (ORDER BY lower(btrim(fruit_type))) AS fruit_type
-      FROM trees
-      WHERE orchard_id = ${orchardId} AND removed_on IS NULL
-        AND variety IS NOT NULL AND btrim(variety) <> ''
-      GROUP BY variety
+      FROM standing_tree_varieties
+      WHERE orchard_id = ${orchardId}
+      GROUP BY lower(variety)
     )
     SELECT
       COALESCE(v.variety, used.name)  AS name,
@@ -191,14 +191,17 @@ export async function listVarietyObservations(variety: string): Promise<VarietyO
   }));
 }
 
-/** Sites growing this variety, so a page can say "and no juice recorded yet". */
+/**
+ * Sites growing this variety, so a page can say "and no juice recorded yet".
+ * A graft counts as a tree carrying it: it is fruit of that variety there.
+ */
 export async function sitesGrowing(variety: string): Promise<Array<{ site: string; trees: number }>> {
   const { rows } = await sql`
     SELECT COALESCE(s.name, o.site_id) AS site, count(*)::int AS trees
-    FROM trees t
+    FROM standing_tree_varieties t
     JOIN orchards o ON o.id = t.orchard_id
     LEFT JOIN sites s ON s.id = o.site_id
-    WHERE lower(t.variety) = ${variety.toLowerCase()} AND t.removed_on IS NULL
+    WHERE lower(t.variety) = ${variety.toLowerCase()}
     GROUP BY 1
     ORDER BY trees DESC
   `;

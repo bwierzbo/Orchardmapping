@@ -98,9 +98,12 @@ export default async function VarietyDetailPage({
   const v = rows[0];
   if (!v) notFound();
   const { rows: countRows } = await sql`
-    SELECT COUNT(*)::int AS n FROM trees WHERE variety = ${name} AND removed_on IS NULL
+    SELECT count(*) FILTER (WHERE NOT is_graft)::int AS n,
+           count(*) FILTER (WHERE is_graft)::int AS g
+    FROM standing_tree_varieties WHERE lower(variety) = lower(${name})
   `;
   const treeCount = countRows[0]?.n ?? 0;
+  const graftCount = countRows[0]?.g ?? 0;
   const [observations, sites] = await Promise.all([
     listVarietyObservations(name),
     sitesGrowing(name),
@@ -115,7 +118,10 @@ export default async function VarietyDetailPage({
         <h1 className="font-display text-2xl text-ink mt-2">{v.variety}</h1>
         <p className="survey-caption mb-4">
           {v.cider_type ? (TYPE_LABEL[v.cider_type] ?? v.cider_type) : 'Unclassified'}
-          {treeCount > 0 ? ` · ${treeCount} trees planted` : ' · not planted'}
+          {treeCount + graftCount === 0
+            ? ' · not planted'
+            : ` · ${treeCount} trees planted` +
+              (graftCount > 0 ? ` + ${graftCount} graft${graftCount === 1 ? '' : 's'}` : '')}
           {' · confidence '}{v.confidence}
         </p>
 

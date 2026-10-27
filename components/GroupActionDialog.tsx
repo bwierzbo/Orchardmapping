@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { ClientTree } from '@/lib/types';
+import { varietiesOf } from '@/lib/grafts';
 import { TREE_STATUSES } from '@/lib/types';
 import { STATUS_LABEL } from '@/components/StatusBadge';
 import { filterTrees, describeFilter, type GroupFilter } from '@/lib/group-filter';
@@ -147,7 +148,7 @@ export default function GroupActionDialog({
   }, [trees]);
   const varieties = useMemo(() => {
     const set = new Set<string>();
-    for (const t of trees) if (t.variety) set.add(t.variety);
+    for (const t of trees) for (const v of varietiesOf(t)) set.add(v);
     return [...set].sort();
   }, [trees]);
   const blocks = useMemo(() => {

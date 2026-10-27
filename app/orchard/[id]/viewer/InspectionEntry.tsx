@@ -60,10 +60,14 @@ export interface InspectionAnswers {
   causes: string[];
   /** Trunk and scaffold counts, by CONDITION_METRIC_CATALOG key. */
   condition: Record<string, string>;
-  /** "When would you pick this?", if asked. */
-  readiness: ReadinessVerdict | null;
-  /** What the model predicted when the verdict was given, ISO date. */
-  predictedCentre: string | null;
+  /**
+   * "When would you pick this?", by variety: one answer on a one-variety
+   * tree, one per variety on a grafted one, since a Chehalis limb ripens
+   * on its own clock.
+   */
+  readiness: Record<string, ReadinessVerdict>;
+  /** What the model predicted for each variety when asked, ISO date. */
+  predictedCentre: Record<string, string | null>;
   /**
    * What came off the tree on this visit, one line per variety picked: a
    * grafted tree can give a Gala line and a Chehalis line. Amounts are
@@ -233,14 +237,19 @@ export async function saveInspection(
   // The verdict, with what the model said ON THE DAY. Stored together so a
   // later comparison judges the prediction that was actually made, not one
   // recomputed after the interval has been corrected.
-  if (answers.readiness) {
+  const verdicts = Object.entries(answers.readiness);
+  for (const [variety, verdict] of verdicts) {
     await createTreeEvent(tree.tree_id, {
       event_type: 'harvest_readiness',
-      detail: READINESS_LABEL[answers.readiness],
+      // Named only on a tree with a choice of varieties.
+      detail:
+        verdicts.length > 1 || !sameVariety(variety, tree.variety)
+          ? `${variety}: ${READINESS_LABEL[verdict]}`
+          : READINESS_LABEL[verdict],
       changes: {
-        verdict: answers.readiness,
-        predicted_centre: answers.predictedCentre ?? null,
-        variety: tree.variety ?? null,
+        verdict,
+        predicted_centre: answers.predictedCentre[variety] ?? null,
+        variety,
       },
     });
     saved++;
@@ -410,8 +419,8 @@ export default function InspectionEntry({
     health: null,
     causes: [],
     condition: {},
-    readiness: null,
-    predictedCentre: null,
+    readiness: {},
+    predictedCentre: {},
     harvest: [{ key: 0, variety: null, quantity: '', unit: 'lb' }],
     harvestComplete: null,
     varietyComplete: {},
@@ -428,7 +437,7 @@ export default function InspectionEntry({
   const [fruitLoad, setFruitLoad] = useState<number | null>(null);
   const [metrics, setMetrics] = useState<Record<string, string>>({});
   const [condition, setConditionState] = useState<Record<string, string>>({});
-  const [readiness, setReadiness] = useState<ReadinessVerdict | null>(null);
+  const [readiness, setReadiness] = useState<Record<string, ReadinessVerdict>>({});
   /** Photos taken on this tree in this sitting, newest last. */
   const [photos, setPhotos] = useState<string[]>([]);
   /**
@@ -549,35 +558,38 @@ export default function InspectionEntry({
    * harvest prediction that reads the trajectory.
    */
   const [previous, setPrevious] = useState<LastObservation | null>(null);
-  const [fetchedCentre, setFetchedCentre] = useState<string | null>(null);
-  const askReadiness = settings.askHarvestReadiness && !!tree.variety?.trim();
-  // Derived rather than cleared in the effect: writing state from an
-  // effect's early return is a synchronous setState and a cascading render.
-  const predictedCentre = askReadiness ? fetchedCentre : null;
+  const [fetchedCentres, setFetchedCentres] = useState<Record<string, string | null>>({});
+  /** Asked of each variety on the tree; a tree with none recorded is not asked. */
+  const askReadiness = settings.askHarvestReadiness && varieties.length > 0;
 
-  // What the model expects for this variety, shown beside the verdict so
+  // What the model expects for each variety, shown beside its verdict so
   // the two can be compared later.
   useEffect(() => {
-    const variety = tree.variety?.trim();
-    if (!settings.askHarvestReadiness || !variety) return;
+    if (!settings.askHarvestReadiness || varieties.length === 0) return;
     let live = true;
-    trpc.tree.predictedPick
-      // No purpose passed: the orchard's own setting decides it server-side,
-      // so a cidery and a fresh-fruit orchard each get their own target.
-      .query({ orchardId: tree.orchard_id, variety })
-      .then((v) => {
-        if (!live) return;
-        setFetchedCentre(v?.centre ?? null);
-        answersRef.current.predictedCentre = v?.centre ?? null;
-      })
-      .catch(() => {
-        // A prediction that will not load leaves the verdict unanchored,
-        // which readinessDelta already handles by returning null.
-      });
+    for (const variety of varieties) {
+      trpc.tree.predictedPick
+        // No purpose passed: the orchard's own setting decides it server-side,
+        // so a cidery and a fresh-fruit orchard each get their own target.
+        .query({ orchardId: tree.orchard_id, variety })
+        .then((v) => {
+          if (!live) return;
+          const centre = v?.centre ?? null;
+          setFetchedCentres((prev) => ({ ...prev, [variety]: centre }));
+          answersRef.current.predictedCentre = {
+            ...answersRef.current.predictedCentre,
+            [variety]: centre,
+          };
+        })
+        .catch(() => {
+          // A prediction that will not load leaves the verdict unanchored,
+          // which readinessDelta already handles by returning null.
+        });
+    }
     return () => {
       live = false;
     };
-  }, [tree.orchard_id, tree.variety, settings.askHarvestReadiness]);
+  }, [tree.orchard_id, varieties, settings.askHarvestReadiness]);
   useEffect(() => {
     let live = true;
     trpc.tree.lastObservation
@@ -733,11 +745,15 @@ export default function InspectionEntry({
     setConditionState(answersRef.current.condition);
   };
 
-  const pickReadiness = (verdict: ReadinessVerdict) => {
-    const next = answersRef.current.readiness === verdict ? null : verdict;
+  /** A second tap on the same verdict takes it back. */
+  const pickReadiness = (variety: string, verdict: ReadinessVerdict) => {
+    const next = { ...answersRef.current.readiness };
+    if (next[variety] === verdict) delete next[variety];
+    else next[variety] = verdict;
     answersRef.current.readiness = next;
     setReadiness(next);
   };
+  const anyReadiness = Object.keys(readiness).length > 0;
 
   const setMetric = (key: string, value: string) => {
     answersRef.current.metrics = { ...answersRef.current.metrics, [key]: value };
@@ -770,7 +786,7 @@ export default function InspectionEntry({
     fruitLoad !== null ||
     pestKeys.length > 0 ||
     causes.length > 0 ||
-    readiness !== null ||
+    anyReadiness ||
     anyHarvestTyped ||
     harvestCompleteChoice !== null ||
     varietyChoicePending ||
@@ -783,7 +799,7 @@ export default function InspectionEntry({
     healthChoice !== null || bloomChoice !== null || fruitLoad !== null ||
     pestKeys.length > 0 ||
     causes.length > 0 ||
-    readiness !== null ||
+    anyReadiness ||
     anyHarvestTyped ||
     harvestCompleteChoice !== null ||
     varietyChoicePending ||
@@ -825,7 +841,6 @@ export default function InspectionEntry({
 
   const enabledMetrics = FRUIT_METRIC_CATALOG.filter((m) => settings.fruitMetrics.includes(m.key));
   const todayIso = dateToYMD(new Date());
-  const predictionLine = describePrediction(predictedCentre, todayIso);
   const enabledCondition = CONDITION_METRIC_CATALOG.filter((m) =>
     settings.conditionMetrics.includes(m.key),
   );
@@ -1246,33 +1261,42 @@ export default function InspectionEntry({
         */}
         {askReadiness && (
           <div className="space-y-1.5">
-            {sectionLabel('When would you pick it?', readiness !== null, {
-              summary: 'Your call, next to what the model predicted.',
+            {sectionLabel('When would you pick it?', anyReadiness, {
+              summary: multiVariety
+                ? 'Your call for each variety on the tree, next to what the model predicted.'
+                : 'Your call, next to what the model predicted.',
               scale:
                 'This is how the prediction gets checked. The model has never seen a harvest here, so your answer outranks it.',
             })}
-            <p className="text-[11px] text-bark">{predictionLine}</p>
-            <div className="grid grid-cols-2 gap-2">
-              {READINESS_VERDICTS.map((v) => {
-                const on = readiness === v;
-                return (
-                  <button
-                    key={v}
-                    type="button"
-                    onClick={() => pickReadiness(v)}
-                    aria-pressed={on}
-                    disabled={busy}
-                    className={`h-11 rounded-lg text-sm font-medium border active:scale-[0.97] disabled:opacity-50 ${
-                      on
-                        ? 'bg-canopy-600 border-canopy-600 text-white'
-                        : 'border-line text-ink bg-paper hover:bg-canopy-50'
-                    }`}
-                  >
-                    {READINESS_LABEL[v]}
-                  </button>
-                );
-              })}
-            </div>
+            {varieties.map((variety) => (
+              <div key={variety} className="space-y-1.5">
+                <p className="text-[11px] text-bark">
+                  {multiVariety && <span className="font-semibold text-ink">{variety} — </span>}
+                  {describePrediction(fetchedCentres[variety] ?? null, todayIso)}
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {READINESS_VERDICTS.map((v) => {
+                    const on = readiness[variety] === v;
+                    return (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => pickReadiness(variety, v)}
+                        aria-pressed={on}
+                        disabled={busy}
+                        className={`h-11 rounded-lg text-sm font-medium border active:scale-[0.97] disabled:opacity-50 ${
+                          on
+                            ? 'bg-canopy-600 border-canopy-600 text-white'
+                            : 'border-line text-ink bg-paper hover:bg-canopy-50'
+                        }`}
+                      >
+                        {READINESS_LABEL[v]}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         )}
 

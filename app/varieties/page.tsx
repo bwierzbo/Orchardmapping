@@ -16,6 +16,8 @@ interface Row {
   typical_sg: string | null;
   confidence: string | null;
   tree_count: number;
+  /** Limbs of it grafted onto trees of another variety (076). */
+  graft_count: number;
 }
 
 interface RootstockRow {
@@ -34,12 +36,16 @@ export default async function VarietiesPage() {
   const { rows: varieties } = await sql<Row>`
     SELECT va.variety, va.cider_type, va.bloom_group, va.harvest_window,
            va.acidity, va.tannin, va.typical_sg, va.confidence,
-           COALESCE(t.n, 0)::int AS tree_count
+           COALESCE(t.n, 0)::int AS tree_count,
+           COALESCE(t.g, 0)::int AS graft_count
     FROM variety_attributes va
     LEFT JOIN (
-      SELECT variety, COUNT(*) AS n FROM trees WHERE removed_on IS NULL GROUP BY variety
-    ) t ON t.variety = va.variety
-    ORDER BY t.n DESC NULLS LAST, va.variety
+      SELECT lower(variety) AS key,
+             count(*) FILTER (WHERE NOT is_graft) AS n,
+             count(*) FILTER (WHERE is_graft) AS g
+      FROM standing_tree_varieties GROUP BY lower(variety)
+    ) t ON t.key = lower(va.variety)
+    ORDER BY (COALESCE(t.n, 0) + COALESCE(t.g, 0)) DESC, va.variety
   `;
   // Varieties whose measured juice disagrees with their canonical class.
   // Few rows today, so this is one query and a map rather than a join.

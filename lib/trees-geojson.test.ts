@@ -54,3 +54,14 @@ describe('treesToFeatureCollection harvest_complete', () => {
     expect(fc.features[0].properties.harvest_complete).toBe(true);
   });
 });
+
+describe('treesToFeatureCollection variety label', () => {
+  it('names every variety on a grafted tree, and only its own on the rest', () => {
+    const fc = treesToFeatureCollection([
+      tree(1, { variety: 'Gala', graft_varieties: ['Chehalis'] }),
+      tree(2, { variety: 'Gala' }),
+      tree(3, { variety: null, graft_varieties: [] }),
+    ]);
+    expect(fc.features.map((f) => f.properties.variety)).toEqual(['Gala + Chehalis', 'Gala', '']);
+  });
+});

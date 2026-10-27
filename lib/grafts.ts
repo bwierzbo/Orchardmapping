@@ -105,6 +105,21 @@ export function treeVarieties(
   return out;
 }
 
+/**
+ * Every variety a listed tree carries, its own first: what the map's
+ * filters, search and tooltip match against. `graft_varieties` comes with
+ * the tree list (growing grafts only), so this needs no extra request.
+ */
+export function varietiesOf(tree: {
+  variety?: string | null;
+  graft_varieties?: readonly string[] | null;
+}): string[] {
+  return treeVarieties(
+    tree.variety,
+    (tree.graft_varieties ?? []).map((variety) => ({ variety, status: 'growing' as const }))
+  );
+}
+
 /** Whether a tree has more than one variety to pick, and so picks by variety. */
 export function picksByVariety(
   mainVariety: string | null | undefined,

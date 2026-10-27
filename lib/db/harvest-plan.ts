@@ -20,7 +20,10 @@ export interface HarvestPlanRow {
   harvestWindow: string | null;
   /** Observed full bloom for this variety this season, if a mark exists. */
   bloom: string | null;
+  /** Trees carrying the variety, a tree with a graft of it included. */
   treeCount: number;
+  /** Of those, how many carry it only as a graft (076). */
+  graftCount: number;
   orchardCount: number;
   fruitType: string | null;
 }
@@ -37,18 +40,19 @@ export async function harvestPlan(
 ): Promise<HarvestPlanRow[]> {
   if (orchardIds.length === 0) return [];
   const { rows } = await sql`
+    -- Grafts are planted fruit too: a Chehalis limb on a Gala tree has
+    -- Chehalis to pick, on Chehalis's date (077).
     WITH planted AS (
-      SELECT btrim(t.variety) AS variety,
+      SELECT min(t.variety) AS variety,
              count(*)::int AS tree_count,
+             count(*) FILTER (WHERE t.is_graft)::int AS graft_count,
              count(DISTINCT t.orchard_id)::int AS orchard_count,
              -- The commonest species recorded against the name, so a
              -- variety whose species is missing on some trees still shows.
              mode() WITHIN GROUP (ORDER BY btrim(t.fruit_type)) AS fruit_type
-      FROM trees t
+      FROM standing_tree_varieties t
       WHERE t.orchard_id = ANY(${orchardIds as unknown as string})
-        AND t.removed_on IS NULL
-        AND btrim(COALESCE(t.variety, '')) <> ''
-      GROUP BY btrim(t.variety)
+      GROUP BY lower(t.variety)
     ),
     -- A site's own target outranks the curated one, matching how the
     -- variety library resolves a name.
@@ -76,7 +80,7 @@ export async function harvestPlan(
       FROM variety_attributes
       ORDER BY lower(btrim(variety)), (site_id IS NULL)
     )
-    SELECT p.variety, p.tree_count, p.orchard_count, p.fruit_type,
+    SELECT p.variety, p.tree_count, p.graft_count, p.orchard_count, p.fruit_type,
            tg.days_from_bloom, tg.basis, tg.detail, tg.ripens_here,
            lb.harvest_window, bl.observed_on
     FROM planted p
@@ -95,6 +99,7 @@ export async function harvestPlan(
     harvestWindow: r.harvest_window == null ? null : String(r.harvest_window),
     bloom: r.observed_on == null ? null : String(r.observed_on).slice(0, 10),
     treeCount: Number(r.tree_count ?? 0),
+    graftCount: Number(r.graft_count ?? 0),
     orchardCount: Number(r.orchard_count ?? 0),
     fruitType: r.fruit_type == null ? null : String(r.fruit_type),
   }));

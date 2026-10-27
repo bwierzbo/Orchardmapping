@@ -4,6 +4,7 @@ import {
   graftProblems,
   picksByVariety,
   treeVarieties,
+  varietiesOf,
   varietyCompletions,
   wholeTreeCompletedOn,
   type GraftStatus,
@@ -125,5 +126,13 @@ describe('graftProblems', () => {
     expect(graftProblems({ variety: 'Chehalis', grafted_on: 'spring' }, TODAY)).toEqual([
       'The graft date is not a date.',
     ]);
+  });
+});
+
+describe('varietiesOf', () => {
+  it('lists a listed tree\'s own variety then its grafts, once each', () => {
+    expect(varietiesOf({ variety: 'Gala', graft_varieties: ['Chehalis', 'gala'] })).toEqual(['Gala', 'Chehalis']);
+    expect(varietiesOf({ variety: 'Gala' })).toEqual(['Gala']);
+    expect(varietiesOf({ variety: null, graft_varieties: null })).toEqual([]);
   });
 });

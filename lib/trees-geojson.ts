@@ -1,3 +1,4 @@
+import { varietiesOf } from './grafts';
 import type { ClientTree, TreeStatus } from './types';
 import { isHarvestComplete } from './tree-harvest-season';
 
@@ -43,7 +44,8 @@ export function treesToFeatureCollection(
       properties: {
         tree_id: tree.tree_id,
         status: tree.status,
-        variety: tree.variety ?? '',
+        // "Gala + Chehalis" on a grafted tree, so the tooltip says so
+        variety: varietiesOf(tree).join(' + '),
         row_id: tree.row_id ?? '',
         position: tree.position ?? '',
         harvest_complete: isHarvestComplete(tree.harvest_completed_on, seasonYear),
