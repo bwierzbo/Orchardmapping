@@ -182,3 +182,46 @@ describe('map harvest filter', () => {
     expect(hiddenByHarvest(trees, pickedOutIds(trees, 2026), 'all')).toEqual([]);
   });
 });
+
+describe('harvestSeason by variety (grafted trees)', () => {
+  const withVariety = (p: TreePick, variety: string | null): TreePick => ({ ...p, variety });
+
+  it('splits the season by variety, the tree\'s own first, and says which in each pick', () => {
+    const picks = [
+      withVariety(pick(1, '2026-09-05', 18, 'lb'), 'Chehalis'),
+      withVariety(pick(2, '2026-09-25', 30, 'lb'), 'Gala'),
+      withVariety(pick(3, '2026-09-28', 12, 'lb'), 'Gala'),
+    ];
+    const s = harvestSeason(picks, 2026, 'apple', null, 'Gala');
+    expect(s.by_variety).toEqual([
+      { variety: 'Gala', total_lbs: 42 },
+      { variety: 'Chehalis', total_lbs: 18 },
+    ]);
+    expect(s.total_lbs).toBe(60);
+    expect(s.picks.map((p) => p.detail)).toEqual(['Gala: 12 lb', 'Gala: 30 lb', 'Chehalis: 18 lb']);
+  });
+
+  it('counts a pick from before grafts were recorded as the tree\'s own variety', () => {
+    const picks = [
+      pick(1, '2026-09-20', 20, 'lb'),
+      withVariety(pick(2, '2026-09-21', 5, 'lb'), 'gala'),
+      withVariety(pick(3, '2026-09-22', 7, 'lb'), 'Chehalis'),
+    ];
+    const s = harvestSeason(picks, 2026, 'apple', null, 'Gala');
+    // 'gala' and the unnamed pick are both the tree's Gala.
+    expect(s.by_variety).toEqual([
+      { variety: 'Gala', total_lbs: 25 },
+      { variety: 'Chehalis', total_lbs: 7 },
+    ]);
+  });
+
+  it('leaves out a variety with nothing picked this season', () => {
+    const picks = [withVariety(pick(1, '2025-09-05', 18, 'lb'), 'Chehalis'), pick(2, '2026-09-25', 30, 'lb')];
+    const s = harvestSeason(picks, 2026, 'apple', null, 'Gala');
+    expect(s.by_variety).toEqual([{ variety: 'Gala', total_lbs: 30 }]);
+  });
+
+  it('is empty for a season with no picks', () => {
+    expect(harvestSeason([], 2026, 'apple', null, 'Gala').by_variety).toEqual([]);
+  });
+});

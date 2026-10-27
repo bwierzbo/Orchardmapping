@@ -25,6 +25,8 @@ import TreeHistory from './TreeHistory';
 import TreePhotos from './TreePhotos';
 import ReplaceTreeForm from './ReplaceTreeForm';
 import ReplacedTree from './ReplacedTree';
+import TreeGrafts from './TreeGrafts';
+import { treeVarieties, type ClientGraft } from '@/lib/grafts';
 import { formatAddress, formatTreeLabel } from '@/lib/address';
 import { trpc } from '@/lib/trpc/client';
 import VarietyPicker from './VarietyPicker';
@@ -162,6 +164,24 @@ export default function TreeDetailPanel({
       live = false;
     };
   }, [tree.tree_id, historyVersion]);
+
+  /** Varieties grafted on; the heading names them beside the tree's own. */
+  const [grafts, setGrafts] = useState<ClientGraft[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    trpc.graft.list
+      .query({ treeId: tree.tree_id })
+      .then((g) => {
+        if (live) setGrafts(g);
+      })
+      .catch(() => {
+        if (live) setGrafts([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [tree.tree_id, historyVersion]);
+  const graftedVarieties = treeVarieties(tree.variety, grafts ?? []).slice(1);
 
   /**
    * What this tree has given so far this season. The season is the
@@ -371,6 +391,20 @@ export default function TreeDetailPanel({
                   </a>
                 </>
               )}
+              {graftedVarieties.map((v) => (
+                <span key={v}>
+                  <span className="text-bark/60 font-normal"> + </span>
+                  <a
+                    href={`/varieties/${encodeURIComponent(v)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="hover:text-canopy-700 hover:underline"
+                    title="Grafted on — open in Variety Library"
+                  >
+                    {v}
+                  </a>
+                </span>
+              ))}
             </h2>
             {/* This season only: last year's "complete" says nothing about now. */}
             {harvestComplete && (
@@ -538,6 +572,12 @@ export default function TreeDetailPanel({
               treeId={tree.tree_id}
               canEdit={canEdit}
               refreshKey={historyVersion}
+              onChanged={() => setHistoryVersion((v) => v + 1)}
+            />
+            <TreeGrafts
+              tree={tree}
+              grafts={grafts}
+              canEdit={canEdit}
               onChanged={() => setHistoryVersion((v) => v + 1)}
             />
             {tree.replaces_tree_id && <ReplacedTree treeId={tree.replaces_tree_id} />}

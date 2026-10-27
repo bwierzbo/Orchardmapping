@@ -30,6 +30,11 @@ export interface TreePick {
   unit: HarvestUnit | null;
   /** The normalised weight, which is what gets added up. */
   weight_lbs: number;
+  /**
+   * Which variety on the tree it was (076). Null for a pick recorded
+   * before grafts existed, which was the tree's own variety.
+   */
+  variety?: string | null;
 }
 
 export interface HarvestSeason {
@@ -41,6 +46,11 @@ export interface HarvestSeason {
   total_bushels: number;
   /** The bushel weight the total was divided by, for this tree's fruit. */
   bushel_lb: number;
+  /**
+   * The season's pounds per variety, the tree's own first, then in the
+   * order each was first picked. One entry on a one-variety tree.
+   */
+  by_variety: Array<{ variety: string | null; total_lbs: number }>;
   /** When the tree was marked finished, if it was -- in any year. */
   completed_on: string | null;
   /** Finished THIS season. Last year's "complete" says nothing about now. */
@@ -109,12 +119,24 @@ export function harvestSeason(
   year: number,
   fruitType: string | null | undefined,
   completedOn: string | null | undefined,
+  /** The tree's own variety, which a pick with none recorded was. */
+  mainVariety: string | null = null,
 ): HarvestSeason {
   const season = picks
     .filter((p) => yearOf(p.harvest_date) === year)
     .sort((a, b) => b.harvest_date.localeCompare(a.harvest_date) || b.id - a.id);
   const lbs = season.reduce((sum, p) => sum + p.weight_lbs, 0);
   const bushelLb = bushelPounds(fruitType);
+  const byVariety = new Map<string, { variety: string | null; lbs: number }>();
+  const main = mainVariety?.trim() || null;
+  if (season.length > 0) byVariety.set((main ?? '').toLowerCase(), { variety: main, lbs: 0 });
+  for (const p of [...season].reverse()) {
+    const variety = p.variety?.trim() || main;
+    const key = (variety ?? '').toLowerCase();
+    const entry = byVariety.get(key) ?? { variety, lbs: 0 };
+    entry.lbs += p.weight_lbs;
+    byVariety.set(key, entry);
+  }
   return {
     year,
     picks: season.map((p) => ({ ...p, detail: describePick(p, fruitType) })),
@@ -122,6 +144,9 @@ export function harvestSeason(
     total_kg: round1(lbs * KG_PER_LB),
     total_bushels: round1(lbs / bushelLb),
     bushel_lb: bushelLb,
+    by_variety: [...byVariety.values()]
+      .filter((v) => v.lbs > 0)
+      .map((v) => ({ variety: v.variety, total_lbs: round1(v.lbs) })),
     completed_on: completedOn ?? null,
     complete: isHarvestComplete(completedOn, year),
   };
@@ -132,8 +157,11 @@ export function harvestSeason(
  * weight to show, so it says that rather than inventing a unit.
  */
 function describePick(p: TreePick, fruitType: string | null | undefined): string {
-  if (p.quantity === null || p.unit === null) return `${p.weight_lbs} lb`;
-  return describeHarvest(p.quantity, p.unit, fruitType);
+  const amount =
+    p.quantity === null || p.unit === null
+      ? `${p.weight_lbs} lb`
+      : describeHarvest(p.quantity, p.unit, fruitType);
+  return p.variety ? `${p.variety}: ${amount}` : amount;
 }
 
 /** A stored unit, or null for one this code does not know. */

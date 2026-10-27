@@ -7,6 +7,8 @@ import { insertTreeHarvest } from '@/lib/db/tree-harvests';
 import { describeHarvest, HARVEST_UNITS, type HarvestUnit } from '@/lib/harvest-units';
 import { assertTreeAccess } from '@/lib/orchard-access';
 import { toYMD } from '@/lib/dates';
+import { listGrafts } from '@/lib/db/grafts';
+import { picksByVariety, sameVariety, treeVarieties } from '@/lib/grafts';
 
 /**
  * POST /api/trees/[id]/harvest
@@ -15,6 +17,10 @@ import { toYMD } from '@/lib/dates';
  * harvests row (the quantity, for adding up), a harvest event (so it appears
  * in the tree's history beside everything else), and trees.last_harvest (so
  * the panel and the picking model can see when it was last picked).
+ *
+ * A grafted tree is picked by variety (076): the body names which one, and
+ * it must be the tree's own or a graft still growing on it. A one-variety
+ * tree needs no variety; its pick is recorded as the tree's.
  */
 export async function POST(
   request: NextRequest,
@@ -51,6 +57,19 @@ export async function POST(
       );
     }
 
+    const grafts = await listGrafts(tree_id);
+    const varieties = treeVarieties(tree.variety, grafts);
+    let variety: string | null = varieties[0] ?? null;
+    if (picksByVariety(tree.variety, grafts)) {
+      variety = varieties.find((v) => sameVariety(v, body.variety)) ?? null;
+      if (!variety) {
+        return NextResponse.json(
+          { error: `Say which variety this pick was: ${varieties.join(' or ')}` },
+          { status: 400 },
+        );
+      }
+    }
+
     const date = harvestDate ?? toYMD(new Date());
     const notes = typeof body.notes === 'string' && body.notes.trim() ? body.notes.trim() : null;
 
@@ -61,18 +80,22 @@ export async function POST(
       quantity,
       unit,
       fruitType: tree.fruit_type,
+      variety,
       notes,
       createdBy: userId,
     });
 
-    const detail = describeHarvest(quantity, unit, tree.fruit_type);
+    const amount = describeHarvest(quantity, unit, tree.fruit_type);
+    // Named only where there was a choice: on a one-variety tree it says
+    // nothing the panel's heading does not.
+    const detail = varieties.length > 1 ? `${variety}: ${amount}` : amount;
     await insertTreeEvent({
       tree_id,
       orchard_id: tree.orchard_id,
       event_type: 'harvest',
       event_date: date,
       detail: notes ? `${detail} — ${notes}` : detail,
-      changes: { quantity, unit, weight_lbs: weightLbs },
+      changes: { quantity, unit, weight_lbs: weightLbs, variety },
       created_by: userId,
       photo_url: typeof body.photo_url === 'string' ? body.photo_url : undefined,
     });

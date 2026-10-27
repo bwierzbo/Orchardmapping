@@ -59,6 +59,8 @@ export interface Tree {
   last_harvest?: Date | string;
   /** Marked finished for the season (073); set only through its own route. */
   harvest_completed_on?: Date | string | null;
+  /** The tree's own variety picked out; differs from the above only when grafted (076). */
+  main_harvest_completed_on?: Date | string | null;
   yield_estimate?: number;
   notes?: string;
   rootstock?: string;

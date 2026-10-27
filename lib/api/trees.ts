@@ -139,6 +139,8 @@ export async function recordTreeHarvest(
     harvest_date?: string;
     notes?: string;
     photo_url?: string;
+    /** Required on a grafted tree: which of its varieties this was. */
+    variety?: string;
   },
 ): Promise<{ weight_lbs: number; detail: string }> {
   const response = await fetch(`/api/trees/${encodeURIComponent(treeId)}/harvest`, {
@@ -155,7 +157,8 @@ export async function recordTreeHarvest(
  */
 export async function setTreeHarvestComplete(
   treeId: string,
-  input: { complete: boolean; date?: string },
+  /** `variety` is required on a grafted tree, which closes one variety at a time. */
+  input: { complete: boolean; date?: string; variety?: string },
 ): Promise<{ harvest_completed_on: string | null }> {
   const response = await fetch(
     `/api/trees/${encodeURIComponent(treeId)}/harvest-complete`,

@@ -32,6 +32,8 @@ export const EVENT_LABEL: Record<string, string> = {
   harvest_reopened: 'Harvest reopened',
   removed: 'Removed',
   replanted: 'Planted in place of another',
+  graft_added: 'Grafted',
+  graft_changed: 'Graft changed',
 };
 
 /**

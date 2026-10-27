@@ -110,6 +110,8 @@ export interface ClientTree {
   last_harvest?: string | null;
   /** When the tree was marked picked out; complete only for that year. */
   harvest_completed_on?: string | null;
+  /** The tree's own variety picked out; on a grafted tree each variety closes separately. */
+  main_harvest_completed_on?: string | null;
   yield_estimate?: number | null;
   notes?: string | null;
   rootstock?: string | null;

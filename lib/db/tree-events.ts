@@ -23,6 +23,9 @@ export const AUTO_EVENT_TYPES = [
   // written together by replaceTree.
   'removed',
   'replanted',
+  // A variety grafted on, and a change to one (076), written by lib/db/grafts.
+  'graft_added',
+  'graft_changed',
 ] as const;
 
 /**

@@ -87,6 +87,8 @@ export const trees = pgTable(
     lastHarvest: date('last_harvest'),
     /** Picked out for the season; complete only within that year (073). */
     harvestCompletedOn: date('harvest_completed_on'),
+    /** The tree's own variety picked out; a grafted tree closes by variety (076). */
+    mainHarvestCompletedOn: date('main_harvest_completed_on'),
     yieldEstimate: decimal('yield_estimate', { precision: 8, scale: 2 }),
     notes: text('notes'),
     rootstock: varchar('rootstock', { length: 100 }),

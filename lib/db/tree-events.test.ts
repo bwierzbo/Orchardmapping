@@ -44,7 +44,7 @@ describe('the two families stay apart', () => {
   });
 
   it('matches what the database check constraint allows', () => {
-    // Mirrors migration 069/073/075's CHECK. A type added here and not there
+    // Mirrors migration 069/073/075/076's CHECK. A type added here and not there
     // fails on write; added there and not here, it fails validation first.
     const allowedInDb = [
       'created', 'updated', 'status_change', 'moved', 'deleted',
@@ -52,6 +52,7 @@ describe('the two families stay apart', () => {
       'bloom', 'fruit_check', 'tree_condition', 'harvest_readiness',
       'harvest_complete', 'harvest_reopened',
       'removed', 'replanted',
+      'graft_added', 'graft_changed',
     ];
     const all = [...AUTO_EVENT_TYPES, ...MANUAL_EVENT_TYPES];
     expect([...all].sort()).toEqual([...allowedInDb].sort());

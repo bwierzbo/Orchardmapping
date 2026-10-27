@@ -25,6 +25,10 @@ export const PERMANENT_EVENT_TYPES = [
   // with nothing in the history saying when, why or by whom.
   'removed',
   'replanted',
+  // The graft row is still there; taking the history row out would only
+  // hide when it was grafted or changed.
+  'graft_added',
+  'graft_changed',
 ] as const;
 
 export function isRemovableEventType(type: string): boolean {
