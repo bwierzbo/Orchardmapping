@@ -7,7 +7,7 @@ import { createTreeEvent, recordTreeHarvest, setTreeHarvestComplete } from '@/li
 import { sgToBrix } from '@/lib/sugar';
 import { bloomStagesFor, FRUIT_METRIC_CATALOG, type WalkSettings } from '@/lib/settings';
 import type { WalkInspection } from '@/lib/walk-progress';
-import { Check, Plus } from 'lucide-react';
+import { Check, Plus, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,6 +23,12 @@ import {
   type HarvestUnit,
 } from '@/lib/harvest-units';
 import { isHarvestComplete, type HarvestSeason } from '@/lib/tree-harvest-season';
+import {
+  sameVariety,
+  treeVarieties,
+  varietyCompletions,
+  type ClientGraft,
+} from '@/lib/grafts';
 import { dateToYMD, formatYMD } from '@/lib/dates';
 import type { LastObservation } from '@/lib/db/last-observation';
 import { CONDITION_METRIC_CATALOG } from '@/lib/settings';
@@ -59,16 +65,22 @@ export interface InspectionAnswers {
   /** What the model predicted when the verdict was given, ISO date. */
   predictedCentre: string | null;
   /**
-   * What came off the tree on this visit. The amount is kept as typed;
-   * blank means nothing was picked.
+   * What came off the tree on this visit, one line per variety picked: a
+   * grafted tree can give a Gala line and a Chehalis line. Amounts are
+   * kept as typed; a blank line means nothing was picked.
    */
-  harvest: { quantity: string; unit: HarvestUnit };
+  harvest: HarvestLine[];
   /**
    * The tree picked out for the season (true), opened again (false), or
    * left as it is (null). A pending answer like the rest, so the last pick
    * and "that's the lot" go in with one Record.
    */
   harvestComplete: boolean | null;
+  /**
+   * On a grafted tree, which is picked out one variety at a time: each
+   * variety closed (true) or opened again (false). Empty otherwise.
+   */
+  varietyComplete: Record<string, boolean>;
   bloom: string | null;
   fruit: number | null;
   metrics: Record<string, string>;
@@ -87,6 +99,21 @@ export interface InspectionAnswers {
    */
   units: { sugar: 'brix' | 'sg'; size: 'mm' | 'in' };
   note: string;
+}
+
+/** One weighed amount off a tree. */
+export interface HarvestLine {
+  /** Stable across edits, for React and for removing the right line. */
+  key: number;
+  /** Which variety on a grafted tree; null on a one-variety tree. */
+  variety: string | null;
+  quantity: string;
+  unit: HarvestUnit;
+  /**
+   * Already recorded. Set as each line lands, so a Record retried after a
+   * later line failed never records the earlier ones twice.
+   */
+  saved?: boolean;
 }
 
 export interface InspectionSaved {
@@ -224,16 +251,20 @@ export async function saveInspection(
   // Not tied to the picking verdict -- a tree with no variety is never
   // asked for one, and its fruit still comes off.
   let harvested = false;
-  const harvestQty = Number(answers.harvest.quantity);
-  if (
-    answers.harvest.quantity.trim() !== '' &&
-    toPounds(harvestQty, answers.harvest.unit, tree.fruit_type) !== null
-  ) {
+  for (const line of answers.harvest) {
+    if (line.saved) {
+      harvested = true;
+      continue;
+    }
+    const qty = Number(line.quantity);
+    if (line.quantity.trim() === '' || toPounds(qty, line.unit, tree.fruit_type) === null) continue;
     await recordTreeHarvest(tree.tree_id, {
-      quantity: harvestQty,
-      unit: answers.harvest.unit,
+      quantity: qty,
+      unit: line.unit,
       harvest_date: today,
+      ...(line.variety ? { variety: line.variety } : {}),
     });
+    line.saved = true;
     harvested = true;
     saved++;
   }
@@ -244,6 +275,10 @@ export async function saveInspection(
       complete: answers.harvestComplete,
       date: today,
     });
+    saved++;
+  }
+  for (const [variety, complete] of Object.entries(answers.varietyComplete)) {
+    await setTreeHarvestComplete(tree.tree_id, { complete, date: today, variety });
     saved++;
   }
 
@@ -293,7 +328,10 @@ export async function saveInspection(
       harvested ||
       pestKeys.length > 0,
     photo: false,
-    treeChanged: harvested || answers.harvestComplete !== null,
+    treeChanged:
+      harvested ||
+      answers.harvestComplete !== null ||
+      Object.keys(answers.varietyComplete).length > 0,
   };
 }
 
@@ -374,8 +412,9 @@ export default function InspectionEntry({
     condition: {},
     readiness: null,
     predictedCentre: null,
-    harvest: { quantity: '', unit: 'lb' },
+    harvest: [{ key: 0, variety: null, quantity: '', unit: 'lb' }],
     harvestComplete: null,
+    varietyComplete: {},
     bloom: null,
     fruit: null,
     metrics: {},
@@ -392,20 +431,68 @@ export default function InspectionEntry({
   const [readiness, setReadiness] = useState<ReadinessVerdict | null>(null);
   /** Photos taken on this tree in this sitting, newest last. */
   const [photos, setPhotos] = useState<string[]>([]);
-  /** Pounds unless the picker says otherwise. */
-  const [harvestQty, setHarvestQtyState] = useState('');
-  const [harvestUnit, setHarvestUnitState] = useState<HarvestUnit>('lb');
-  const setHarvestQty = (q: string) => {
-    answersRef.current.harvest = { ...answersRef.current.harvest, quantity: q };
-    setHarvestQtyState(q);
+  /**
+   * The varieties grafted onto this tree. A tree with more than one variety
+   * is picked by variety: each weighed line says which, and each variety is
+   * picked out on its own. A one-variety tree's form is unchanged.
+   */
+  const [grafts, setGrafts] = useState<ClientGraft[]>([]);
+  const varieties = useMemo(() => treeVarieties(tree.variety, grafts), [tree.variety, grafts]);
+  const multiVariety = varieties.length > 1;
+  /** Pounds unless the picker says otherwise; one line until a second variety is added. */
+  const [harvestLines, setHarvestLinesState] = useState<HarvestLine[]>(() => [
+    { key: 0, variety: null, quantity: '', unit: 'lb' },
+  ]);
+  const nextLineKey = useRef(1);
+  const setHarvestLines = (lines: HarvestLine[]) => {
+    answersRef.current.harvest = lines;
+    setHarvestLinesState(lines);
   };
-  const setHarvestUnit = (u: HarvestUnit) => {
-    answersRef.current.harvest = { ...answersRef.current.harvest, unit: u };
-    setHarvestUnitState(u);
+  useEffect(() => {
+    let live = true;
+    trpc.graft.list
+      .query({ treeId: tree.tree_id })
+      .then((list) => {
+        if (!live) return;
+        setGrafts(list);
+        // A grafted tree's first line starts on the tree's own variety
+        const names = treeVarieties(tree.variety, list);
+        if (names.length > 1) {
+          const lines = answersRef.current.harvest.map((l) =>
+            l.variety === null ? { ...l, variety: names[0] } : l
+          );
+          answersRef.current.harvest = lines;
+          setHarvestLinesState(lines);
+        }
+      })
+      .catch(() => {
+        // Without the list the tree is picked as one variety, as before.
+      });
+    return () => {
+      live = false;
+    };
+  }, [tree.tree_id, tree.variety]);
+  const updateLine = (key: number, patch: Partial<HarvestLine>) =>
+    setHarvestLines(harvestLines.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+  /** Another line, on a variety not yet weighed here if there is one. */
+  const addLine = () => {
+    const used = new Set(harvestLines.map((l) => (l.variety ?? '').toLowerCase()));
+    const variety = varieties.find((v) => !used.has(v.toLowerCase())) ?? varieties[0] ?? null;
+    const unit = harvestLines[harvestLines.length - 1]?.unit ?? 'lb';
+    setHarvestLines([...harvestLines, { key: nextLineKey.current++, variety, quantity: '', unit }]);
   };
-  /** The entered amount in pounds, or null while it is not a usable number. */
-  const harvestPounds = toPounds(Number(harvestQty), harvestUnit, tree.fruit_type);
+  const removeLine = (key: number) => setHarvestLines(harvestLines.filter((l) => l.key !== key));
+  const linePounds = (l: HarvestLine) => toPounds(Number(l.quantity), l.unit, tree.fruit_type);
+  /** Something weighed and usable on any line. */
+  const anyHarvest = harvestLines.some((l) => linePounds(l) !== null);
+  const anyHarvestTyped = harvestLines.some((l) => l.quantity !== '');
   const [harvestCompleteChoice, setHarvestCompleteChoice] = useState<boolean | null>(null);
+  /** Pending per-variety picked-out changes on a grafted tree. */
+  const [varietyChoice, setVarietyChoiceState] = useState<Record<string, boolean>>({});
+  const completions = useMemo(
+    () => varietyCompletions(tree.variety, tree.main_harvest_completed_on ?? null, grafts),
+    [tree.variety, tree.main_harvest_completed_on, grafts]
+  );
   /**
    * What this tree has given so far this season. The season is the
    * grower's calendar year, so the year is worked out here, not on a
@@ -440,6 +527,20 @@ export default function InspectionEntry({
     answersRef.current.harvestComplete = next;
     setHarvestCompleteChoice(next);
   };
+  const varietySavedComplete = (variety: string) =>
+    isHarvestComplete(
+      completions.find((c) => sameVariety(c.variety, variety))?.completedOn ?? null,
+      seasonYear
+    );
+  /** Same two-tap rule as the whole-tree button, one variety at a time. */
+  const toggleVarietyComplete = (variety: string) => {
+    const next = { ...varietyChoice };
+    if (variety in next) delete next[variety];
+    else next[variety] = !varietySavedComplete(variety);
+    answersRef.current.varietyComplete = next;
+    setVarietyChoiceState(next);
+  };
+  const varietyChoicePending = Object.keys(varietyChoice).length > 0;
   const [bloomOpen, setBloomOpen] = useState(!bloomOnRequest);
 
   /**
@@ -670,8 +771,9 @@ export default function InspectionEntry({
     pestKeys.length > 0 ||
     causes.length > 0 ||
     readiness !== null ||
-    harvestQty !== '' ||
+    anyHarvestTyped ||
     harvestCompleteChoice !== null ||
+    varietyChoicePending ||
     Object.values(condition).some((v) => v !== '') ||
     note.trim() !== '';
 
@@ -682,8 +784,9 @@ export default function InspectionEntry({
     pestKeys.length > 0 ||
     causes.length > 0 ||
     readiness !== null ||
-    harvestQty !== '' ||
+    anyHarvestTyped ||
     harvestCompleteChoice !== null ||
+    varietyChoicePending ||
     Object.values(metrics).some((v) => v !== '') ||
     Object.values(condition).some((v) => v !== '');
 
@@ -1183,17 +1286,25 @@ export default function InspectionEntry({
           no total can say whether 40 lb is all of it or half.
         */}
         <div className="space-y-1.5">
-          {sectionLabel('Harvest', harvestPounds !== null || harvestCompleteChoice !== null, {
-            summary: 'What came off this tree today, added to its season so far.',
-            scale:
-              'Pick it as often as it needs. Mark it complete when nothing is left; that holds until the end of the year.',
+          {sectionLabel('Harvest', anyHarvest || harvestCompleteChoice !== null || varietyChoicePending, {
+            summary: multiVariety
+              ? 'What came off this tree today, a line for each variety picked.'
+              : 'What came off this tree today, added to its season so far.',
+            scale: multiVariety
+              ? 'Each variety is picked out on its own; the tree is done when they all are.'
+              : 'Pick it as often as it needs. Mark it complete when nothing is left; that holds until the end of the year.',
           })}
           <p className="text-[11px] text-bark">
             {season === null
               ? `${seasonYear} so far: …`
               : season.picks.length === 0
                 ? `Nothing picked in ${seasonYear} yet`
-                : `${seasonYear} so far: ${season.total_lbs} lb · ${season.total_kg} kg · ${season.total_bushels} bu` +
+                : `${seasonYear} so far: ` +
+                  (multiVariety
+                    ? season.by_variety
+                        .map((v) => `${v.variety ?? 'unnamed'} ${v.total_lbs} lb`)
+                        .join(' · ') + ` · ${season.total_lbs} lb total`
+                    : `${season.total_lbs} lb · ${season.total_kg} kg · ${season.total_bushels} bu`) +
                   ` from ${season.picks.length} pick${season.picks.length === 1 ? '' : 's'}`}
           </p>
           {season && season.picks.length > 0 && (
@@ -1206,69 +1317,156 @@ export default function InspectionEntry({
               ))}
             </ul>
           )}
-          <div className="flex gap-2">
-            <Input
-              type="number"
-              inputMode="decimal"
-              min="0"
-              step="any"
-              placeholder="Picked today"
-              value={harvestQty}
-              onChange={(e) => setHarvestQty(e.target.value)}
-              disabled={busy}
-              className="h-11 flex-1"
-              aria-label="Amount harvested"
-            />
-            <div className="flex rounded-lg border border-line overflow-hidden">
-              {HARVEST_UNITS.map((u) => (
-                <button
-                  key={u}
-                  type="button"
-                  onClick={() => setHarvestUnit(u)}
-                  aria-pressed={harvestUnit === u}
-                  disabled={busy}
-                  className={`px-3 text-sm font-medium ${
-                    harvestUnit === u
-                      ? 'bg-canopy-700 text-white'
-                      : 'bg-paper text-ink hover:bg-canopy-50'
-                  }`}
-                >
-                  {u}
-                </button>
-              ))}
+          {harvestLines.map((line) => (
+            <div key={line.key} className="space-y-1">
+              {multiVariety && (
+                <div className="flex flex-wrap gap-1.5" role="group" aria-label="Variety picked">
+                  {varieties.map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => updateLine(line.key, { variety: v })}
+                      aria-pressed={sameVariety(line.variety, v)}
+                      disabled={busy || line.saved}
+                      className={`h-9 px-3 rounded-lg border text-sm font-medium ${
+                        sameVariety(line.variety, v)
+                          ? 'bg-canopy-700 border-canopy-700 text-white'
+                          : 'bg-paper border-line text-ink hover:bg-canopy-50'
+                      }`}
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="flex gap-2">
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="any"
+                  placeholder="Picked today"
+                  value={line.quantity}
+                  onChange={(e) => updateLine(line.key, { quantity: e.target.value })}
+                  disabled={busy || line.saved}
+                  className="h-11 flex-1"
+                  aria-label={line.variety ? `Amount of ${line.variety} harvested` : 'Amount harvested'}
+                />
+                <div className="flex rounded-lg border border-line overflow-hidden">
+                  {HARVEST_UNITS.map((u) => (
+                    <button
+                      key={u}
+                      type="button"
+                      onClick={() => updateLine(line.key, { unit: u })}
+                      aria-pressed={line.unit === u}
+                      disabled={busy || line.saved}
+                      className={`px-3 text-sm font-medium ${
+                        line.unit === u
+                          ? 'bg-canopy-700 text-white'
+                          : 'bg-paper text-ink hover:bg-canopy-50'
+                      }`}
+                    >
+                      {u}
+                    </button>
+                  ))}
+                </div>
+                {harvestLines.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeLine(line.key)}
+                    disabled={busy || line.saved}
+                    aria-label="Remove this line"
+                    className="px-2 rounded-lg text-bark hover:text-ink hover:bg-canopy-50 disabled:opacity-40"
+                  >
+                    <X size={16} aria-hidden />
+                  </button>
+                )}
+              </div>
+              {linePounds(line) !== null && (
+                <p className="text-xs text-bark">
+                  {line.variety && multiVariety ? `${line.variety}: ` : ''}
+                  {describeHarvest(Number(line.quantity), line.unit, tree.fruit_type)} —{' '}
+                  {line.saved ? 'recorded' : `saved with ${recordLabel}`}
+                </p>
+              )}
             </div>
-          </div>
-          {harvestPounds !== null && (
-            <p className="text-xs text-bark">
-              {describeHarvest(Number(harvestQty), harvestUnit, tree.fruit_type)} — saved with{' '}
-              {recordLabel}
-            </p>
+          ))}
+          {multiVariety && (
+            <Button
+              type="button"
+              variant="secondary"
+              className="h-10 w-full"
+              onClick={addLine}
+              disabled={busy}
+            >
+              <Plus aria-hidden size={15} /> Add line
+            </Button>
           )}
-          <button
-            type="button"
-            onClick={toggleHarvestComplete}
-            aria-pressed={shownComplete}
-            disabled={busy}
-            className={`w-full h-11 rounded-lg text-sm font-medium border active:scale-[0.97] disabled:opacity-50 inline-flex items-center justify-center gap-1.5 ${
-              shownComplete
-                ? 'bg-canopy-600 border-canopy-600 text-white'
-                : 'border-line text-ink bg-paper hover:bg-canopy-50'
-            }`}
-          >
-            {shownComplete && <Check aria-hidden size={14} />}
-            {shownComplete ? 'Harvest complete' : 'Mark harvest complete'}
-          </button>
-          {/* Says what the button will do, since tapping a finished tree
-              reopens it and a pending change waits for the record button. */}
-          <p className="text-[11px] text-bark">
-            {harvestCompleteChoice === true
-              ? `Closes this tree for ${seasonYear} — saved with ${recordLabel}`
-              : harvestCompleteChoice === false
-                ? `Reopens this tree — saved with ${recordLabel}`
-                : savedComplete
-                  ? `Picked out ${formatYMD(season?.completed_on ?? tree.harvest_completed_on)} · tap to reopen`
-                  : 'Tap when there is nothing left to pick'}
-          </p>
+          {multiVariety ? (
+            <div className="space-y-1.5">
+              {varieties.map((v) => {
+                const savedDone = varietySavedComplete(v);
+                const pending = varietyChoice[v];
+                const shown = pending ?? savedDone;
+                const completedOn = completions.find((c) => sameVariety(c.variety, v))?.completedOn;
+                return (
+                  <div key={v}>
+                    <button
+                      type="button"
+                      onClick={() => toggleVarietyComplete(v)}
+                      aria-pressed={shown}
+                      disabled={busy}
+                      className={`w-full h-11 rounded-lg text-sm font-medium border active:scale-[0.97] disabled:opacity-50 inline-flex items-center justify-center gap-1.5 ${
+                        shown
+                          ? 'bg-canopy-600 border-canopy-600 text-white'
+                          : 'border-line text-ink bg-paper hover:bg-canopy-50'
+                      }`}
+                    >
+                      {shown && <Check aria-hidden size={14} />}
+                      {shown ? `${v} picked out` : `Mark ${v} picked out`}
+                    </button>
+                    <p className="text-[11px] text-bark">
+                      {pending === true
+                        ? `Closes ${v} for ${seasonYear} — saved with ${recordLabel}`
+                        : pending === false
+                          ? `Reopens ${v} — saved with ${recordLabel}`
+                          : savedDone
+                            ? `Picked out ${formatYMD(completedOn ?? null)} · tap to reopen`
+                            : `Tap when there is no ${v} left to pick`}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={toggleHarvestComplete}
+                aria-pressed={shownComplete}
+                disabled={busy}
+                className={`w-full h-11 rounded-lg text-sm font-medium border active:scale-[0.97] disabled:opacity-50 inline-flex items-center justify-center gap-1.5 ${
+                  shownComplete
+                    ? 'bg-canopy-600 border-canopy-600 text-white'
+                    : 'border-line text-ink bg-paper hover:bg-canopy-50'
+                }`}
+              >
+                {shownComplete && <Check aria-hidden size={14} />}
+                {shownComplete ? 'Harvest complete' : 'Mark harvest complete'}
+              </button>
+              {/* Says what the button will do, since tapping a finished tree
+                  reopens it and a pending change waits for the record button. */}
+              <p className="text-[11px] text-bark">
+                {harvestCompleteChoice === true
+                  ? `Closes this tree for ${seasonYear} — saved with ${recordLabel}`
+                  : harvestCompleteChoice === false
+                    ? `Reopens this tree — saved with ${recordLabel}`
+                    : savedComplete
+                      ? `Picked out ${formatYMD(season?.completed_on ?? tree.harvest_completed_on)} · tap to reopen`
+                      : 'Tap when there is nothing left to pick'}
+              </p>
+            </>
+          )}
         </div>
 
         {/* ── Notes: always available; saved with the tree's record ── */}

@@ -7,6 +7,8 @@ import { setTreeHarvestCompletedOn } from '@/lib/db/tree-harvests';
 import { isHarvestComplete } from '@/lib/tree-harvest-season';
 import { assertTreeAccess } from '@/lib/orchard-access';
 import { toYMD } from '@/lib/dates';
+import { listGrafts, setVarietyHarvestComplete } from '@/lib/db/grafts';
+import { picksByVariety } from '@/lib/grafts';
 
 /**
  * POST /api/trees/[id]/harvest-complete
@@ -21,6 +23,10 @@ import { toYMD } from '@/lib/dates';
  *
  * Asking for the state the tree is already in writes nothing, so a double
  * tap does not leave two "Harvest complete" rows.
+ *
+ * A grafted tree is closed one variety at a time (076): the body names the
+ * variety, and the whole tree counts as picked out once every variety on
+ * it is (setVarietyHarvestComplete).
  */
 export async function POST(
   request: NextRequest,
@@ -47,6 +53,23 @@ export async function POST(
       return NextResponse.json({ error: 'date must be YYYY-MM-DD' }, { status: 400 });
     }
     const date: string = body.date ?? toYMD(new Date());
+
+    if (picksByVariety(tree.variety, await listGrafts(tree_id))) {
+      if (typeof body.variety !== 'string' || !body.variety.trim()) {
+        return NextResponse.json(
+          { error: 'This tree has more than one variety: say which one is picked out' },
+          { status: 400 },
+        );
+      }
+      const result = await setVarietyHarvestComplete(tree_id, body.variety, body.complete, date, userId);
+      return NextResponse.json({
+        success: true,
+        harvest_completed_on: result.wholeCompletedOn,
+        variety: result.variety,
+        variety_completed_on: result.varietyCompletedOn,
+      });
+    }
+
     const year = Number(date.slice(0, 4));
     const before = toYMD(tree.harvest_completed_on ?? null);
 

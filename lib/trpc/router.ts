@@ -35,6 +35,13 @@ import {
   TreeInsertData,
 } from '@/lib/db/trees';
 import { replacementProblems } from '@/lib/tree-replacement';
+import { insertGraft, listGrafts, updateGraft } from '@/lib/db/grafts';
+import {
+  GRAFT_STATUSES,
+  SCAFFOLD_DIRECTIONS,
+  graftProblems,
+  type GraftInput,
+} from '@/lib/grafts';
 import { diffTreeChanges } from '@/lib/db/tree-events';
 import {
   programDrift,
@@ -124,6 +131,21 @@ import {
   hasBlocker,
 } from '@/lib/spray-rules';
 import { parseBoundary } from '@/lib/orchard-boundary';
+
+const ymdSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+/** A graft as the form sends it; the rules beyond shape are graftProblems. */
+const graftSchema = z.object({
+  variety: z.string().max(100),
+  scaffold_direction: z.enum(SCAFFOLD_DIRECTIONS).nullable().optional(),
+  scaffold_tier: z.union([z.literal(1), z.literal(2), z.literal(3)]).nullable().optional(),
+  tag: z.string().max(100).nullable().optional(),
+  grafted_on: ymdSchema.nullable().optional(),
+  status: z.enum(GRAFT_STATUSES).optional(),
+  status_on: ymdSchema.nullable().optional(),
+  photo_url: z.string().url().startsWith('https://').max(1000).nullable().optional(),
+  notes: z.string().max(2000).nullable().optional(),
+});
 
 /**
  * App router — CiderPilot-style typed API surface. Reads are live here;
@@ -280,7 +302,8 @@ export const appRouter = router({
           picks,
           input.year,
           tree.fruit_type,
-          toYMD(tree.harvest_completed_on ?? null)
+          toYMD(tree.harvest_completed_on ?? null),
+          tree.variety ?? null
         );
       }),
     create: orchardOperatorProcedure
@@ -571,6 +594,52 @@ export const appRouter = router({
           created_by: ctx.userId,
         });
         return { success: true };
+      }),
+  }),
+
+  /**
+   * Varieties grafted onto a tree (076). Only the tree's own variety lives
+   * on the tree row; each graft is placed by scaffold -- compass point and
+   * tier -- with its tag and a photo, so it can be found standing there.
+   * Grafts are not deleted: one that did not take, or was cut out, says so
+   * with its status, and keeps the picks recorded against it.
+   */
+  graft: router({
+    list: treeViewerProcedure
+      .input(z.object({ treeId: z.string().min(1) }))
+      .query(({ input }) => listGrafts(input.treeId)),
+
+    create: treeOperatorProcedure
+      .input(z.object({ treeId: z.string().min(1), today: ymdSchema, graft: graftSchema }))
+      .mutation(async ({ input, ctx }) => {
+        const graft = input.graft as GraftInput;
+        const problems = graftProblems(graft, input.today);
+        if (problems.length > 0) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: problems.join(' ') });
+        }
+        const tree = await getTreeById(input.treeId);
+        if (!tree) throw new TRPCError({ code: 'NOT_FOUND', message: 'Tree not found' });
+        return insertGraft(tree, graft, ctx.userId);
+      }),
+
+    update: treeOperatorProcedure
+      .input(
+        z.object({
+          treeId: z.string().min(1),
+          graftId: z.number().int().positive(),
+          today: ymdSchema,
+          graft: graftSchema,
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const graft = input.graft as GraftInput;
+        const problems = graftProblems(graft, input.today);
+        if (problems.length > 0) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: problems.join(' ') });
+        }
+        const updated = await updateGraft(input.treeId, input.graftId, graft, ctx.userId);
+        if (!updated) throw new TRPCError({ code: 'NOT_FOUND', message: 'Graft not found on this tree' });
+        return updated;
       }),
   }),
 

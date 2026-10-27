@@ -22,6 +22,8 @@ export interface TreeHarvestInput {
   unit: HarvestUnit;
   /** Decides the bushel weight; apples and pears fill one differently. */
   fruitType?: string | null;
+  /** Which variety on the tree it was; null when the tree has none recorded. */
+  variety?: string | null;
   notes?: string | null;
   createdBy?: string | null;
 }
@@ -42,7 +44,7 @@ export async function insertTreeHarvest(
   }
   await sql`
     INSERT INTO harvests
-      (orchard_id, tree_id, harvest_date, quantity, unit, weight_lbs, notes, created_by)
+      (orchard_id, tree_id, harvest_date, quantity, unit, weight_lbs, variety, notes, created_by)
     VALUES (
       ${input.orchardId},
       ${input.treeId},
@@ -50,6 +52,7 @@ export async function insertTreeHarvest(
       ${input.quantity},
       ${input.unit},
       ${weightLbs},
+      ${input.variety ?? null},
       ${input.notes ?? null},
       ${input.createdBy ?? null}
     )
@@ -73,7 +76,7 @@ export async function insertTreeHarvest(
  */
 export async function listTreeHarvests(treeId: string): Promise<TreePick[]> {
   const { rows } = await sql`
-    SELECT id, harvest_date, quantity, unit, weight_lbs
+    SELECT id, harvest_date, quantity, unit, weight_lbs, variety
     FROM harvests
     WHERE tree_id = ${treeId} AND undone_at IS NULL
     ORDER BY harvest_date DESC, id DESC
@@ -86,6 +89,7 @@ export async function listTreeHarvests(treeId: string): Promise<TreePick[]> {
       quantity: quantity ?? null,
       unit: asHarvestUnit(r.unit),
       weight_lbs: toNum(r.weight_lbs, 0),
+      variety: r.variety == null ? null : String(r.variety),
     };
   });
 }
@@ -101,9 +105,14 @@ export async function setTreeHarvestCompletedOn(
   treeId: string,
   completedOn: string | null,
 ): Promise<void> {
+  // The tree's own variety goes with it: on a one-variety tree the two are
+  // the same thing, and a graft added later must find it already closed.
   await sql`
     UPDATE trees
-    SET harvest_completed_on = ${completedOn}, updated_at = NOW()
+    SET harvest_completed_on = ${completedOn},
+        main_harvest_completed_on = ${completedOn},
+        updated_at = NOW()
     WHERE tree_id = ${treeId}
   `;
 }
+
