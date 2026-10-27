@@ -71,6 +71,8 @@ export interface Tree {
   removed_reason?: string | null;
   /** The removed tree this one was planted in place of. */
   replaces_tree_id?: string | null;
+  /** Varieties growing on it as grafts (076); only on getTreesByOrchard rows. */
+  graft_varieties?: string[] | null;
   created_at?: Date;
   updated_at?: Date;
 }
@@ -424,8 +426,14 @@ export async function deleteTree(tree_id: string): Promise<boolean> {
  * group action only ever see what is in the ground.
  */
 export async function getTreesByOrchard(orchard_id: string): Promise<Tree[]> {
+  // Each tree's growing grafts ride along, so filtering the map by variety
+  // finds a Chehalis limb on a Gala tree without a request per tree.
   const result = await sql`
-    SELECT * FROM trees
+    SELECT trees.*,
+           (SELECT array_agg(g.variety ORDER BY g.id)
+              FROM tree_grafts g
+             WHERE g.tree_id = trees.tree_id AND g.status = 'growing') AS graft_varieties
+    FROM trees
     WHERE orchard_id = ${orchard_id} AND removed_on IS NULL
     ORDER BY block_id NULLS FIRST,
       NULLIF(substring(row_id from '^\d+'), '')::int NULLS LAST,

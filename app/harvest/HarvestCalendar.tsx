@@ -282,6 +282,7 @@ export default function HarvestCalendar({
                       {row.variety}
                       <span className="ml-1.5 text-bark font-normal">
                         {row.treeCount}
+                        {row.graftCount > 0 ? ` (${row.graftCount} grafted)` : ''}
                         {row.orchardCount > 1 ? ` · ${row.orchardCount} orchards` : ''}
                       </span>
                       {prediction.lateSeasonRisk && (

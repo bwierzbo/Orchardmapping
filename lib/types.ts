@@ -122,6 +122,8 @@ export interface ClientTree {
   removed_reason?: string | null;
   /** The removed tree this one was planted in place of. */
   replaces_tree_id?: string | null;
+  /** Varieties growing on it as grafts, for filters and search (076). */
+  graft_varieties?: string[];
   created_at?: string | null;
   updated_at?: string | null;
 }

@@ -45,3 +45,21 @@ describe('describeFilter', () => {
     );
   });
 });
+
+describe('filterTrees by variety, with grafts', () => {
+  const grafted = [
+    mk({ tree_id: 'g1', variety: 'Gala', graft_varieties: ['Chehalis'] }),
+    mk({ tree_id: 'g2', variety: 'Gala', graft_varieties: [] }),
+    mk({ tree_id: 'c1', variety: 'Chehalis' }),
+  ];
+
+  it('finds a tree carrying the variety only as a graft', () => {
+    const ids = filterTrees(grafted, { varieties: ['Chehalis'] }).map((t) => t.tree_id);
+    expect(ids).toEqual(['g1', 'c1']);
+  });
+
+  it('still finds a grafted tree by its own variety', () => {
+    const ids = filterTrees(grafted, { varieties: ['Gala'] }).map((t) => t.tree_id);
+    expect(ids).toEqual(['g1', 'g2']);
+  });
+});

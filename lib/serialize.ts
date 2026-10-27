@@ -37,6 +37,7 @@ export function serializeTree(tree: Tree): ClientTree {
     removed_on: toYMD(tree.removed_on),
     removed_reason: tree.removed_reason ?? null,
     replaces_tree_id: tree.replaces_tree_id ?? null,
+    graft_varieties: tree.graft_varieties ?? [],
     created_at: tree.created_at ? new Date(tree.created_at).toISOString() : null,
     updated_at: tree.updated_at ? new Date(tree.updated_at).toISOString() : null,
   };

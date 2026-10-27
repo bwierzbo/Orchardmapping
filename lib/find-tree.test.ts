@@ -75,3 +75,14 @@ describe('findTrees', () => {
     expect(ids('9999')).toEqual([]);
   });
 });
+
+describe('findTrees with grafts', () => {
+  it('finds a tree by a variety grafted onto it', () => {
+    const trees: FindableTree[] = [
+      { tree_id: 'FHO-001-0042', tree_no: 42, row_id: '4', position: '2', variety: 'Gala', graft_varieties: ['Chehalis'] },
+      { tree_id: 'FHO-001-0043', tree_no: 43, row_id: '4', position: '3', variety: 'Gala' },
+    ];
+    expect(findTrees(trees, 'chehalis').trees.map((t) => t.tree_id)).toEqual(['FHO-001-0042']);
+    expect(findTrees(trees, 'gala').trees.map((t) => t.tree_id)).toEqual(['FHO-001-0042', 'FHO-001-0043']);
+  });
+});
