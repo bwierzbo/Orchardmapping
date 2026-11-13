@@ -355,6 +355,16 @@ export async function applyTreeEdits(
 }
 
 /**
+ * The orchard a group action belongs to, or null if there is no such
+ * action. Undo is addressed by the action's number alone, so the caller
+ * needs this to check membership before anything is reverted.
+ */
+export async function groupActionOrchard(groupId: number): Promise<string | null> {
+  const { rows } = await sql`SELECT orchard_id FROM group_actions WHERE id = ${groupId}`;
+  return rows.length > 0 ? String(rows[0].orchard_id) : null;
+}
+
+/**
  * Undo a group action. log_event: mark the fan-out events undone (hidden
  * from history, kept for audit). set_field and edit_trees: revert each
  * tree whose current value still equals what the action set — trees

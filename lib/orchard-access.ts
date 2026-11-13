@@ -229,6 +229,20 @@ export async function assertTreeAccess(
 }
 
 /**
+ * Whether a tree stands in this orchard.
+ *
+ * For input that names both: checking the orchard says nothing about a
+ * tree id sent beside it, and checking the tree says nothing about the
+ * orchard. Removed trees count -- they keep their orchard and history.
+ */
+export async function treeInOrchard(treeId: string, orchardId: string): Promise<boolean> {
+  const { rows } = await sql`
+    SELECT 1 FROM trees WHERE tree_id = ${treeId} AND orchard_id = ${orchardId} LIMIT 1
+  `;
+  return rows.length > 0;
+}
+
+/**
  * Tree access for a route that has not established a user yet.
  * Signs the caller in first, so a signed-out request gets 401 rather
  * than the 404 a non-member sees.

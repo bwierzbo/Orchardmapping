@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireSession } from '@/lib/api-auth';
 import { handleApiError } from '@/lib/api-errors';
-import { undoGroupAction } from '@/lib/db/group-actions';
+import { groupActionOrchard, undoGroupAction } from '@/lib/db/group-actions';
+import { orchardRole, roleAtLeast } from '@/lib/orchard-access';
 
 /**
  * POST /api/group-actions/[id]/undo
@@ -21,6 +22,22 @@ export async function POST(
     const groupId = Number(id);
     if (!Number.isInteger(groupId) || groupId <= 0) {
       return NextResponse.json({ error: 'Invalid action id' }, { status: 400 });
+    }
+
+    // The action is named by number alone, so its orchard is resolved
+    // here and membership checked before anything is reverted. Someone
+    // outside the orchard gets the same answer as for a number that does
+    // not exist: the route should not confirm another orchard's actions.
+    const orchardId = await groupActionOrchard(groupId);
+    const role = orchardId ? await orchardRole(orchardId, userId) : null;
+    if (!role) {
+      return NextResponse.json({ error: 'Action not found' }, { status: 404 });
+    }
+    if (!roleAtLeast(role, 'operator')) {
+      return NextResponse.json(
+        { error: `This needs operator access. You have ${role}.` },
+        { status: 403 }
+      );
     }
 
     const result = await undoGroupAction(groupId, userId);
