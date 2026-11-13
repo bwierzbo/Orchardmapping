@@ -2,7 +2,7 @@
 
 *First written 13 November 2026, from an audit of the code. There was no list before this one.*
 
-How to read this: **Next** is the order to work in. **Open** is everything unfinished, with the evidence. Nothing here has been fixed yet — this file only records what was found.
+How to read this: **Next** is the order to work in. **Open** is everything unfinished, with the evidence. Items move to **Done** with a note of what was changed.
 
 ---
 
@@ -10,8 +10,8 @@ How to read this: **Next** is the order to work in. **Open** is everything unfin
 
 | Order | Item | Why now | Size |
 |---|---|---|---|
-| 1 | **1–5** Close the cross-orchard holes | A signed-in person can change or read another orchard's data in five places. | Small each |
-| 2 | **10** Tests for the access guards | The whole tenant boundary (`lib/orchard-access.ts`) has no tests, which is how 1–5 went unnoticed. | Medium |
+| — | ~~**1–5** Close the cross-orchard holes~~ | Fixed 13 November 2026 on the working branch; see Done. Not yet merged or deployed. | — |
+| 2 | **10** Tests for the access guards | The whole tenant boundary (`lib/orchard-access.ts`) has no tests, which is how 1–5 went unnoticed. The fixes for 1–5 test their input rules only; the guards themselves need a test database. | Medium |
 | 3 | **6** Decide what the variety pages show the public | They are open to anyone and list every grower's site name. | Small |
 | 4 | **7–9** Lesser access gaps | Global walk settings, upload tokens, weather ingest token. | Small each |
 | 5 | **11** Correct `CLAUDE.md` and the README | Five statements in the project guide are wrong, and it is what every future change is written from. | Small |
@@ -27,15 +27,10 @@ How to read this: **Next** is the order to work in. **Open** is everything unfin
 
 ### Access — one orchard reaching another
 
-Found by reading every route, procedure and page: 30 REST handlers, 73 tRPC procedures, 23 pages. Items 1 and 2 were re-read by hand and confirmed. The instance is invite-only, so the people able to do these are people who were invited.
+Found by reading every route, procedure and page: 30 REST handlers, 73 tRPC procedures, 23 pages. Items 1–5, the cases where one orchard's member could write to or read another orchard, are fixed and listed under Done. The instance is invite-only, so the people able to do these are people who were invited.
 
 | # | Severity | Where | What is exposed | To whom |
 |---|---|---|---|---|
-| 1 | High | `app/api/group-actions/[id]/undo/route.ts:17` → `lib/db/group-actions.ts:365` | Undo any orchard's group action by its number: reverts tree edits, hides harvest records and events. Only a session is checked; the action's orchard never is. | Any signed-in user, member of nothing |
-| 2 | High | `lib/trpc/router.ts:309` (`tree.create`), `lib/trpc/init.ts:73` | Create trees in another orchard, using up its permanent tree numbers. The guard checks `orchardId` if sent; the insert uses `orchard_id`. Send both and they can differ. | An operator of any one orchard |
-| 3 | High | `lib/trpc/router.ts:991` (`pest.observe`) → `lib/db/pests.ts:141` | Write pest observations, with notes and photos, into another orchard. Only the tree is checked; the orchard written to comes from the request. Also makes an observation without a tree impossible. | An operator of any one orchard |
-| 4 | Medium | `lib/trpc/router.ts:1340` (`trap.recordCounts`) → `lib/db/traps.ts:171` | Create or overwrite trap counts in another orchard, which can trip that orchard's spray thresholds. The orchard is checked, each trap is not. | An operator of any one orchard |
-| 5 | Medium | `lib/trpc/router.ts:512` (`tree.lastObservation`) → `lib/db/last-observation.ts:46` | Read any tree's latest fruit check, observation, condition and bloom. | A viewer of any one orchard |
 | 6 | Medium | `app/varieties/page.tsx:36`, `app/varieties/[name]/page.tsx:96`, `lib/db/varieties.ts:198` | Every grower's site name with tree counts per variety; counts summed across all orchards; site-scoped variety observations (juice chemistry). | Anyone, not signed in |
 | 7 | Low | `app/api/settings/route.ts:9,22` | Read (no sign-in) and rewrite the walk settings every orchard shares. | Any signed-in user |
 | 8 | Low | `app/api/weather/ingest/route.ts:38` | One shared token for all orchards, also accepted in the URL (so it reaches logs); the orchard comes from the request. On-site weather outranks every other source for scab and leaf wetness. | Anyone holding the token |
@@ -77,4 +72,18 @@ Checked and sound: every page under `/orchard/[id]`; listings on home, harvest a
 
 ## Done
 
-Nothing yet — this list starts here. Recent shipped work is in the commit history (#66–#91: harvest targets and calendar, per-tree harvest, walk surveys, tree replacement, grafts).
+### 1–5 — Cross-orchard holes, fixed 13 November 2026
+
+Checked with typecheck, lint and the unit tests (952 passing). Not exercised against a database: the rules that read input are unit-tested in `lib/tenant-input.test.ts`; the queries are not.
+
+| # | Was | What was changed |
+|---|---|---|
+| 1 | Any signed-in user could undo any orchard's group action by its number. | `app/api/group-actions/[id]/undo/route.ts` now looks up the action's orchard (`groupActionOrchard`, new in `lib/db/group-actions.ts`) and requires operator access to it before reverting anything. Someone outside the orchard gets "Action not found", the same as for a number that does not exist. |
+| 2 | An operator of one orchard could create trees in another by sending `orchardId` and `orchard_id` with different values. | The guard in `lib/trpc/init.ts` now refuses a request whose two spellings disagree (`namedOrchardId`, new in `lib/tenant-input.ts`), which covers every orchard-guarded procedure, not only this one. `tree.create` also writes to the orchard the guard checked instead of the one in the body. |
+| 3 | An operator of one orchard could write pest observations into another; and logging a sighting from a pest's page, which sends no tree, was refused outright. | `pest.observe` is now guarded by the orchard it writes to. A tree, when named, must stand in that orchard (`treeInOrchard`, new in `lib/orchard-access.ts`). The sighting is written to the checked orchard. The pest-page form works again as a side effect. |
+| 4 | An operator of one orchard could create or overwrite trap counts in another. | `trap.recordCounts` checks every trap id against the orchard (`trapsOutsideOrchard`, new in `lib/db/traps.ts`) before writing any count, and refuses the whole round if one is foreign. |
+| 5 | A viewer of one orchard could read any tree's latest observations. | `tree.lastObservation` is now guarded by the tree it reads, not by the orchard named beside it. |
+
+### Earlier
+
+Recent shipped work is in the commit history (#66–#91: harvest targets and calendar, per-tree harvest, walk surveys, tree replacement, grafts).

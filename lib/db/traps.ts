@@ -1,5 +1,6 @@
 import { sql } from '@vercel/postgres';
 import { isTrapType, type TrapCatch, type TrapType } from '../traps';
+import { idsOutside } from '../tenant-input';
 
 /**
  * Traps and their counts. The trap vocabulary is pure (lib/traps.ts)
@@ -165,6 +166,20 @@ export async function retireTrap(id: number, removedOn: string): Promise<boolean
     WHERE id = ${id} AND removed_on IS NULL
   `;
   return (rowCount ?? 0) > 0;
+}
+
+/**
+ * Which of these trap ids do not belong to the orchard. Trap ids arrive
+ * in a request body, so belonging has to be established before a count
+ * is written against them.
+ */
+export async function trapsOutsideOrchard(orchardId: string, trapIds: number[]): Promise<number[]> {
+  if (trapIds.length === 0) return [];
+  const { rows } = await sql`
+    SELECT id FROM traps
+    WHERE orchard_id = ${orchardId} AND id = ANY(${trapIds as unknown as string}::int[])
+  `;
+  return idsOutside(trapIds, rows.map((r) => Number(r.id)));
 }
 
 /** Record a count. Re-counting the same day corrects it. */

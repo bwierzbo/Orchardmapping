@@ -16,7 +16,12 @@ import {
   nutritionOperatorProcedure,
   nutritionIntoProgramProcedure,
 } from './init';
-import { memberOrchardConfigs, roleAtLeast, ORCHARD_ROLES } from '@/lib/orchard-access';
+import {
+  memberOrchardConfigs,
+  roleAtLeast,
+  treeInOrchard,
+  ORCHARD_ROLES,
+} from '@/lib/orchard-access';
 import {
   listMembers,
   listPendingInvitations,
@@ -112,7 +117,14 @@ import { completeStep, setStepEnabled, uncompleteStep } from '@/lib/db/program';
 import { summariseSchedule } from '@/lib/db/schedule';
 import { recordTissueTest, recordSoilTest, setOrchardIntent } from '@/lib/db/nutrition';
 import { FRUIT_PURPOSES, NUTRIENTS, OPERATION_SCALES } from '@/lib/nutrition';
-import { addTrap, listTraps, moveTrap, recordCount, retireTrap } from '@/lib/db/traps';
+import {
+  addTrap,
+  listTraps,
+  moveTrap,
+  recordCount,
+  retireTrap,
+  trapsOutsideOrchard,
+} from '@/lib/db/traps';
 import { TRAP_TYPES } from '@/lib/traps';
 import { PHENOLOGY_STAGES } from '@/lib/phenology';
 import {
@@ -343,6 +355,8 @@ export const appRouter = router({
         }
         const treeData: TreeInsertData = {
           ...input,
+          // The orchard the guard checked, not whatever the body carried.
+          orchard_id: ctx.orchardId,
           // YYYY-MM-DD strings go to Postgres verbatim (never new Date())
           planted_date: input.planted_date || undefined,
           last_pruned: input.last_pruned || undefined,
@@ -509,7 +523,9 @@ export const appRouter = router({
      * What this tree showed last time, for the walk to show beside its
      * empty fields. Never prefilled into them: see lib/db/last-observation.
      */
-    lastObservation: orchardViewerProcedure
+    // Guarded by the tree, not by the orchard named beside it: the
+    // history is read by tree id, so that is the id that must be checked.
+    lastObservation: treeViewerProcedure
       .input(z.object({ orchardId: z.string().min(1), treeId: z.string().min(1) }))
       .query(({ input }) => lastObservationForTree(input.treeId)),
 
@@ -988,7 +1004,7 @@ export const appRouter = router({
 
     /** Log a sighting — this is both the scouting record and the photo
      *  that grows the orchard's own reference collection. */
-    observe: treeOperatorProcedure
+    observe: orchardOperatorProcedure
       .input(
         z.object({
           orchardId: z.string().min(1),
@@ -1000,9 +1016,18 @@ export const appRouter = router({
           notes: z.string().max(2000).optional(),
         }),
       )
-      .mutation(async ({ input, ctx }) =>
-        insertObservation({ ...input, createdBy: ctx.userId ?? null }),
-      ),
+      .mutation(async ({ input, ctx }) => {
+        // A sighting need not be at a tree, so the orchard is what the
+        // guard checks. A tree, when named, must stand in that orchard.
+        if (input.treeId && !(await treeInOrchard(input.treeId, ctx.orchardId))) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Tree not found.' });
+        }
+        return insertObservation({
+          ...input,
+          orchardId: ctx.orchardId,
+          createdBy: ctx.userId ?? null,
+        });
+      }),
 
     deleteObservation: recordOperatorProcedure('pestObservation')
       .input(z.object({ id: z.number().int().positive() }))
@@ -1354,6 +1379,16 @@ export const appRouter = router({
         }),
       )
       .mutation(async ({ input, ctx }) => {
+        // Every trap must hang in the orchard the guard checked, and all
+        // are checked before any is written: counts are an upsert, so a
+        // stray id would overwrite another orchard's record.
+        const strangers = await trapsOutsideOrchard(
+          ctx.orchardId,
+          input.entries.map((e) => e.trapId),
+        );
+        if (strangers.length > 0) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Trap not found.' });
+        }
         for (const e of input.entries) {
           await recordCount({
             trapId: e.trapId,

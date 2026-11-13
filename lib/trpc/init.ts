@@ -3,6 +3,7 @@ import { auth } from '@clerk/nextjs/server';
 import { sql } from '@vercel/postgres';
 import superjson from 'superjson';
 import { orchardRole, roleAtLeast, isGlobalAdmin, type OrchardRole } from '@/lib/orchard-access';
+import { namedOrchardId } from '@/lib/tenant-input';
 
 /**
  * tRPC foundation, mirroring CiderPilot's packages/api/src/trpc.ts.
@@ -66,15 +67,19 @@ function orchardAccess(required: OrchardRole) {
     if (!ctx.userId) {
       throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Please sign in.' });
     }
-    // Both spellings are in use across the router.
-    const raw = (await getRawInput()) as
-      | { orchardId?: unknown; orchard_id?: unknown }
-      | null;
-    const named = raw?.orchardId ?? raw?.orchard_id;
-    const orchardId = typeof named === 'string' ? named : '';
-    if (!orchardId) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'orchardId is required.' });
+    // Both spellings are in use across the router, and a request may not
+    // use them to name two orchards: see namedOrchardId.
+    const named = namedOrchardId(await getRawInput());
+    if (!named.ok) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message:
+          named.reason === 'conflict'
+            ? 'orchardId and orchard_id name different orchards.'
+            : 'orchardId is required.',
+      });
     }
+    const orchardId = named.orchardId;
     const role = await orchardRole(orchardId, ctx.userId);
     if (!role) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Orchard not found.' });
