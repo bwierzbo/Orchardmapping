@@ -19,6 +19,7 @@ import { orchardRegion, listRegions } from '@/lib/db/regions';
 import StageCard from './StageCard';
 import DueNowCard from './DueNowCard';
 import FeatureToggles from './FeatureToggles';
+import CiderPilotLink from './CiderPilotLink';
 import { roleAtLeast, memberOrchardConfigs } from '@/lib/orchard-access';
 
 // Live DB data; never prerender at build time
@@ -224,6 +225,8 @@ export default async function DashboardPage({ params }: PageProps) {
           nutritionEnabled={orchard.nutritionEnabled}
           canEdit={!!role && roleAtLeast(role, 'admin')}
         />
+
+        {!!role && roleAtLeast(role, 'admin') && <CiderPilotLink orchardId={orchard.id} />}
 
         <div className="mt-4">
           <RegionCard

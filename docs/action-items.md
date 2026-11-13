@@ -15,7 +15,7 @@ How to read this: **Next** is the order to work in. **Open** is everything unfin
 | 3 | **6** Decide what the variety pages show the public | They are open to anyone and list every grower's site name. | Small |
 | 4 | **7–9** Lesser access gaps | Global walk settings, upload tokens, weather ingest token. | Small each |
 | 5 | **11** Correct `CLAUDE.md` and the README | Five statements in the project guide are wrong, and it is what every future change is written from. | Small |
-| 6 | **20** CiderPilot link, OrchardMap side | Waits on CiderPilot's inbox; builds on a clean access layer. | Medium |
+| 6 | **20** CiderPilot link, OrchardMap side | Sender built 13 November 2026; price sharing and read-back remain. | Medium |
 | 7 | **12** Finish the move to tRPC | Thirteen REST routes still carry writes; four are dead. Each REST write route is one more place a guard can be forgotten (item 1 was one). | Medium |
 | 8 | **13** Region settings that are recorded but unread | The region card promises settings the models do not use. | Medium |
 | 9 | **14, 15** Clear out stale docs and scripts | Eleven docs describe a system that no longer exists. | Small |
@@ -66,7 +66,7 @@ Checked and sound: every page under `/orchard/[id]`; listings on home, harvest a
 
 | # | Item | Status | What to do here |
 |---|---|---|---|
-| 20 | CiderPilot link | Designed 2026-11-13, not started. Full summary is item 25 in CiderPilot's `docs/cidery-app-action-items.md`. | Send each pick (and its edits and undos) to CiderPilot's inbox, keyed by harvest id. Show received weight and yield beside picks. Show and edit price only for people CiderPilot confirms are cidery staff; nobody else, including the orchard's own admin, sees it. Queue a price entered without signal and apply it only if nothing newer was saved. Later: send predicted pick dates and tree counts per variety for CiderPilot's planning. |
+| 20 | CiderPilot link | **Sender built 2026-11-13** on the working branch, not merged. Migration 078 not applied. Price sharing not started. | **Done:** each harvest (per tree or group) is sent to CiderPilot as a pick keyed by its id; edits re-send, undos withdraw, and a pick the cidery has received is left alone (`lib/ciderpilot-sync.ts`, `lib/db/ciderpilot.ts`). Off per orchard by default; an admin turns it on from the dashboard, and only harvests from that day on are sent. Connection is `CIDERPILOT_URL` and `CIDERPILOT_TOKEN` in the environment. **To do:** show received weight and yield beside picks; show and edit price for people CiderPilot confirms are cidery staff, queued when offline; later, send predicted pick dates and tree counts for CiderPilot's planning. **To deploy:** apply 078, set the two variables in Vercel, and merge CiderPilot PR #424 with its migration 0229. |
 
 ---
 
