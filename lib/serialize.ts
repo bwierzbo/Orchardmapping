@@ -29,6 +29,7 @@ export function serializeTree(tree: Tree): ClientTree {
     last_harvest: toYMD(tree.last_harvest),
     harvest_completed_on: toYMD(tree.harvest_completed_on),
     main_harvest_completed_on: toYMD(tree.main_harvest_completed_on),
+    bloom_indicator: tree.bloom_indicator === true,
     yield_estimate: tree.yield_estimate ?? null,
     notes: tree.notes ?? null,
     rootstock: tree.rootstock ?? null,

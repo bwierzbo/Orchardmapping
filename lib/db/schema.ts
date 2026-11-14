@@ -13,6 +13,7 @@ import {
   date,
   timestamp,
   jsonb,
+  boolean,
   uniqueIndex,
   index,
 } from 'drizzle-orm/pg-core';
@@ -89,6 +90,8 @@ export const trees = pgTable(
     harvestCompletedOn: date('harvest_completed_on'),
     /** The tree's own variety picked out; a grafted tree closes by variety (076). */
     mainHarvestCompletedOn: date('main_harvest_completed_on'),
+    /** Watched for full bloom each spring; the rest are estimated from it (079). */
+    bloomIndicator: boolean('bloom_indicator').notNull().default(false),
     yieldEstimate: decimal('yield_estimate', { precision: 8, scale: 2 }),
     notes: text('notes'),
     rootstock: varchar('rootstock', { length: 100 }),

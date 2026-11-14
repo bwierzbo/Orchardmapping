@@ -90,6 +90,8 @@ export default function HarvestCalendar({
           purpose,
           year,
           bloom: r.bloom ? new Date(`${r.bloom}T00:00:00Z`) : null,
+          bloomSource: r.bloomSource ?? undefined,
+          bloomByGroup: r.bloomByGroup,
         });
         return { row: r, prediction, certainty: certaintyOf(prediction) };
       })

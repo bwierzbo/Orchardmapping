@@ -61,6 +61,8 @@ export interface Tree {
   harvest_completed_on?: Date | string | null;
   /** The tree's own variety picked out; differs from the above only when grafted (076). */
   main_harvest_completed_on?: Date | string | null;
+  /** Watched for full bloom each spring (079); set only through setBloomIndicator. */
+  bloom_indicator?: boolean;
   yield_estimate?: number;
   notes?: string;
   rootstock?: string;
@@ -850,4 +852,56 @@ export async function bulkUpsertTrees(
   } finally {
     client.release();
   }
+}
+
+/**
+ * Make a tree one of the orchard's bloom indicators, or stop. Recorded in
+ * the tree's history like any other change. Returns false when there is no
+ * such standing tree.
+ */
+export async function setBloomIndicator(
+  treeId: string,
+  on: boolean,
+  userId: string | null,
+): Promise<boolean> {
+  const { rows } = await sql`
+    UPDATE trees SET bloom_indicator = ${on}, updated_at = NOW()
+    WHERE tree_id = ${treeId} AND removed_on IS NULL AND bloom_indicator IS DISTINCT FROM ${on}
+    RETURNING tree_id, orchard_id
+  `;
+  if (rows.length === 0) {
+    const { rows: exists } = await sql`SELECT 1 FROM trees WHERE tree_id = ${treeId} AND removed_on IS NULL`;
+    return exists.length > 0;
+  }
+  await insertTreeEvent(
+    {
+      tree_id: String(rows[0].tree_id),
+      orchard_id: String(rows[0].orchard_id),
+      event_type: 'updated',
+      detail: on ? 'Made a bloom indicator' : 'No longer a bloom indicator',
+      changes: { bloom_indicator: { from: !on, to: on } },
+      created_by: userId ?? undefined,
+    },
+    { bestEffort: true },
+  );
+  return true;
+}
+
+/** The orchard's standing bloom-indicator trees, with their variety. */
+export async function listBloomIndicators(
+  orchardId: string,
+): Promise<{ treeId: string; variety: string | null; block: string | null; row: string | null; position: string | null }[]> {
+  const { rows } = await sql`
+    SELECT tree_id, variety, block_id, row_id, position
+    FROM trees
+    WHERE orchard_id = ${orchardId} AND bloom_indicator AND removed_on IS NULL
+    ORDER BY variety NULLS LAST, tree_id
+  `;
+  return rows.map((r) => ({
+    treeId: String(r.tree_id),
+    variety: r.variety == null ? null : String(r.variety),
+    block: r.block_id == null ? null : String(r.block_id),
+    row: r.row_id == null ? null : String(r.row_id),
+    position: r.position == null ? null : String(r.position),
+  }));
 }

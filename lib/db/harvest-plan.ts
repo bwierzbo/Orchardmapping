@@ -7,6 +7,7 @@
 import { sql } from '@vercel/postgres';
 import { harvestPurposeFor, type HarvestPurpose, type TargetBasis } from '../harvest-target';
 import { asFruitPurpose } from '../nutrition';
+import { estimateBloomDoy, referenceBloomDoy } from '../bloom-estimate';
 
 export interface HarvestPlanRow {
   variety: string;
@@ -18,8 +19,12 @@ export interface HarvestPlanRow {
   ripensHere: boolean;
   /** The library's own words, kept beside anything derived from them. */
   harvestWindow: string | null;
-  /** Observed full bloom for this variety this season, if a mark exists. */
+  /** Full bloom for this variety this season: seen, or estimated from indicators. */
   bloom: string | null;
+  /** How `bloom` is known; null when it is not (the regional average is then used). */
+  bloomSource: 'recorded' | 'estimated' | null;
+  /** An estimated bloom placed only by flowering group (rougher). */
+  bloomByGroup: boolean;
   /** Trees carrying the variety, a tree with a graft of it included. */
   treeCount: number;
   /** Of those, how many carry it only as a graft (076). */
@@ -63,32 +68,21 @@ export async function harvestPlan(
       WHERE purpose = ${purpose}
       ORDER BY lower(btrim(variety)), (site_id IS NULL)
     ),
-    -- Full bloom recorded for this variety this season, in any of these
-    -- orchards. The earliest, since a variety blooms across a few days.
-    bloom AS (
-      SELECT lower(btrim(variety)) AS key, min(observed_on) AS observed_on
-      FROM phenology_marks
-      WHERE stage = 'full_bloom'
-        AND orchard_id = ANY(${orchardIds as unknown as string})
-        AND date_part('year', observed_on) = ${year}
-        AND btrim(COALESCE(variety, '')) <> ''
-      GROUP BY lower(btrim(variety))
-    ),
     library AS (
       SELECT DISTINCT ON (lower(btrim(variety)))
-             lower(btrim(variety)) AS key, harvest_window
+             lower(btrim(variety)) AS key, harvest_window, ref_bloom_mmdd, flowering_group
       FROM variety_attributes
       ORDER BY lower(btrim(variety)), (site_id IS NULL)
     )
     SELECT p.variety, p.tree_count, p.graft_count, p.orchard_count, p.fruit_type,
            tg.days_from_bloom, tg.basis, tg.detail, tg.ripens_here,
-           lb.harvest_window, bl.observed_on
+           lb.harvest_window, lb.ref_bloom_mmdd, lb.flowering_group
     FROM planted p
     LEFT JOIN target  tg ON tg.key = lower(p.variety)
-    LEFT JOIN bloom   bl ON bl.key = lower(p.variety)
     LEFT JOIN library lb ON lb.key = lower(p.variety)
     ORDER BY tg.days_from_bloom NULLS LAST, p.variety
   `;
+  const blooms = await bloomsThisSeason(orchardIds, year);
 
   return rows.map((r) => ({
     variety: String(r.variety),
@@ -97,7 +91,10 @@ export async function harvestPlan(
     detail: r.detail == null ? null : String(r.detail),
     ripensHere: r.ripens_here !== false,
     harvestWindow: r.harvest_window == null ? null : String(r.harvest_window),
-    bloom: r.observed_on == null ? null : String(r.observed_on).slice(0, 10),
+    ...bloomFor(String(r.variety), referenceBloomDoy({
+      refBloomMmdd: r.ref_bloom_mmdd == null ? null : String(r.ref_bloom_mmdd),
+      floweringGroup: r.flowering_group == null ? null : Number(r.flowering_group),
+    }), blooms, year),
     treeCount: Number(r.tree_count ?? 0),
     graftCount: Number(r.graft_count ?? 0),
     orchardCount: Number(r.orchard_count ?? 0),
@@ -141,27 +138,36 @@ export async function predictedPickFor(
       WHERE lower(btrim(variety)) = lower(${name}) AND purpose = ${purpose}
       ORDER BY lower(btrim(variety)), (site_id IS NULL)
     ),
-    bloom AS (
-      SELECT min(observed_on) AS observed_on
-      FROM phenology_marks
-      WHERE stage = 'full_bloom'
-        AND orchard_id = ${orchardId}
-        AND date_part('year', observed_on) = ${year}
-        AND lower(btrim(COALESCE(variety, ''))) = lower(${name})
+    library AS (
+      SELECT DISTINCT ON (lower(btrim(variety))) ref_bloom_mmdd, flowering_group
+      FROM variety_attributes
+      WHERE lower(btrim(variety)) = lower(${name})
+      ORDER BY lower(btrim(variety)), (site_id IS NULL)
     )
-    SELECT t.days_from_bloom, t.basis, b.observed_on
-    FROM target t LEFT JOIN bloom b ON TRUE
+    SELECT t.days_from_bloom, t.basis, l.ref_bloom_mmdd, l.flowering_group
+    FROM target t LEFT JOIN library l ON TRUE
   `;
   const row = rows[0];
   if (!row || row.days_from_bloom == null) return null;
 
+  const bloom = bloomFor(
+    name,
+    referenceBloomDoy({
+      refBloomMmdd: row.ref_bloom_mmdd == null ? null : String(row.ref_bloom_mmdd),
+      floweringGroup: row.flowering_group == null ? null : Number(row.flowering_group),
+    }),
+    await bloomsThisSeason([orchardId], year),
+    year,
+  );
   const { predictHarvest } = await import('../harvest-predict');
   const prediction = predictHarvest({
     daysFromBloom: Number(row.days_from_bloom),
     basis: row.basis as TargetBasis,
     purpose,
     year,
-    bloom: row.observed_on ? new Date(`${String(row.observed_on).slice(0, 10)}T00:00:00Z`) : null,
+    bloom: bloom.bloom ? new Date(`${bloom.bloom}T00:00:00Z`) : null,
+    bloomSource: bloom.bloomSource ?? undefined,
+    bloomByGroup: bloom.bloomByGroup,
   });
   return {
     centre: prediction.window.centre.toISOString().slice(0, 10),
@@ -169,4 +175,85 @@ export async function predictedPickFor(
     bloomRecorded: prediction.bloomSource === 'recorded',
     purpose,
   };
+}
+
+/**
+ * Full bloom recorded this season in these orchards, per variety (lower-
+ * cased name), the earliest across orchards, with each variety's place in
+ * the reference bloom order.
+ *
+ * A stage marked from the dashboard names its variety in scope_value (046);
+ * the variety column (066) is read too, for marks that carry it.
+ */
+async function bloomsThisSeason(
+  orchardIds: string[],
+  year: number,
+): Promise<Map<string, { observedOn: string; referenceDoy: number | null }>> {
+  if (orchardIds.length === 0) return new Map();
+  const { rows } = await sql`
+    WITH marks AS (
+      SELECT lower(btrim(COALESCE(NULLIF(btrim(variety), ''),
+                                  CASE WHEN scope = 'variety' THEN scope_value END))) AS key,
+             min(observed_on) AS observed_on
+      FROM phenology_marks
+      WHERE stage = 'full_bloom'
+        AND orchard_id = ANY(${orchardIds as unknown as string})
+        AND date_part('year', observed_on) = ${year}
+      GROUP BY 1
+    ),
+    library AS (
+      SELECT DISTINCT ON (lower(btrim(variety)))
+             lower(btrim(variety)) AS key, ref_bloom_mmdd, flowering_group
+      FROM variety_attributes
+      ORDER BY lower(btrim(variety)), (site_id IS NULL)
+    )
+    SELECT m.key, to_char(m.observed_on, 'YYYY-MM-DD') AS observed_on,
+           l.ref_bloom_mmdd, l.flowering_group
+    FROM marks m LEFT JOIN library l ON l.key = m.key
+    WHERE COALESCE(m.key, '') <> ''
+  `;
+  return new Map(
+    rows.map((r) => [
+      String(r.key),
+      {
+        observedOn: String(r.observed_on),
+        referenceDoy:
+          referenceBloomDoy({
+            refBloomMmdd: r.ref_bloom_mmdd == null ? null : String(r.ref_bloom_mmdd),
+            floweringGroup: r.flowering_group == null ? null : Number(r.flowering_group),
+          })?.doy ?? null,
+      },
+    ]),
+  );
+}
+
+/**
+ * A variety's full bloom this season: seen for it, else estimated from the
+ * varieties seen in bloom (the indicators), else unknown.
+ */
+function bloomFor(
+  variety: string,
+  reference: { doy: number; byGroup: boolean } | null,
+  blooms: Map<string, { observedOn: string; referenceDoy: number | null }>,
+  year: number,
+): { bloom: string | null; bloomSource: 'recorded' | 'estimated' | null; bloomByGroup: boolean } {
+  const seen = blooms.get(variety.trim().toLowerCase());
+  if (seen) return { bloom: seen.observedOn, bloomSource: 'recorded', bloomByGroup: false };
+  if (reference == null) return { bloom: null, bloomSource: null, bloomByGroup: false };
+  const indicators = [...blooms.values()]
+    .filter((b) => b.referenceDoy != null)
+    .map((b) => ({ referenceDoy: b.referenceDoy!, observedDoy: dayOfYearOf(b.observedOn) }));
+  const doy = estimateBloomDoy(reference.doy, indicators);
+  if (doy == null) return { bloom: null, bloomSource: null, bloomByGroup: false };
+  return {
+    bloom: new Date(Date.UTC(year, 0, doy)).toISOString().slice(0, 10),
+    bloomSource: 'estimated',
+    bloomByGroup: reference.byGroup,
+  };
+}
+
+/** Day of the year of a YYYY-MM-DD date; 1 January is day 1. */
+function dayOfYearOf(ymd: string): number {
+  const d = new Date(`${ymd}T00:00:00Z`);
+  return Math.round((d.getTime() - Date.UTC(d.getUTCFullYear(), 0, 1)) / 86_400_000) + 1;
 }

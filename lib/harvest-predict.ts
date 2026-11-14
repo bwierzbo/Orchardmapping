@@ -17,7 +17,7 @@ import {
 } from './harvest-target';
 
 /** Where the bloom date came from. */
-export type BloomSource = 'recorded' | 'regional';
+export type BloomSource = 'recorded' | 'estimated' | 'regional';
 
 /**
  * Half-width of the uncertainty, in days, for each interval basis when the
@@ -43,6 +43,20 @@ const CONFIDENCE_BY_BASIS: Record<TargetBasis, number> = {
 export const ASSUMED_BLOOM_PENALTY_DAYS = 7;
 
 /**
+ * Added when the bloom date was estimated from indicator varieties seen in
+ * bloom this spring (lib/bloom-estimate.ts) rather than seen for this
+ * variety: the spring is known, only the variety's place in it is inferred.
+ */
+export const ESTIMATED_BLOOM_PENALTY_DAYS = 3;
+
+/**
+ * Added on top when the variety's place in the bloom order comes only from
+ * its published flowering group, not a reference bloom date: the group fit
+ * misses by about a week (lib/bloom-estimate.ts, GROUP_REFERENCE_DOY).
+ */
+export const GROUP_PLACEMENT_PENALTY_DAYS = 7;
+
+/**
  * Past this date, a maritime western Washington season is running out of
  * heat. The variety library says as much in its own words -- "In western
  * Washington full maturity is not reliable every year" -- and a prediction
@@ -58,8 +72,12 @@ export interface PredictInput {
   purpose: HarvestPurpose;
   /** The season being predicted. */
   year: number;
-  /** Observed full bloom for this variety, if a mark has been recorded. */
+  /** Full bloom for this variety this spring, if known. */
   bloom?: Date | null;
+  /** How `bloom` is known: seen for this variety (default), or estimated from indicators. */
+  bloomSource?: 'recorded' | 'estimated';
+  /** For an estimated bloom: placed only by flowering group, not a reference date. */
+  bloomByGroup?: boolean;
 }
 
 export interface Prediction {
@@ -88,14 +106,18 @@ const BASIS_PHRASE: Record<TargetBasis, string> = {
 };
 
 export function predictHarvest(input: PredictInput): Prediction {
-  const bloomSource: BloomSource = input.bloom ? 'recorded' : 'regional';
+  const bloomSource: BloomSource = input.bloom ? (input.bloomSource ?? 'recorded') : 'regional';
   const bloom = input.bloom ?? dateFromDayOfYear(input.year, REGIONAL_BLOOM_DOY);
 
   const window = harvestWindowFor(bloom, input.daysFromBloom, input.purpose);
 
   const confidenceDays =
     CONFIDENCE_BY_BASIS[input.basis] +
-    (bloomSource === 'regional' ? ASSUMED_BLOOM_PENALTY_DAYS : 0);
+    (bloomSource === 'regional'
+      ? ASSUMED_BLOOM_PENALTY_DAYS
+      : bloomSource === 'estimated'
+        ? ESTIMATED_BLOOM_PENALTY_DAYS + (input.bloomByGroup ? GROUP_PLACEMENT_PENALTY_DAYS : 0)
+        : 0);
 
   // The risk is about the window closing too late to ripen, so it is the
   // END of the window that matters, not the centre.
@@ -107,7 +129,9 @@ export function predictHarvest(input: PredictInput): Prediction {
   const bloomPhrase =
     bloomSource === 'recorded'
       ? 'bloom recorded here'
-      : 'bloom assumed from the regional average (8 May) — none recorded';
+      : bloomSource === 'estimated'
+        ? 'bloom estimated from the indicator varieties seen in bloom here'
+        : 'bloom assumed from the regional average (8 May) — none recorded';
 
   const note = `From ${BASIS_PHRASE[input.basis]}, ${bloomPhrase}. ±${confidenceDays} days.`;
 
