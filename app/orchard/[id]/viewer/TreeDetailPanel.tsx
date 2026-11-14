@@ -320,6 +320,24 @@ export default function TreeDetailPanel({
     }
   };
 
+  const [settingIndicator, setSettingIndicator] = useState(false);
+  const toggleIndicator = async () => {
+    setSettingIndicator(true);
+    try {
+      await trpc.tree.setBloomIndicator.mutate({ treeId: tree.tree_id, on: !tree.bloom_indicator });
+      toast.success(
+        tree.bloom_indicator
+          ? 'No longer a bloom indicator'
+          : 'Bloom indicator: log its full bloom each spring from the dashboard',
+      );
+      onMoved();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not change this tree');
+    } finally {
+      setSettingIndicator(false);
+    }
+  };
+
   const field = (label: string, value: string | number | null | undefined) => {
     if (value === null || value === undefined || value === '') return null;
     return (
@@ -526,6 +544,26 @@ export default function TreeDetailPanel({
             {field('Last pruned', formatYMD(tree.last_pruned))}
             {field('Last harvest', formatYMD(tree.last_harvest))}
             {field('Yield estimate', tree.yield_estimate != null ? `${tree.yield_estimate} kg` : null)}
+            {(canEdit || tree.bloom_indicator) && (
+              <div className="flex items-center justify-between gap-3 py-1.5 border-b border-line">
+                <span className="text-sm text-bark" title="Full bloom on a few indicator trees places every other variety's bloom, and so its picking window.">
+                  Bloom indicator
+                </span>
+                {canEdit ? (
+                  <Button variant="ghost" size="sm" disabled={settingIndicator} onClick={toggleIndicator}>
+                    {tree.bloom_indicator ? (
+                      <>
+                        <Check aria-hidden size={14} className="mr-1" /> Watched · stop
+                      </>
+                    ) : (
+                      'Watch for full bloom'
+                    )}
+                  </Button>
+                ) : (
+                  <span className="text-sm font-medium text-ink">Watched for full bloom</span>
+                )}
+              </div>
+            )}
             <div className="py-2">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm text-bark">Notes</span>

@@ -37,6 +37,7 @@ import {
   updateTree,
   deleteTree,
   replaceTree,
+  setBloomIndicator,
   TreeInsertData,
 } from '@/lib/db/trees';
 import { replacementProblems } from '@/lib/tree-replacement';
@@ -303,6 +304,15 @@ export const appRouter = router({
      * The year comes from the caller because it is the grower's calendar
      * that decides it, not the server's clock in UTC.
      */
+    /** Make this tree one the owner watches for full bloom, or stop (079). */
+    setBloomIndicator: treeOperatorProcedure
+      .input(z.object({ treeId: z.string().min(1), on: z.boolean() }))
+      .mutation(async ({ input, ctx }) => {
+        const found = await setBloomIndicator(input.treeId, input.on, ctx.userId ?? null);
+        if (!found) throw new TRPCError({ code: 'NOT_FOUND', message: 'Tree not found' });
+        return { treeId: input.treeId, on: input.on };
+      }),
+
     harvestSeason: treeViewerProcedure
       .input(
         z.object({

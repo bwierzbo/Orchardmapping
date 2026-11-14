@@ -112,6 +112,8 @@ export interface ClientTree {
   harvest_completed_on?: string | null;
   /** The tree's own variety picked out; on a grafted tree each variety closes separately. */
   main_harvest_completed_on?: string | null;
+  /** Watched for full bloom each spring (079). */
+  bloom_indicator?: boolean;
   yield_estimate?: number | null;
   notes?: string | null;
   rootstock?: string | null;

@@ -14,6 +14,8 @@ import { orchardTimezone } from '@/lib/db/orchards';
 import StageMarker from './StageMarker';
 import RollUpPrompt from './RollUpPrompt';
 import BloomSpread from './BloomSpread';
+import BloomIndicators from './BloomIndicators';
+import { listBloomIndicators } from '@/lib/db/trees';
 
 /**
  * Where the block is in the season, and the control to record the next
@@ -30,13 +32,39 @@ export default async function StageCard({
 }) {
   const today = nowLocalIso(await orchardTimezone(orchardId)).slice(0, 10);
   const season = seasonOf(today);
-  const [marks, varieties, rollUps, blooms] = await Promise.all([
+  const [marks, varieties, rollUps, blooms, indicatorTrees] = await Promise.all([
     listMarks(orchardId).catch(() => []),
     listVarieties(orchardId).catch(() => []),
     // What walk mode has seen but the programme has not been told.
     pendingRollUps(orchardId, season).catch(() => []),
     refBlooms(orchardId).catch(() => []),
+    listBloomIndicators(orchardId).catch(() => []),
   ]);
+  // Full bloom this season per variety, as the indicators read it.
+  const fullBloom = new Map(
+    marks
+      .filter((m) => m.stage === 'full_bloom' && m.scope === 'variety' && m.scopeValue && seasonOf(m.observedOn) === season)
+      .map((m) => [m.scopeValue!.trim().toLowerCase(), m.observedOn]),
+  );
+  const indicators = indicatorTrees.map((t) => ({
+    treeId: t.treeId,
+    variety: t.variety,
+    fullBloomOn: t.variety ? (fullBloom.get(t.variety.trim().toLowerCase()) ?? null) : null,
+  }));
+  // With none chosen yet: the earliest, middle and latest planted variety
+  // in the reference bloom order, the most-planted of any that tie.
+  const dated = blooms
+    .filter((b) => b.mmdd !== null && b.trees > 0)
+    .sort((a, b) => a.mmdd!.localeCompare(b.mmdd!) || b.trees - a.trees);
+  const pickAt = (mmdd: string) => dated.filter((b) => b.mmdd === mmdd).sort((a, b) => b.trees - a.trees)[0];
+  const suggestion =
+    dated.length >= 3
+      ? [
+          pickAt(dated[0].mmdd!),
+          pickAt(dated[Math.floor(dated.length / 2)].mmdd!),
+          pickAt(dated[dated.length - 1].mmdd!),
+        ].map((b) => b.variety)
+      : [];
   const spread = refBloomSpread(blooms);
   const current = currentStage(marks, today);
   const thisSeason = marks.filter((m) => seasonOf(m.observedOn) === season);
@@ -101,6 +129,14 @@ export default async function StageCard({
       )}
 
       {spread && <BloomSpread spread={spread} />}
+
+      <BloomIndicators
+        orchardId={orchardId}
+        today={today}
+        indicators={indicators}
+        suggestion={[...new Set(suggestion)]}
+        canEdit={canEdit}
+      />
     </section>
   );
 }
