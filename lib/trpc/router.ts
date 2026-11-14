@@ -118,6 +118,12 @@ import { summariseSchedule } from '@/lib/db/schedule';
 import { recordTissueTest, recordSoilTest, setOrchardIntent } from '@/lib/db/nutrition';
 import { FRUIT_PURPOSES, NUTRIENTS, OPERATION_SCALES } from '@/lib/nutrition';
 import {
+  ciderpilotStatus,
+  setCiderpilotEnabled,
+  syncOrchardPicks,
+} from '@/lib/db/ciderpilot';
+import { CiderPilotError } from '@/lib/ciderpilot-client';
+import {
   addTrap,
   listTraps,
   moveTrap,
@@ -1410,6 +1416,58 @@ export const appRouter = router({
    * System-wide access. Only global admins may look, which is why the
    * gate answers NOT_FOUND rather than FORBIDDEN.
    */
+  /**
+   * Sending this orchard's harvests to the cidery that buys them. Whether
+   * they go is the orchard's to say, so the switch is its admin's; sending
+   * what is already recorded is ordinary work, so that is an operator's.
+   */
+  ciderpilot: router({
+    status: orchardAdminProcedure
+      .input(z.object({ orchardId: z.string().min(1) }))
+      .query(async ({ input }) => {
+        const status = await ciderpilotStatus(input.orchardId);
+        if (!status) throw new TRPCError({ code: 'NOT_FOUND', message: 'Orchard not found' });
+        return status;
+      }),
+
+    setEnabled: orchardAdminProcedure
+      .input(
+        z.object({
+          orchardId: z.string().min(1),
+          enabled: z.boolean(),
+          /** The caller's calendar day, YYYY-MM-DD: where sending starts from. */
+          today: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        const settings = await setCiderpilotEnabled(input.orchardId, input.enabled, input.today);
+        if (!settings) throw new TRPCError({ code: 'NOT_FOUND', message: 'Orchard not found' });
+        return settings;
+      }),
+
+    /** Send now, and say what happened: the one sync whose failure is shown. */
+    syncNow: orchardOperatorProcedure
+      .input(z.object({ orchardId: z.string().min(1) }))
+      .mutation(async ({ input }) => {
+        try {
+          return await syncOrchardPicks(input.orchardId);
+        } catch (error) {
+          if (error instanceof CiderPilotError) {
+            throw new TRPCError({
+              code: 'BAD_GATEWAY',
+              message:
+                error.code === 'NOT_FOUND'
+                  ? 'The cidery has not linked this orchard to a vendor yet.'
+                  : error.code === 'UNAUTHORIZED'
+                    ? 'The cidery refused the connection. Its token may have been revoked.'
+                    : error.message,
+            });
+          }
+          throw error;
+        }
+      }),
+  }),
+
   access: router({
     people: globalAdminProcedure.query(async () => ({
       people: await listPeople(),

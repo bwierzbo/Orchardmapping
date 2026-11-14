@@ -48,6 +48,14 @@ This app is being aligned with CiderPilot (see the cidery repo's practices).
 - **Walk survey progress** (`lib/walk-progress.ts`, `/api/walk-progress`): a paused walk is saved per orchard in localStorage and mirrored into `app_settings` (`walk_progress:<orchard>`), reconciled by `updatedAt`; the route itself comes from `lib/serpentine.ts` (`walkPathFrom`).
 - **tree_events** (`lib/db/tree-events.ts`, migration 006): per-tree audit + field-activity log. The tree API routes auto-write created/updated/status_change/moved/deleted events (best-effort — audit failure never fails the edit); manual events via `POST /api/trees/[id]/events`. No FK on tree_id so history survives deletion.
 
+### CiderPilot link (migration 078) — sending harvests to the cidery
+- **OrchardMap owns picks; CiderPilot owns vendors, prices, scale weights and purchases.** Nothing is stored twice, and no price is ever shown here except to cidery staff (not built yet).
+- Each `harvests` row is sent to CiderPilot as a **pick keyed by its id**, so an edit re-sends the same pick and an undo withdraws it. Once the cidery receives a pick into a purchase it is **locked**: nothing sent from here changes it, and the sync stops trying.
+- The rules are pure and tested in `lib/ciderpilot-sync.ts` (`planPickSync`); `lib/db/ciderpilot.ts` reads, calls and records. A sync is always **the whole orchard worked out from the database** — there is no queue, so a send that failed is found by the next one. State per harvest is in `ciderpilot_pick_sync`.
+- Sends are triggered with `after()` from the four routes that write or undo a harvest (`syncOrchardPicksQuietly`): **a harvest write must never fail because the cidery did.** A new harvest write path must add the same call.
+- **Off per orchard by default** (`orchards.ciderpilot_enabled`), turned on by the orchard's admin from the dashboard card. `ciderpilot_since` is set the first time and kept: only harvests from that day on are sent, so earlier seasons are not bought twice. The cidery must also link the orchard to a vendor; until then it answers NOT_FOUND and picks wait here.
+- Env: `CIDERPILOT_URL`, `CIDERPILOT_TOKEN` (an integration token made in CiderPilot, `cpi_…`). Server-side only. Unset means the card is not shown.
+
 ### Data layer (raw SQL, no ORM)
 - `@vercel/postgres` tagged-template `sql` everywhere; dynamic UPDATEs via `buildUpdateSet()` (`lib/db/sql-helpers.ts`) against the column whitelists `TREE_UPDATABLE_COLUMNS` / `ORCHARD_UPDATABLE_COLUMNS` — **never interpolate request-supplied column names**.
 - Tables: `sites` (a grower; holds orchards), `orchards` (config lives in DB, not code — id is a slug of the name; carries `site_id`, `code`, `next_tree_no`), `trees`, `_migrations`.

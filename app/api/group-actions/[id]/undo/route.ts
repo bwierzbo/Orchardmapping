@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
+import { syncOrchardPicksQuietly } from '@/lib/db/ciderpilot';
 import { requireSession } from '@/lib/api-auth';
 import { handleApiError } from '@/lib/api-errors';
 import { groupActionOrchard, undoGroupAction } from '@/lib/db/group-actions';
@@ -41,6 +42,8 @@ export async function POST(
     }
 
     const result = await undoGroupAction(groupId, userId);
+    // An undone harvest is taken back from the cidery, if it was sent.
+    if (orchardId) after(() => syncOrchardPicksQuietly(orchardId));
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
     return handleApiError(error, 'POST /api/group-actions/[id]/undo');

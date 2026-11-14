@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
+import { syncOrchardPicksQuietly } from '@/lib/db/ciderpilot';
 import { requireSession } from '@/lib/api-auth';
 import { handleApiError } from '@/lib/api-errors';
 import {
@@ -125,6 +126,7 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await applyGroupAction(orchardId, filter, action, userId);
+    if (action.kind === 'harvest') after(() => syncOrchardPicksQuietly(orchardId));
     return NextResponse.json({ success: true, ...result }, { status: 201 });
   } catch (error) {
     return handleApiError(error, 'POST /api/group-actions');

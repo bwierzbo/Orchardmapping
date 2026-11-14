@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { requireSession } from '@/lib/api-auth';
 import { handleApiError } from '@/lib/api-errors';
 import { getTreeById } from '@/lib/db/trees';
 import { insertTreeEvent } from '@/lib/db/tree-events';
 import { insertTreeHarvest } from '@/lib/db/tree-harvests';
+import { syncOrchardPicksQuietly } from '@/lib/db/ciderpilot';
 import { describeHarvest, HARVEST_UNITS, type HarvestUnit } from '@/lib/harvest-units';
 import { assertTreeAccess } from '@/lib/orchard-access';
 import { toYMD } from '@/lib/dates';
@@ -84,6 +85,9 @@ export async function POST(
       notes,
       createdBy: userId,
     });
+    // Told to the cidery once the response has gone: the pick is recorded
+    // whether or not the cidery can be reached just now.
+    after(() => syncOrchardPicksQuietly(tree.orchard_id));
 
     const amount = describeHarvest(quantity, unit, tree.fruit_type);
     // Named only where there was a choice: on a one-variety tree it says

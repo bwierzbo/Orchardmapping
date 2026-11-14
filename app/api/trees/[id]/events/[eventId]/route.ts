@@ -1,8 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
+import { syncOrchardPicksQuietly } from '@/lib/db/ciderpilot';
 import { requireSession } from '@/lib/api-auth';
 import { handleApiError } from '@/lib/api-errors';
 import { listTreeEvents, removeTreeEvent, toClientEvents } from '@/lib/db/tree-events';
 import { assertTreeAccess } from '@/lib/orchard-access';
+import { getTreeById } from '@/lib/db/trees';
 
 /**
  * DELETE /api/trees/[id]/events/[eventId]
@@ -29,6 +31,10 @@ export async function DELETE(
     }
 
     const { status } = await removeTreeEvent(tree_id, id);
+    // Removing a harvest entry undoes the harvest; the cidery is told once
+    // the response has gone, if this orchard sends its picks there.
+    const tree = await getTreeById(tree_id);
+    if (tree) after(() => syncOrchardPicksQuietly(tree.orchard_id));
     const events = await listTreeEvents(tree_id);
     return NextResponse.json({ success: true, status, events: toClientEvents(events) });
   } catch (error) {
