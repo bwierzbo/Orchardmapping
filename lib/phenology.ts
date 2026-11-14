@@ -45,6 +45,20 @@ export const PHENOLOGY_LABEL: Record<PhenologyStage, string> = {
   leaf_fall: 'Leaf fall',
 };
 
+/** The stages a photo can show; harvest and leaf fall are not read off a picture. */
+export const PHOTO_STAGES = [
+  'dormant',
+  'silver_tip',
+  'green_tip',
+  'half_inch_green',
+  'tight_cluster',
+  'pink',
+  'first_bloom',
+  'full_bloom',
+  'petal_fall',
+  'fruit_set',
+] as const satisfies readonly PhenologyStage[];
+
 /** What the stage looks like, so a mark doesn't need a reference book. */
 export const PHENOLOGY_HELP: Record<PhenologyStage, string> = {
   dormant: 'Buds tight and brown, no movement.',

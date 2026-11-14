@@ -111,7 +111,9 @@ import {
   markStageForAll,
   unmarkStage,
 } from '@/lib/db/phenology';
-import { PHENOLOGY_SCOPES } from '@/lib/phenology';
+import { PHENOLOGY_SCOPES, PHOTO_STAGES } from '@/lib/phenology';
+import { isOwnPhotoUrl } from '@/lib/photo-url';
+import { StageFromPhotoError, suggestStageFromPhoto } from '@/lib/bloom-stage-photo';
 import { clearPosture, setPosture } from '@/lib/db/posture';
 import { POSTURES } from '@/lib/posture';
 import { completeStep, setStepEnabled, uncompleteStep } from '@/lib/db/program';
@@ -1136,9 +1138,36 @@ export const appRouter = router({
           scope: z.enum(PHENOLOGY_SCOPES).optional(),
           scopeValue: z.string().max(120).nullable().optional(),
           note: z.string().max(500).optional(),
+          // Read from a photo (080): the photo, and what the app suggested.
+          photoUrl: z.string().refine(isOwnPhotoUrl, 'Not one of this app\'s photos').optional(),
+          suggestedStage: z.enum([...PHOTO_STAGES, 'unsure']).optional(),
         }),
       )
       .mutation(async ({ input, ctx }) => markStage({ ...input, createdBy: ctx.userId })),
+
+    /**
+     * What stage a photo of this tree shows -- a suggestion only; the
+     * person confirms or corrects it, and phenology.mark records it.
+     */
+    stageFromPhoto: treeOperatorProcedure
+      .input(
+        z.object({
+          treeId: z.string().min(1),
+          photoUrl: z.string().refine(isOwnPhotoUrl, 'Not one of this app\'s photos'),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        const tree = await getTreeById(input.treeId);
+        if (!tree) throw new TRPCError({ code: 'NOT_FOUND', message: 'Tree not found' });
+        try {
+          return await suggestStageFromPhoto(input.photoUrl, tree.variety ?? null);
+        } catch (error) {
+          if (error instanceof StageFromPhotoError) {
+            throw new TRPCError({ code: 'PRECONDITION_FAILED', message: error.message });
+          }
+          throw error;
+        }
+      }),
 
     unmark: recordOperatorProcedure('phenologyMark')
       .input(z.object({ id: z.number().int().positive() }))

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isOwnPhotoUrl } from '@/lib/photo-url';
 import { requireSession } from '@/lib/api-auth';
 import { handleApiError } from '@/lib/api-errors';
 import { getTreeById } from '@/lib/db/trees';
@@ -81,19 +82,10 @@ export async function POST(
     // Photo must be one of ours (uploaded through /api/photos/upload)
     let photoUrl: string | undefined;
     if (typeof body.photo_url === 'string' && body.photo_url) {
-      try {
-        const u = new URL(body.photo_url);
-        if (
-          u.protocol !== 'https:' ||
-          !u.hostname.endsWith('.public.blob.vercel-storage.com') ||
-          !u.pathname.startsWith('/photos/')
-        ) {
-          return NextResponse.json({ error: 'Invalid photo_url' }, { status: 400 });
-        }
-        photoUrl = body.photo_url;
-      } catch {
+      if (!isOwnPhotoUrl(body.photo_url)) {
         return NextResponse.json({ error: 'Invalid photo_url' }, { status: 400 });
       }
+      photoUrl = body.photo_url;
     }
 
     await insertTreeEvent({

@@ -74,21 +74,27 @@ export async function markStage(input: {
   scopeValue?: string | null;
   note?: string | null;
   createdBy?: string | null;
+  /** The photo the stage was read from, and what the app suggested it showed (080). */
+  photoUrl?: string | null;
+  suggestedStage?: string | null;
 }): Promise<PhenologyMarkRow> {
   const scope = input.scope ?? 'orchard';
   const { rows } = await sql`
     INSERT INTO phenology_marks
-      (orchard_id, stage, observed_on, scope, scope_value, note, created_by)
+      (orchard_id, stage, observed_on, scope, scope_value, note, created_by, photo_url, suggested_stage)
     VALUES (
       ${input.orchardId}, ${input.stage}, ${input.observedOn}::date,
       ${scope}, ${input.scopeValue ?? null},
-      ${input.note ?? null}, ${input.createdBy ?? null}
+      ${input.note ?? null}, ${input.createdBy ?? null},
+      ${input.photoUrl ?? null}, ${input.suggestedStage ?? null}
     )
     ON CONFLICT (orchard_id, scope, COALESCE(scope_value, ''), stage,
                  (date_part('year', observed_on)))
     DO UPDATE SET
       observed_on = EXCLUDED.observed_on,
       note = EXCLUDED.note,
+      photo_url = COALESCE(EXCLUDED.photo_url, phenology_marks.photo_url),
+      suggested_stage = COALESCE(EXCLUDED.suggested_stage, phenology_marks.suggested_stage),
       updated_at = NOW()
     RETURNING id, stage, to_char(observed_on, 'YYYY-MM-DD') AS observed_on,
               scope, scope_value, note
