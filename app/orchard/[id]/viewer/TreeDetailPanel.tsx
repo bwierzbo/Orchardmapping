@@ -26,6 +26,7 @@ import TreePhotos from './TreePhotos';
 import ReplaceTreeForm from './ReplaceTreeForm';
 import ReplacedTree from './ReplacedTree';
 import TreeGrafts from './TreeGrafts';
+import BloomStagePhoto from './BloomStagePhoto';
 import { treeVarieties, type ClientGraft } from '@/lib/grafts';
 import { formatAddress, formatTreeLabel } from '@/lib/address';
 import { trpc } from '@/lib/trpc/client';
@@ -544,6 +545,16 @@ export default function TreeDetailPanel({
             {field('Last pruned', formatYMD(tree.last_pruned))}
             {field('Last harvest', formatYMD(tree.last_harvest))}
             {field('Yield estimate', tree.yield_estimate != null ? `${tree.yield_estimate} kg` : null)}
+            {canEdit && (
+              <div className="py-2 border-b border-line">
+                <BloomStagePhoto
+                  orchardId={tree.orchard_id}
+                  treeId={tree.tree_id}
+                  variety={tree.variety ?? null}
+                  onSaved={onMoved}
+                />
+              </div>
+            )}
             {(canEdit || tree.bloom_indicator) && (
               <div className="flex items-center justify-between gap-3 py-1.5 border-b border-line">
                 <span className="text-sm text-bark" title="Full bloom on a few indicator trees places every other variety's bloom, and so its picking window.">
