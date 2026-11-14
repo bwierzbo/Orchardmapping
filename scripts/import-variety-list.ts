@@ -27,6 +27,19 @@ const CATEGORY: Record<string, string> = {
   sweet: 'SW',
 };
 
+/**
+ * CiderPilot spellings of apples the library already holds under the name
+ * the trees are planted as. Without this an import adds a thin second entry
+ * (and its own, conflicting harvest target) beside the researched one; the
+ * four below were removed for that reason on 2026-11-14.
+ */
+const SAME_APPLE: Record<string, string> = {
+  'amère de berthecourt': 'Amere de Berthcourt',
+  "cox's orange pippin": 'Cox Orange Pippin',
+  "harry masters' jersey": 'Harry Masters Jersey',
+  "virginia hewe's crab": 'Virginia Hewes Crab',
+};
+
 interface Incoming {
   name: string;
   fruit_type: string | null;
@@ -54,8 +67,9 @@ async function main() {
   let filled = 0;
 
   for (const v of varieties) {
-    const name = v.name.trim();
-    if (!name) continue;
+    const raw = v.name.trim();
+    if (!raw) continue;
+    const name = SAME_APPLE[raw.toLowerCase()] ?? raw;
     const ciderType = v.cider_category ? (CATEGORY[v.cider_category] ?? null) : null;
 
     if (have.has(name.toLowerCase())) {
