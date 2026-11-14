@@ -62,11 +62,15 @@ function instructions(variety: string | null): string {
 export async function suggestStageFromPhoto(
   photoUrl: string,
   variety: string | null,
-  client: Anthropic = new Anthropic(),
+  client?: Anthropic,
 ): Promise<StageSuggestion> {
+  if (!client && !process.env.ANTHROPIC_API_KEY) {
+    throw new StageFromPhotoError('Reading stages from photos is not set up yet. Record the stage by hand.');
+  }
+  const anthropic = client ?? new Anthropic();
   let response;
   try {
-    response = await client.beta.messages.create({
+    response = await anthropic.beta.messages.create({
       model: 'claude-opus-5-5',
       max_tokens: 2000,
       output_config: {
