@@ -1,0 +1,342 @@
+{
+ "researched": "2026-11-14",
+ "scale": "UK flowering group 1 (earliest) to 7",
+ "varieties": [
+  {
+   "variety": "Akane",
+   "group": 4,
+   "source": "https://www.orangepippin.com/varieties/apples/akane",
+   "note": "Only numeric source; HOS says mid"
+  },
+  {
+   "variety": "Amere de Berthcourt",
+   "group": 2,
+   "source": "https://www.orangepippin.com/varieties/apples/amere-de-berthencourt",
+   "note": "Single source"
+  },
+  {
+   "variety": "Antonovka",
+   "group": 2,
+   "source": "https://www.keepers-nursery.co.uk/fruit-trees/apple/antonovka",
+   "note": "Keepers B; Orange Pippin 3"
+  },
+  {
+   "variety": "Arkansas Black",
+   "group": 3,
+   "source": "https://www.orangepippin.com/varieties/apples/arkansas-black",
+   "note": "HOS mid"
+  },
+  {
+   "variety": "Ashmead's Kernel",
+   "group": 4,
+   "source": "https://rhs.org.uk/advice/pdfs/ApplePollinationGroups",
+   "note": "RHS, Orange Pippin, Keepers agree"
+  },
+  {
+   "variety": "Bolero",
+   "group": 2,
+   "source": "https://rhs.org.uk/advice/pdfs/ApplePollinationGroups",
+   "note": "RHS (syn. Tuscan)"
+  },
+  {
+   "variety": "Braeburn",
+   "group": 5,
+   "source": "https://www.keepers-nursery.co.uk/fruit-trees/apple/braeburn",
+   "note": "Keepers E; Orange Pippin 4; HOS late in western WA"
+  },
+  {
+   "variety": "Brown Snout",
+   "group": 6,
+   "source": "https://www.orangepippin.com/varieties/apples/brown-snout",
+   "note": "Keepers agrees"
+  },
+  {
+   "variety": "Chehalis",
+   "group": 3,
+   "source": "https://www.orangepippin.com/varieties/apples/chehalis",
+   "note": "HOS lists both early and late"
+  },
+  {
+   "variety": "Chisel Jersey",
+   "group": 6,
+   "source": "https://www.orangepippin.com/varieties/apples/chisel-jersey",
+   "note": "Keepers agrees"
+  },
+  {
+   "variety": "Cosmic Crisp",
+   "group": 4,
+   "source": "https://www.orangepippin.com/varieties/apples/cosmic-crisp",
+   "note": "Single source"
+  },
+  {
+   "variety": "Cox Orange Pippin",
+   "group": 3,
+   "source": "https://rhs.org.uk/advice/pdfs/ApplePollinationGroups",
+   "note": "RHS, Orange Pippin, Keepers agree"
+  },
+  {
+   "variety": "Dabinett",
+   "group": 3,
+   "source": "https://www.keepers-nursery.co.uk/fruit-trees/apple/dabinett",
+   "note": "Disputed: Orange Pippin 6, Cummins 5"
+  },
+  {
+   "variety": "Discovery",
+   "group": 3,
+   "source": "https://rhs.org.uk/advice/pdfs/ApplePollinationGroups",
+   "note": "RHS, Orange Pippin, Keepers agree"
+  },
+  {
+   "variety": "Duchess of Oldenburg",
+   "group": 2,
+   "source": "https://www.orangepippin.com/varieties/apples/duchess-of-oldenburg",
+   "note": "Keepers agrees"
+  },
+  {
+   "variety": "Enterprise",
+   "group": 4,
+   "source": "https://www.orangepippin.com/varieties/apples/enterprise",
+   "note": "HOS late-mid"
+  },
+  {
+   "variety": "Everest Crab",
+   "group": 3,
+   "source": "https://www.raintreenursery.com/products/evereste-crabapple-dwarf",
+   "note": "Orange Pippin also 3"
+  },
+  {
+   "variety": "Fuji",
+   "group": 3,
+   "source": "https://www.orangepippin.com/varieties/apples/fuji",
+   "note": "Keepers D borderline"
+  },
+  {
+   "variety": "Gala",
+   "group": 4,
+   "source": "https://rhs.org.uk/advice/pdfs/ApplePollinationGroups",
+   "note": "Sports (Red, Royal Gala) the same"
+  },
+  {
+   "variety": "Red Gala",
+   "group": 4,
+   "source": "https://rhs.org.uk/advice/pdfs/ApplePollinationGroups",
+   "note": "Sport of Gala"
+  },
+  {
+   "variety": "Royal Gala",
+   "group": 4,
+   "source": "https://rhs.org.uk/advice/pdfs/ApplePollinationGroups",
+   "note": "Sport of Gala"
+  },
+  {
+   "variety": "Golden Delicious",
+   "group": 4,
+   "source": "https://rhs.org.uk/advice/pdfs/ApplePollinationGroups",
+   "note": "Orange Pippin and Keepers agree"
+  },
+  {
+   "variety": "Golden Russet",
+   "group": 2,
+   "source": "https://www.orangepippin.com/varieties/apples/golden-russet",
+   "note": "Keepers agrees"
+  },
+  {
+   "variety": "Granny Smith",
+   "group": 3,
+   "source": "https://rhs.org.uk/advice/pdfs/ApplePollinationGroups",
+   "note": "Orange Pippin and Keepers agree"
+  },
+  {
+   "variety": "Gravenstein",
+   "group": 1,
+   "source": "https://rhs.org.uk/advice/pdfs/ApplePollinationGroups",
+   "note": "Keepers A"
+  },
+  {
+   "variety": "Red Gravenstein",
+   "group": 1,
+   "source": "https://rhs.org.uk/advice/pdfs/ApplePollinationGroups",
+   "note": "Sport of Gravenstein"
+  },
+  {
+   "variety": "Yellow Gravenstein",
+   "group": 1,
+   "source": "https://rhs.org.uk/advice/pdfs/ApplePollinationGroups",
+   "note": "Sport of Gravenstein"
+  },
+  {
+   "variety": "Harrison",
+   "group": 3,
+   "source": "https://www.orangepippin.com/varieties/apples/harrison",
+   "note": "Single source"
+  },
+  {
+   "variety": "Harry Masters Jersey",
+   "group": 4,
+   "source": "https://www.orangepippin.com/varieties/apples/harry-masters-jersey",
+   "note": "Keepers agrees"
+  },
+  {
+   "variety": "Honeycrisp",
+   "group": 4,
+   "source": "https://www.orangepippin.com/varieties/apples/honeycrisp",
+   "note": "Keepers agrees"
+  },
+  {
+   "variety": "Hudson's Golden Gem",
+   "group": 3,
+   "source": "https://www.orangepippin.com/varieties/apples/hudsons-golden-gem",
+   "note": "HOS mid"
+  },
+  {
+   "variety": "Jonagold",
+   "group": 4,
+   "source": "https://www.keepers-nursery.co.uk/fruit-trees/apple/jonagold",
+   "note": "Orange Pippin 4; RHS 3"
+  },
+  {
+   "variety": "Karmijn de Sonnaville",
+   "group": 4,
+   "source": "https://www.keepers-nursery.co.uk/fruit-trees/apple/karmijn-de-sonnaville",
+   "note": "Orange Pippin 4; RHS 3"
+  },
+  {
+   "variety": "Kingston Black",
+   "group": 3,
+   "source": "https://www.keepers-nursery.co.uk/fruit-trees/apple/kingston-black",
+   "note": "Orange Pippin 4"
+  },
+  {
+   "variety": "Liberty",
+   "group": 2,
+   "source": "https://www.orangepippin.com/varieties/apples/liberty",
+   "note": "Disputed: Keepers C"
+  },
+  {
+   "variety": "McIntosh",
+   "group": 2,
+   "source": "https://rhs.org.uk/advice/pdfs/ApplePollinationGroups",
+   "note": "Orange Pippin agrees"
+  },
+  {
+   "variety": "Michelin",
+   "group": 4,
+   "source": "https://www.orangepippin.com/varieties/apples/michelin",
+   "note": "Keepers agrees"
+  },
+  {
+   "variety": "Mother",
+   "group": 4,
+   "source": "https://www.keepers-nursery.co.uk/fruit-trees/apple/american-mother",
+   "note": "RHS 5"
+  },
+  {
+   "variety": "Nehou",
+   "group": 2,
+   "source": "https://www.orangepippin.com/varieties/apples/nehou",
+   "note": "NFC about a week before Cox"
+  },
+  {
+   "variety": "Niedzwetzkyana",
+   "group": 1,
+   "source": "https://www.orangepippin.com/varieties/apples/niedzwetzkyana",
+   "note": "Disputed: HOS late-mid"
+  },
+  {
+   "variety": "Northern Spy",
+   "group": 5,
+   "source": "https://rhs.org.uk/advice/pdfs/ApplePollinationGroups",
+   "note": "Orange Pippin and Keepers agree"
+  },
+  {
+   "variety": "Old Rome",
+   "group": 5,
+   "source": "https://www.orangepippin.com/varieties/apples/rome-beauty",
+   "note": "Rome Beauty; HOS very late"
+  },
+  {
+   "variety": "Oxford Black",
+   "group": 4,
+   "source": "https://www.orangepippin.com/varieties/apples/black-oxford",
+   "note": "Black Oxford; HOS very late"
+  },
+  {
+   "variety": "Pink Lady",
+   "group": 3,
+   "source": "https://www.cumminsnursery.com/buy-trees/product-detail.php?id=3941",
+   "note": "RHS: 2-4 pollinator"
+  },
+  {
+   "variety": "Redfield",
+   "group": 3,
+   "source": "https://www.orangepippin.com/varieties/apples/redfield",
+   "note": "Single source"
+  },
+  {
+   "variety": "Reine des Reinettes",
+   "group": 4,
+   "source": "https://www.keepers-nursery.co.uk/fruit-trees/apple/king-of-the-pippins",
+   "note": "King of the Pippins; RHS 5"
+  },
+  {
+   "variety": "Sops of Wine",
+   "group": 3,
+   "source": "https://www.orangepippin.com/varieties/apples/sops-in-wine",
+   "note": "Keepers agrees"
+  },
+  {
+   "variety": "Spartan",
+   "group": 3,
+   "source": "https://rhs.org.uk/advice/pdfs/ApplePollinationGroups",
+   "note": "Orange Pippin agrees"
+  },
+  {
+   "variety": "Stoke Red",
+   "group": 6,
+   "source": "https://www.orangepippin.com/varieties/apples/stoke-red",
+   "note": "Keepers agrees"
+  },
+  {
+   "variety": "Sweet Choppin",
+   "group": 3,
+   "source": "https://www.orangepippin.com/varieties/apples/sweet-coppin",
+   "note": "Sweet Coppin; HOS late-mid"
+  },
+  {
+   "variety": "Tompkins King",
+   "group": 3,
+   "source": "https://rhs.org.uk/advice/pdfs/ApplePollinationGroups",
+   "note": "Orange Pippin and Keepers agree"
+  },
+  {
+   "variety": "Tremlett's Bitter",
+   "group": 2,
+   "source": "https://www.keepers-nursery.co.uk/fruit-trees/apple/tremletts-bitter",
+   "note": "Disputed: Orange Pippin 5"
+  },
+  {
+   "variety": "Wagener",
+   "group": 2,
+   "source": "https://www.keepers-nursery.co.uk/fruit-trees/apple/wagener",
+   "note": "RHS 3"
+  },
+  {
+   "variety": "Winesap",
+   "group": 3,
+   "source": "https://www.orangepippin.com/varieties/apples/winesap",
+   "note": "Keepers agrees"
+  },
+  {
+   "variety": "Winter Banana",
+   "group": 4,
+   "source": "https://www.orangepippin.com/varieties/apples/winter-banana",
+   "note": "Keepers agrees"
+  },
+  {
+   "variety": "Yarlington Mill",
+   "group": 4,
+   "source": "https://ashridgetrees.co.uk/advice/apple-tree-pollination1",
+   "note": "No majority: Orange Pippin 5, Keepers 3"
+  }
+ ]
+}

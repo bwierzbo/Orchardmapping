@@ -23,6 +23,8 @@ export interface HarvestPlanRow {
   bloom: string | null;
   /** How `bloom` is known; null when it is not (the regional average is then used). */
   bloomSource: 'recorded' | 'estimated' | null;
+  /** An estimated bloom placed only by flowering group (rougher). */
+  bloomByGroup: boolean;
   /** Trees carrying the variety, a tree with a graft of it included. */
   treeCount: number;
   /** Of those, how many carry it only as a graft (076). */
@@ -165,6 +167,7 @@ export async function predictedPickFor(
     year,
     bloom: bloom.bloom ? new Date(`${bloom.bloom}T00:00:00Z`) : null,
     bloomSource: bloom.bloomSource ?? undefined,
+    bloomByGroup: bloom.bloomByGroup,
   });
   return {
     centre: prediction.window.centre.toISOString().slice(0, 10),
@@ -214,10 +217,11 @@ async function bloomsThisSeason(
       String(r.key),
       {
         observedOn: String(r.observed_on),
-        referenceDoy: referenceBloomDoy({
-          refBloomMmdd: r.ref_bloom_mmdd == null ? null : String(r.ref_bloom_mmdd),
-          floweringGroup: r.flowering_group == null ? null : Number(r.flowering_group),
-        }),
+        referenceDoy:
+          referenceBloomDoy({
+            refBloomMmdd: r.ref_bloom_mmdd == null ? null : String(r.ref_bloom_mmdd),
+            floweringGroup: r.flowering_group == null ? null : Number(r.flowering_group),
+          })?.doy ?? null,
       },
     ]),
   );
@@ -229,19 +233,23 @@ async function bloomsThisSeason(
  */
 function bloomFor(
   variety: string,
-  referenceDoy: number | null,
+  reference: { doy: number; byGroup: boolean } | null,
   blooms: Map<string, { observedOn: string; referenceDoy: number | null }>,
   year: number,
-): { bloom: string | null; bloomSource: 'recorded' | 'estimated' | null } {
+): { bloom: string | null; bloomSource: 'recorded' | 'estimated' | null; bloomByGroup: boolean } {
   const seen = blooms.get(variety.trim().toLowerCase());
-  if (seen) return { bloom: seen.observedOn, bloomSource: 'recorded' };
-  if (referenceDoy == null) return { bloom: null, bloomSource: null };
+  if (seen) return { bloom: seen.observedOn, bloomSource: 'recorded', bloomByGroup: false };
+  if (reference == null) return { bloom: null, bloomSource: null, bloomByGroup: false };
   const indicators = [...blooms.values()]
     .filter((b) => b.referenceDoy != null)
     .map((b) => ({ referenceDoy: b.referenceDoy!, observedDoy: dayOfYearOf(b.observedOn) }));
-  const doy = estimateBloomDoy(referenceDoy, indicators);
-  if (doy == null) return { bloom: null, bloomSource: null };
-  return { bloom: new Date(Date.UTC(year, 0, doy)).toISOString().slice(0, 10), bloomSource: 'estimated' };
+  const doy = estimateBloomDoy(reference.doy, indicators);
+  if (doy == null) return { bloom: null, bloomSource: null, bloomByGroup: false };
+  return {
+    bloom: new Date(Date.UTC(year, 0, doy)).toISOString().slice(0, 10),
+    bloomSource: 'estimated',
+    bloomByGroup: reference.byGroup,
+  };
 }
 
 /** Day of the year of a YYYY-MM-DD date; 1 January is day 1. */

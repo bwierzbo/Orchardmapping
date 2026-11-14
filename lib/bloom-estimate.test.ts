@@ -10,11 +10,17 @@ const HARRISON = dayOfYear(5, 16);
 
 describe('referenceBloomDoy', () => {
   it("uses the library's reference bloom date when there is one", () => {
-    expect(referenceBloomDoy({ refBloomMmdd: '05-12', floweringGroup: 3 })).toBe(KINGSTON);
+    expect(referenceBloomDoy({ refBloomMmdd: '05-12', floweringGroup: 3 })).toEqual({ doy: KINGSTON, byGroup: false });
   });
 
   it('places a variety WSU did not measure by its flowering group', () => {
-    expect(referenceBloomDoy({ refBloomMmdd: null, floweringGroup: 4 })).toBe(GROUP_REFERENCE_DOY[4]);
+    expect(referenceBloomDoy({ refBloomMmdd: null, floweringGroup: 4 })).toEqual({ doy: GROUP_REFERENCE_DOY[4], byGroup: true });
+  });
+
+  it('places the groups about six days apart, earliest to latest', () => {
+    const days = [1, 2, 3, 4, 5, 6, 7].map((g) => GROUP_REFERENCE_DOY[g]);
+    console.log('group reference days:', days);
+    for (let g = 1; g < 7; g++) expect(days[g] - days[g - 1]).toBe(6);
   });
 
   it('cannot place a variety with neither', () => {

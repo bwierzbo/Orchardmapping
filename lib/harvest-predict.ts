@@ -50,6 +50,13 @@ export const ASSUMED_BLOOM_PENALTY_DAYS = 7;
 export const ESTIMATED_BLOOM_PENALTY_DAYS = 3;
 
 /**
+ * Added on top when the variety's place in the bloom order comes only from
+ * its published flowering group, not a reference bloom date: the group fit
+ * misses by about a week (lib/bloom-estimate.ts, GROUP_REFERENCE_DOY).
+ */
+export const GROUP_PLACEMENT_PENALTY_DAYS = 7;
+
+/**
  * Past this date, a maritime western Washington season is running out of
  * heat. The variety library says as much in its own words -- "In western
  * Washington full maturity is not reliable every year" -- and a prediction
@@ -69,6 +76,8 @@ export interface PredictInput {
   bloom?: Date | null;
   /** How `bloom` is known: seen for this variety (default), or estimated from indicators. */
   bloomSource?: 'recorded' | 'estimated';
+  /** For an estimated bloom: placed only by flowering group, not a reference date. */
+  bloomByGroup?: boolean;
 }
 
 export interface Prediction {
@@ -107,7 +116,7 @@ export function predictHarvest(input: PredictInput): Prediction {
     (bloomSource === 'regional'
       ? ASSUMED_BLOOM_PENALTY_DAYS
       : bloomSource === 'estimated'
-        ? ESTIMATED_BLOOM_PENALTY_DAYS
+        ? ESTIMATED_BLOOM_PENALTY_DAYS + (input.bloomByGroup ? GROUP_PLACEMENT_PENALTY_DAYS : 0)
         : 0);
 
   // The risk is about the window closing too late to ripen, so it is the

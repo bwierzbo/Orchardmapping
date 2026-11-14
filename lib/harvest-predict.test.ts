@@ -5,6 +5,7 @@ import {
   dateFromDayOfYear,
   ASSUMED_BLOOM_PENALTY_DAYS,
   ESTIMATED_BLOOM_PENALTY_DAYS,
+  GROUP_PLACEMENT_PENALTY_DAYS,
   LATE_SEASON_CUTOFF,
 } from './harvest-predict';
 import { REGIONAL_BLOOM_DOY } from './harvest-target';
@@ -58,6 +59,13 @@ describe('predictHarvest', () => {
     expect(estimated.confidenceDays).toBe(seen.confidenceDays + ESTIMATED_BLOOM_PENALTY_DAYS);
     expect(estimated.confidenceDays).toBeLessThan(assumed.confidenceDays);
     expect(estimated.note).toContain('indicator');
+  });
+
+  it('is less certain again when the variety is placed only by its flowering group', () => {
+    const bloom = new Date(Date.UTC(2027, 4, 15));
+    const byDate = predictHarvest({ ...base, bloom, bloomSource: 'estimated' });
+    const byGroup = predictHarvest({ ...base, bloom, bloomSource: 'estimated', bloomByGroup: true });
+    expect(byGroup.confidenceDays).toBe(byDate.confidenceDays + GROUP_PLACEMENT_PENALTY_DAYS);
   });
 
   it('is more certain the better the interval is known', () => {

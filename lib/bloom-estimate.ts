@@ -18,31 +18,38 @@
 import { dayOfYear } from './harvest-target';
 
 /**
- * Where each flowering group sits on WSU Mount Vernon's calendar, as a day
- * of the year. Fitted to the WSU-measured varieties whose groups are
- * published (see FLOWERING_GROUP_FIT); used only for varieties WSU did not
- * measure.
+ * Where each flowering group (1-7) sits on WSU Mount Vernon's calendar, as a
+ * day of the year: 106.4 + 6.0 x group, fitted on 2026-11-14 to the twelve
+ * varieties with both a reference bloom date and a published group (UK
+ * National Fruit Collection scale, sources in variety_attributes). One
+ * group is about six days here; English sources say three to five, and the
+ * wider spacing fits a cooler maritime spring. The fit misses by about a
+ * week (sd 6.9 days), which is what placing a variety by its group alone is
+ * worth -- see GROUP_PLACEMENT_PENALTY_DAYS in harvest-predict.
  */
 export const GROUP_REFERENCE_DOY: Record<number, number> = {
-  1: 0,
-  2: 0,
-  3: 0,
-  4: 0,
-  5: 0,
-  6: 0,
-  7: 0,
+  1: 112, // 22 Apr
+  2: 118, // 28 Apr
+  3: 124, // 4 May
+  4: 130, // 10 May
+  5: 136, // 16 May
+  6: 142, // 22 May
+  7: 148, // 28 May
 };
 
-/** A variety's place in the reference bloom order, as a day of the year. */
+/**
+ * A variety's place in the reference bloom order, as a day of the year, and
+ * whether it is placed only by its flowering group (the rougher of the two).
+ */
 export function referenceBloomDoy(entry: {
   /** The library's reference bloom, "MM-DD". */
   refBloomMmdd: string | null;
   floweringGroup: number | null;
-}): number | null {
+}): { doy: number; byGroup: boolean } | null {
   const m = entry.refBloomMmdd ? /^(\d{2})-(\d{2})$/.exec(entry.refBloomMmdd) : null;
-  if (m) return dayOfYear(Number(m[1]), Number(m[2]));
+  if (m) return { doy: dayOfYear(Number(m[1]), Number(m[2])), byGroup: false };
   if (entry.floweringGroup != null && GROUP_REFERENCE_DOY[entry.floweringGroup] != null) {
-    return GROUP_REFERENCE_DOY[entry.floweringGroup];
+    return { doy: GROUP_REFERENCE_DOY[entry.floweringGroup], byGroup: true };
   }
   return null;
 }
